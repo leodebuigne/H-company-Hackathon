@@ -3,7 +3,7 @@
 Site **fictif** de livraison de repas, deuxième site de test de l'agent H (le premier est `rail-demo/`, le site de train).
 Restaurants, plats et prix inventés. Aucun vrai repas, aucun vrai paiement, aucune donnée envoyée à un serveur.
 
-**Site en ligne : à déployer** (voir plus bas), puis noter l'adresse ici et dans `REPAS_DEMO_URL` de `.env.example`.
+**Site en ligne : https://h-company-hackathon-repas-demo.vercel.app**
 
 ## Le parcours
 
