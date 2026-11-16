@@ -1,6 +1,6 @@
 # H-company-Hackathon : Pilote
 
-Projet Pilote, hackathon Eugenia 2026 (piste H Company) : un assistant vocal qui réserve un train pour une personne aveugle, avec une triple vérification avant tout paiement (utilisateur, proche de confiance par SMS, utilisateur).
+Projet Pilote, hackathon Eugenia 2026 (piste H Company) : un assistant vocal qui commande sur n'importe quel site marchand (train, repas, boutique), pensé d'abord pour les personnes aveugles, avec une triple vérification avant tout paiement (utilisateur, proche de confiance par SMS, utilisateur).
 
 ## Adresses utiles
 
@@ -21,8 +21,10 @@ Les mêmes adresses sont dans `.env.example` (variable `RAIL_DEMO_URL`) pour le 
 ## Avancement
 
 - [x] Étape 1 : faux site de train en ligne
-- [ ] Étape 2 : agent H sur le faux site
+- [ ] Étape 1 bis : faux site de livraison de repas
+- [ ] Étape 2 : agent H générique (même code pour tous les sites)
 - [ ] Étape 3 : comprendre et résumer avec Hugging Face
 - [ ] Étape 4 : la voix
 - [ ] Étape 5 : triple vérification et SMS
-- [ ] Étape 6 : finitions, tests et pitch
+- [ ] Étape 6 : mémoire des sites
+- [ ] Étape 7 : finitions, tests et pitch
