@@ -3,6 +3,8 @@
 Site **fictif** de réservation de trains, utilisé par l'agent H pendant le hackathon.
 Aucun vrai billet, aucun vrai paiement, aucune donnée envoyée à un serveur.
 
+**Site en ligne : https://h-company-hackathon-rail-demo.vercel.app**
+
 ## Les pages
 
 1. `index.html` : recherche (gare de départ, arrivée, date, heure).
