@@ -12,7 +12,8 @@ Stack : H Company (API Agent, SDK `hai-agents-ts` de préférence), Hugging Face
 
 - Faux site de train : https://h-company-hackathon-rail-demo.vercel.app (variable `RAIL_DEMO_URL` dans `.env.example`)
 - Scénarios de test : ajouter `?scenario=hausse` (prix +8 € après 60 s entre récapitulatif et paiement) ou `?scenario=complet` à l'URL.
-- Code du faux site : `rail-demo/`. Le bouton de paiement a l'id `payer` sur `paiement.html`.
+- Code du faux site de train : `rail-demo/`. Le bouton de paiement a l'id `payer` sur `paiement.html`.
+- Faux site de repas Miam Démo : code dans `repas-demo/`, adresse à venir (variable `REPAS_DEMO_URL`). Bouton `commander` sur `paiement.html`. Scénarios `?scenario=hausse` (frais de livraison +2 € après 60 s) et `?scenario=ferme`.
 
 ## Agent générique et mémoire des sites
 
