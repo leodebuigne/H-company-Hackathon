@@ -11,6 +11,7 @@ import datetime as dt
 import re
 import unicodedata
 
+from orchestrator.ai.speech_text import options_summary, order_statement
 from orchestrator.contracts import Intent, Option, OrderSummary, When
 from orchestrator.ports import HistoryTurn
 
@@ -25,11 +26,6 @@ _MEALS = ["pizza", "sushi", "poke", "burger", "smash", "frites", "pad thai"]
 def _plain(text: str) -> str:
     decomposed = unicodedata.normalize("NFKD", text.lower())
     return "".join(c for c in decomposed if not unicodedata.combining(c))
-
-
-def _euros(cents: int) -> str:
-    euros, rest = divmod(cents, 100)
-    return f"{euros} euros" if rest == 0 else f"{euros} euros {rest:02d}"
 
 
 def _empty_intent(kind: str, text: str) -> Intent:
@@ -154,24 +150,11 @@ class FakeAI:
 
     async def summarize_options(self, options: list[Option]) -> str:
         await self._wait()
-        if not options:
-            return "Je n'ai rien trouvé. Voulez-vous que je cherche autrement ?"
-        parts = []
-        for number, option in enumerate(options[:3], start=1):
-            note = f", noté {option.rating:g} sur 5" if option.rating is not None else ""
-            parts.append(f"{number}, {option.title}, {_euros(option.price_cents)}{note}")
-        return "J'ai trouvé : " + ". ".join(parts) + ". Voulez-vous des détails sur l'une d'elles ?"
+        return options_summary(options)
 
     async def confirm_statement(self, summary: OrderSummary) -> str:
         await self._wait()
-        articles = ", ".join(f"{item.quantity} {item.name}" for item in summary.items)
-        sentence = f"J'ai mis dans le panier {articles}, total {_euros(summary.total_cents)}"
-        if summary.when_label:
-            sentence += f", {summary.when_label}"
-        sentence += "."
-        if summary.conditions:
-            sentence += f" {summary.conditions}."
-        return sentence
+        return order_statement(summary)
 
     async def describe_product(self, image: bytes, question: str) -> str:
         await self._wait()
