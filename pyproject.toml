@@ -15,12 +15,12 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-# Membre 1 (orchestrator/agent_h). Ajouts : PR vers feat/orchestrator.
+# Membre 1 (orchestrator/agent_h). Ajouts : issue ou PR, validée par le membre 5.
 agent = [
   "hai-agents[cli,browser]",
   "upstash-redis>=1.1",
 ]
-# Membre 2 (orchestrator/ai). Ajouts : PR vers feat/orchestrator.
+# Membre 2 (orchestrator/ai). Ajouts : issue ou PR, validée par le membre 5.
 ai = [
   "huggingface_hub>=0.25",
   "openai>=1.40",
