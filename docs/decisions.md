@@ -55,12 +55,19 @@ Détail des mesures dans `docs/benchmark-llm.md` (relançable : `python -m orche
 - **Vision** : `Qwen/Qwen3-VL-30B-A3B-Instruct` décrit une image envoyée en data URL ; testé sur une image unie, pas encore sur de vraies captures de produits.
 - **Non testé** : la reconnaissance vocale sur un vrai enregistrement du navigateur (webm de MediaRecorder) ; les essais ont utilisé du WAV synthétisé.
 
+## 2026-11-17 : fusion des branches partie-1, 2, 4, 5 (intégration)
+
+Base : `partie-5` (contrats et squelette), puis `partie-2` (IA), `partie-4` (interface), `partie-1` (agent H). `partie-3` (validation des proches) n'existe pas.
+
+- **`agent_h` alignée sur les contrats.** Son `models.py` était une copie de l'ancien plan (euros à virgule, `Intent.site/item`, hash différent). L'agent H lit toujours en euros, le code convertit vers `orchestrator.contracts` (centimes, `rank`, UUID `order_id` créé par `checkout()`, `read_at`, `summary_hash` officiel). Un montant illisible fait refuser, jamais deviner. `SiteCard` est le contrat (`successful_runs`, `avg_duration_s`, `avg_steps`, `useful_buttons`, `updated_at`).
+- **Interface `ports.py` respectée** : `agent_view_url`, `make_agent_factory()` au format `AgentFactory`, `NeedHumanCallback` qui rend la main sans valeur.
+- **Clé Redis des fiches** : `www.sncf-connect.com` et `www.ubereats.com`, comme `docs/sites.md` (l'ancien code retirait le `www.`).
+- **Défaut corrigé** : quand le garde-fou refusait le paiement, l'agent lève `NeedsHuman` (faux CAPTCHA) au lieu de `PaymentDenied`.
+- **CI** : installe l'extra `agent` (SDK H) ; `E501` ignoré pour les fichiers de consignes (`prompts.py`, `agent.py`, `metrics.py`).
+- `orchestrator/tests/test_integration.py` fait passer une phrase dans l'IA puis dans l'agent, avec les mêmes objets des deux côtés.
+
 ## À vérifier
 
 - **Membre 1** : pendant que l'outil `request_payment_approval` attend sa réponse, l'orchestrateur appelle `recheck()` (relire la page). Vérifier dans la doc H (https://hub.hcompany.ai/agents-api/custom-tools.md) qu'on peut envoyer un message à une session dont un appel d'outil est en attente. Sinon, le recheck doit se faire autrement (par exemple dans le même outil, ou avec une seconde lecture après la réponse) : ouvrir une issue.
-- **Intégration, à traiter par le membre 1 (écarts constatés à la fusion des branches partie-1, 2, 4, 5)** : `orchestrator/agent_h` ne respecte pas encore les contrats communs, il ne se branche donc pas tel quel sur l'orchestrateur.
-  - `agent_h/models.py` est une copie de l'ancien plan : prix en euros à virgule (`price_eur`, `total_eur`), `Intent` avec `site` et `item`. Les contrats imposent des centimes entiers, `Intent.kind/category/object/when`, `OrderSummary.total_cents`, `page_url`, `payment_button_label`, `read_at`. À remplacer par `orchestrator.contracts`.
-  - `summary_hash` d'`agent_h` n'est pas `orchestrator.contracts.summary_hash` : deux hash différents pour le même panier feraient échouer la comparaison avant paiement. Utiliser celui des contrats.
-  - Écarts avec `orchestrator/ports.py` : pas de propriété `agent_view_url` ; le constructeur doit pouvoir se construire par `AgentFactory = (ApprovalCallback, NeedHumanCallback) -> ShoppingAgent` ; `NeedHumanCallback` renvoie `None` dans les ports, `"resolved"` ou `"abort"` dans `agent_h`.
-  - **Sécurité du paiement** : dans `agent_h/base.py`, « sans callback, l'agent paie pendant `pay()` et la banque fait la vérification », et son README annonce qu'il n'y a pas de vérification supplémentaire côté Pilote et que la carte est la vraie. C'est l'inverse du plan (triple vérification, carte à 0 €). À trancher en équipe et à noter ici avant la démo ; par défaut, sans approbation fournie, l'agent ne devrait pas pouvoir cliquer sur le bouton de paiement.
+- **Sécurité du paiement : à confirmer en équipe.** Le README et le code initiaux de `agent_h` disaient « pas de vérification supplémentaire côté Pilote, la carte est la vraie », ce qui contredit le plan (triple vérification, carte à 0 €) et la règle de `CLAUDE.md` (jamais de clic d'argent sans approbation). Par défaut l'agent refuse maintenant de payer sans `approval_callback` de l'orchestrateur ; payer sans passe par `PILOTE_AUTO_APPROVE=1`. Si l'équipe a bien décidé de supprimer la triple vérification, le dire ici.
 - **Membre 3** : noms exacts des variables injectées par l'intégration Upstash de Vercel, à reporter dans `.env.example`.
