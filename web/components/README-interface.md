@@ -9,7 +9,7 @@ npm run mock   # faux orchestrateur sur ws://localhost:8000/ws, messages vérifi
 npm run dev    # interface sur http://localhost:3000, écran jury sur /spectateur
 ```
 
-Pour viser le vrai orchestrateur, arrêter `npm run mock` : l'adresse est la même. Une autre adresse se règle avec `NEXT_PUBLIC_ORCHESTRATOR_WS`.
+Pour viser le vrai orchestrateur, arrêter `npm run mock` : l'adresse est la même. Une autre adresse se règle avec `NEXT_PUBLIC_ORCHESTRATOR_WS_URL`.
 
 ## Raccourcis
 

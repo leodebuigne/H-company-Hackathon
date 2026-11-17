@@ -5,7 +5,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { ApprovalStatus, ClientMessage, Intent, Option, OrderSummary, ServerMessage, State } from "./protocol";
 
-export const ORCHESTRATOR_URL = process.env.NEXT_PUBLIC_ORCHESTRATOR_WS ?? "ws://localhost:8000/ws";
+export const ORCHESTRATOR_URL = process.env.NEXT_PUBLIC_ORCHESTRATOR_WS_URL ?? "ws://localhost:8000/ws";
 
 export type LogEntry = { id: number; who: "pilote" | "user" | "system"; text: string };
 
