@@ -14,61 +14,91 @@ import logging
 import os
 import uuid
 
-from .base import ApprovalCallback, NeedsHuman, PaymentDenied
-from .models import Intent, Option, OrderItem, OrderSummary, PaymentResult, SiteCard
+from orchestrator.contracts import Intent, Option, OrderSummary, SiteCard
+from orchestrator.ports import PaymentResult
+
+from .base import ApprovalCallback, NeedHumanCallback, NeedsHuman, PaymentDenied
+from .models import (
+    AgentFee,
+    AgentOption,
+    AgentOrderItem,
+    AgentOrderSummary,
+    OptionDetails,
+    to_options,
+    to_order_summary,
+)
+from .site_memory import domain_of
 
 TRAIN_OPTIONS = [
-    Option(
+    AgentOption(
         id="o1",
         title="TGV INOUI 14 h 12 → 15 h 15, direct",
         price_eur=42.0,
-        details="Durée 1 h 03, échangeable",
+        conditions="Échangeable",
+        details=OptionDetails(
+            **{"departure": "14:12", "arrival": "15:15", "duration": "1 h 03", "via": "direct"}
+        ),
     ),
-    Option(
+    AgentOption(
         id="o2",
         title="TGV INOUI 14 h 46 → 15 h 49, direct",
         price_eur=38.0,
-        details="Durée 1 h 03, non remboursable",
+        conditions="Non remboursable",
+        details=OptionDetails(
+            **{"departure": "14:46", "arrival": "15:49", "duration": "1 h 03", "via": "direct"}
+        ),
     ),
-    Option(id="o3", title="TER 15 h 05 → 17 h 22, 1 correspondance", price_eur=27.5, details="Durée 2 h 17"),
+    AgentOption(
+        id="o3",
+        title="TER 15 h 05 → 17 h 22, 1 correspondance",
+        price_eur=27.5,
+        details=OptionDetails(
+            **{"departure": "15:05", "arrival": "17:22", "duration": "2 h 17", "via": "1 correspondance"}
+        ),
+    ),
 ]
 FOOD_OPTIONS = [
-    Option(
+    AgentOption(
         id="o1",
         title="Pizza margherita, Pizzeria Napoli",
         price_eur=11.5,
         rating=4.6,
-        details="Livraison 25-35 min",
+        details=OptionDetails(delivery="25-35 min"),
     ),
-    Option(
+    AgentOption(
         id="o2",
         title="Pizza margherita, Luigi & Co",
         price_eur=12.9,
         rating=4.4,
-        details="Livraison 20-30 min",
+        details=OptionDetails(delivery="20-30 min"),
     ),
-    Option(
+    AgentOption(
         id="o3",
         title="Pizza margherita, Bella Italia",
         price_eur=10.0,
         rating=4.1,
-        details="Livraison 40-50 min",
+        details=OptionDetails(delivery="40-50 min"),
     ),
 ]
 
 
 class FakeShoppingAgent:
+    """Mêmes sorties que ShoppingAgent (contrats communs). Sans callback, "pay" réussit : c'est un faux."""
+
     def __init__(
         self,
         *,
         approval_callback: ApprovalCallback | None = None,
+        need_human_callback: NeedHumanCallback | None = None,
         price_change_on_recheck: bool = False,
         need_human_at: str | None = None,
         speed: float | None = None,
     ) -> None:
         logging.getLogger(__name__).warning("Agent FACTICE : aucune action sur un vrai site.")
         self.order_id = ""
+        self.agent_view_url: str | None = None
         self._approval_callback = approval_callback
+        self._need_human_callback = need_human_callback
         self._price_change = price_change_on_recheck
         self._need_human_at = need_human_at
         self._speed = float(os.getenv("PILOTE_FAKE_SPEED", "1.0")) if speed is None else speed
@@ -79,25 +109,30 @@ class FakeShoppingAgent:
     async def _wait(self, seconds: float, phase: str) -> None:
         await asyncio.sleep(seconds * self._speed)
         if self._need_human_at == phase:
+            if self._need_human_callback is not None:
+                await self._need_human_callback(f"CAPTCHA simulé pendant l'étape {phase}")
+                return
             raise NeedsHuman(f"CAPTCHA simulé pendant l'étape {phase}")
 
     def _is_train(self) -> bool:
         assert self._intent is not None
-        return "sncf" in self._intent.site.lower() or "train" in self._intent.item.lower()
+        return self._intent.category == "train"
 
     async def start(self, intent: Intent, site_card: SiteCard | None = None) -> None:
         self._intent = intent
-        self.order_id = uuid.uuid4().hex[:12]
+        self.order_id = ""
+        self._chosen = None
         await self._wait(1.0, "start")
 
     async def search(self) -> list[Option]:
         await self._wait(6.0, "search")
-        self._options = list(TRAIN_OPTIONS if self._is_train() else FOOD_OPTIONS)
+        self._options = to_options(TRAIN_OPTIONS if self._is_train() else FOOD_OPTIONS)
         return self._options
 
     async def refine(self, message: str) -> list[Option]:
         await self._wait(4.0, "refine")
-        self._options = sorted(self._options, key=lambda o: o.price_eur or 0)
+        cheapest_first = sorted(self._options, key=lambda o: o.price_cents)
+        self._options = [o.model_copy(update={"rank": i}) for i, o in enumerate(cheapest_first, start=1)]
         return self._options
 
     async def choose(self, option_id: str) -> None:
@@ -107,20 +142,26 @@ class FakeShoppingAgent:
 
     def _summary(self, extra_eur: float = 0.0) -> OrderSummary:
         assert self._chosen is not None and self._intent is not None
-        fees = 0.0 if self._is_train() else 2.5
-        price = (self._chosen.price_eur or 0.0) + extra_eur
-        return OrderSummary(
-            order_id=self.order_id,
-            site=self._intent.site,
-            items=[OrderItem(name=self._chosen.title, quantity=1, price_eur=price)],
-            fees_eur=fees,
-            total_eur=round(price + fees, 2),
-            delivery=self._chosen.details,
-            refund_terms="Billet non remboursable" if self._is_train() else None,
-        ).with_hash()
+        site = "www.sncf-connect.com" if self._is_train() else "www.ubereats.com"
+        fee = 0.0 if self._is_train() else 2.5
+        price = self._chosen.price_cents / 100 + extra_eur
+        raw = AgentOrderSummary(
+            items=[
+                AgentOrderItem(name=self._chosen.title, quantity=1, unit_price_eur=price, total_eur=price)
+            ],
+            fees=[AgentFee(label="Frais de livraison", amount_eur=fee)] if fee else [],
+            total_eur=round(price + fee, 2),
+            page_url=f"https://{site}/paiement",
+            when_label=self._chosen.details.get("delivery") or self._chosen.details.get("departure"),
+            conditions="Billet non remboursable" if self._is_train() else None,
+            payment_button_label="Payer",
+        )
+        return to_order_summary(raw, order_id=self.order_id, site=domain_of(site))
 
     async def checkout(self) -> OrderSummary:
         await self._wait(8.0, "checkout")
+        if not self.order_id:
+            self.order_id = str(uuid.uuid4())
         return self._summary()
 
     async def recheck(self) -> OrderSummary:

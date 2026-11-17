@@ -1,19 +1,32 @@
-"""Interface commune à ShoppingAgent (vrai agent H) et FakeShoppingAgent (données inventées)."""
+"""Interface commune à ShoppingAgent (vrai agent H) et FakeShoppingAgent (données inventées).
+
+Les types viennent de orchestrator/ports.py (membre 5) : ne pas les redéfinir ici.
+"""
 
 from __future__ import annotations
 
-from collections.abc import Awaitable, Callable
-from typing import Literal, Protocol
+from orchestrator.ports import (
+    ApprovalCallback,
+    ApprovalDecision,
+    NeedHumanCallback,
+    PaymentResult,
+    ShoppingAgent,
+)
 
-from .models import Intent, Option, OrderSummary, PaymentResult, SiteCard
+# Nom historique de l'interface de l'agent.
+ShoppingAgentProtocol = ShoppingAgent
 
-Decision = Literal["approved", "denied"]
-# Appelé quand l'agent veut cliquer sur un bouton qui engage de l'argent.
-# Facultatif : sans callback, l'agent paie pendant l'étape pay() et la banque fait la vérification.
-ApprovalCallback = Callable[[OrderSummary], Awaitable[Decision]]
-# Appelé en cas de CAPTCHA, cryptogramme, connexion… Renvoie "resolved" quand un humain
-# a fait le geste, ou "abort" pour annuler la commande.
-NeedHumanCallback = Callable[[str], Awaitable[Literal["resolved", "abort"]]]
+__all__ = [
+    "AgentError",
+    "ApprovalCallback",
+    "ApprovalDecision",
+    "NeedHumanCallback",
+    "NeedsHuman",
+    "PaymentDenied",
+    "PaymentResult",
+    "ShoppingAgent",
+    "ShoppingAgentProtocol",
+]
 
 
 class AgentError(RuntimeError):
@@ -26,16 +39,3 @@ class NeedsHuman(AgentError):
 
 class PaymentDenied(AgentError):
     """L'agent n'a pas eu l'autorisation de payer : rien n'a été cliqué."""
-
-
-class ShoppingAgentProtocol(Protocol):
-    order_id: str
-
-    async def start(self, intent: Intent, site_card: SiteCard | None = None) -> None: ...
-    async def search(self) -> list[Option]: ...
-    async def refine(self, message: str) -> list[Option]: ...
-    async def choose(self, option_id: str) -> None: ...
-    async def checkout(self) -> OrderSummary: ...
-    async def recheck(self) -> OrderSummary: ...
-    async def pay(self) -> PaymentResult: ...
-    async def cancel(self) -> None: ...

@@ -7,14 +7,13 @@ l'agent répond dans un format structuré unique (AgentAnswer).
 C'est l'agent de la démo : il agit sur les vrais sites, avec la vraie carte enregistrée
 dans le compte marchand. Un paiement "accepted" est une vraie commande, payée.
 
-Paiement : la vérification est celle de la banque (validation dans l'application
-bancaire du titulaire, DSP2). Il n'y a plus de triple vérification côté Pilote.
-L'agent paie quand l'orchestrateur appelle pay(). Le seul garde-fou technique :
-l'agent doit appeler l'outil request_payment_approval avant tout clic qui engage de
-l'argent, et cet outil répond "denied" en dehors de l'étape pay(), si le total dépasse
-PILOTE_MAX_TOTAL_EUR (999 € par défaut) ou s'il est illisible. L'agent ne peut donc pas
-payer de lui-même pendant la recherche ou le panier. Un approval_callback reste possible
-si l'orchestrateur veut ajouter sa propre décision.
+Paiement : l'agent doit appeler l'outil request_payment_approval avant tout clic qui engage de
+l'argent. Cet outil répond "denied" en dehors de l'étape pay(), si le total dépasse
+PILOTE_MAX_TOTAL_EUR (999 € par défaut), s'il est illisible, ou si l'approval_callback de
+l'orchestrateur refuse, échoue ou ne répond pas. Sans approval_callback, il répond "denied" aussi :
+payer sans l'approbation de l'orchestrateur demande un choix explicite (auto_approve=True ou
+PILOTE_AUTO_APPROVE=1, réservé aux tests réels en solo, jamais en production). Après le clic, la
+validation bancaire (DSP2) reste faite par le titulaire dans son application.
 
 Variables d'environnement :
 - HAI_API_KEY : clé H (lue par le SDK).
@@ -22,6 +21,8 @@ Variables d'environnement :
   Sans elle, l'agent est défini dans le code (consigne de prompts.py).
 - PILOTE_BROWSER_HOST : user_device (Chrome dédié de l'ordinateur de démo, par défaut) ou cloud.
 - PILOTE_MAX_TOTAL_EUR : plafond d'un paiement, en euros (999 par défaut).
+- PILOTE_AUTO_APPROVE : 1 pour payer sans approval_callback (voir plus haut). Absent : refus.
+- PILOTE_SITE_TRAIN, PILOTE_SITE_REPAS : site visé par catégorie (plan B : adresses des faux sites).
 """
 
 from __future__ import annotations
@@ -35,13 +36,31 @@ from typing import Any
 from hai_agents import AsyncClient
 from hai_agents.tools import Tool, tool
 
+from orchestrator.contracts import Intent, Option, OrderSummary, SiteCard
+from orchestrator.ports import PaymentResult
+
 from . import prompts
 from .base import AgentError, ApprovalCallback, NeedHumanCallback, NeedsHuman, PaymentDenied
 from .metrics import RunMetrics, append_result
-from .models import AgentAnswer, Intent, Option, OrderSummary, PaymentResult, SiteCard
+from .models import AgentAnswer, AgentOrderSummary, to_options, to_order_summary
 from .site_memory import SiteMemory, domain_of, merge_card, site_memory_from_env
 
 OK_STATUSES = {"idle", "completed"}
+
+# Site visé par catégorie d'achat (docs/sites.md). Le plan B remplace ces adresses par celles des
+# faux sites avec PILOTE_SITE_TRAIN et PILOTE_SITE_REPAS.
+DEFAULT_SITES = {"train": "https://www.sncf-connect.com", "repas": "https://www.ubereats.com/fr"}
+
+
+def site_for(intent: Intent) -> str:
+    """Adresse du site pour la demande ; AgentError si la catégorie n'est pas prise en charge."""
+    category = intent.category
+    if category is None:
+        raise AgentError("Catégorie d'achat inconnue : l'orchestrateur doit la demander d'abord.")
+    site = os.getenv(f"PILOTE_SITE_{category.upper()}") or DEFAULT_SITES.get(category)
+    if site is None:
+        raise AgentError(f"Aucun site configuré pour la catégorie « {category} ».")
+    return site
 
 
 class ShoppingAgent:
@@ -57,6 +76,7 @@ class ShoppingAgent:
         step_timeout_s: float = 600,
         record_metrics: bool = True,
         max_total_eur: float | None = None,
+        auto_approve: bool | None = None,
     ) -> None:
         self._client = client
         self._agent_name = agent if agent is not None else os.getenv("PILOTE_H_AGENT") or None
@@ -70,14 +90,20 @@ class ShoppingAgent:
             max_total_eur if max_total_eur is not None else float(os.getenv("PILOTE_MAX_TOTAL_EUR", "999"))
         )
 
-        self.order_id = ""
+        self._auto_approve = (
+            auto_approve if auto_approve is not None else os.getenv("PILOTE_AUTO_APPROVE") == "1"
+        )
+
+        self.order_id = ""  # UUID créé par checkout() ; recheck() le conserve
         self.agent_view_url: str | None = None
+        self._site = ""
         self._session: Any = None
         self._cursor = 0
         self._intent: Intent | None = None
         self._options: list[Option] = []
         self._chosen: Option | None = None
         self._paying = False
+        self._pay_denied = False  # le garde-fou a refusé pendant pay()
         self._tool_cache: dict[tuple[str, str], str] = {}
         self._metrics: RunMetrics | None = None
         self._last_answer: AgentAnswer | None = None
@@ -100,33 +126,49 @@ class ShoppingAgent:
         return [request_payment_approval, need_human]
 
     async def _decide_payment(self, summary: Any) -> str:
+        """Décision de l'outil request_payment_approval. Tout ce qui est douteux donne "denied"."""
         # Le SDK passe les arguments tels que l'agent les envoie : un dict JSON, pas un objet.
-        if not isinstance(summary, OrderSummary):
-            try:
-                summary = OrderSummary.model_validate(summary)
-            except Exception:
-                return "denied"  # récapitulatif illisible : on ne paie pas
-        summary = summary.model_copy(update={"order_id": self.order_id}).with_hash()
-        key = ("pay", summary.hash)
+        try:
+            raw = (
+                summary
+                if isinstance(summary, AgentOrderSummary)
+                else AgentOrderSummary.model_validate(summary)
+            )
+            order = to_order_summary(raw, order_id=self.order_id, site=self._site or "inconnu")
+        except Exception:
+            return "denied"  # récapitulatif illisible : on ne paie pas
+        key = ("pay", order.hash)
         if key in self._tool_cache:  # appels répétés pour la même action : même réponse
             return self._tool_cache[key]
-        if not self._paying:
+        if not self._paying or not self.order_id:
             return "denied"  # hors de l'étape pay() : l'agent ne paie jamais de lui-même (pas mis en cache)
-        if summary.total_eur is None or summary.total_eur > self._max_total_eur:
-            # Paiement réel : jamais au-delà du plafond, ni sans total lisible.
-            decision = "denied"
+        if order.total_cents > self._max_total_eur * 100:
+            decision = "denied"  # paiement réel : jamais au-delà du plafond
         elif self._approval_callback is not None:
-            decision = await self._approval_callback(summary)
+            try:
+                answer = await self._approval_callback(order)
+            except Exception:
+                answer = "denied"  # erreur ou délai dépassé côté orchestrateur : refus
+            decision = "approved" if answer == "approved" else "denied"
         else:
-            decision = "approved"  # la vérification se fait ensuite dans l'application bancaire
+            decision = "approved" if self._auto_approve else "denied"
         self._tool_cache[key] = decision
+        self._pay_denied = self._pay_denied or decision == "denied"
         return decision
 
     async def _ask_human(self, reason: str) -> str:
         key = ("human", reason.strip().lower())
         if key in self._tool_cache:
             return self._tool_cache[key]
-        answer = "abort" if self._need_human_callback is None else await self._need_human_callback(reason)
+        if self._need_human_callback is None:
+            answer = "abort"
+        else:
+            try:
+                # Le callback de ports.py ne renvoie rien : il rend la main quand l'humain a fini.
+                result = await self._need_human_callback(reason)
+                answer = "abort" if result == "abort" else "resolved"
+            except Exception:
+                answer = "abort"
         self._tool_cache[key] = answer
         return answer
 
@@ -193,21 +235,25 @@ class ShoppingAgent:
     # --- interface publique ----------------------------------------------------------
 
     async def start(self, intent: Intent, site_card: SiteCard | None = None) -> None:
+        self._site = site_for(intent)
         client = await self._ensure_client()
         self._intent = intent
-        self.order_id = uuid.uuid4().hex[:12]
+        self.order_id = ""
+        self._chosen = None
         self._tool_cache.clear()
         self._paying = False
-        domain = domain_of(intent.site)
+        domain = domain_of(self._site)
         if site_card is None:
             site_card = await self._memory.get(domain)
         self._metrics = RunMetrics(site=domain, agent=self._agent_name or "inline", started=time.monotonic())
         self._session = await client.start_session(
             agent=self._agent_spec(),
-            messages=prompts.search_message(intent, site_card, with_instructions=bool(self._agent_name)),
+            messages=prompts.search_message(
+                intent, self._site, site_card, with_instructions=bool(self._agent_name)
+            ),
             answer_schema=AgentAnswer,
             tools=self._tools(),
-            idempotency_key=self.order_id,
+            idempotency_key=uuid.uuid4().hex,
             timezone="Europe/Paris",
         )
         self._cursor = 0
@@ -219,12 +265,12 @@ class ShoppingAgent:
 
     async def search(self) -> list[Option]:
         answer = await self._wait("search")
-        self._options = answer.options[:8]
+        self._options = to_options(answer.options)
         return self._options
 
     async def refine(self, message: str) -> list[Option]:
         answer = await self._send(prompts.refine_message(message), "refine")
-        self._options = answer.options[:8]
+        self._options = to_options(answer.options)
         return self._options
 
     async def choose(self, option_id: str) -> None:
@@ -236,24 +282,36 @@ class ShoppingAgent:
     def _summary_from(self, answer: AgentAnswer, phase: str) -> OrderSummary:
         if answer.order_summary is None:
             raise AgentError(f"Étape {phase} : pas de récapitulatif renvoyé")
-        site = self._intent.site if self._intent else ""
-        return answer.order_summary.model_copy(update={"order_id": self.order_id, "site": site}).with_hash()
+        try:
+            return to_order_summary(answer.order_summary, order_id=self.order_id, site=domain_of(self._site))
+        except ValueError as error:
+            raise AgentError(f"Étape {phase} : récapitulatif inutilisable ({error})") from error
 
     async def checkout(self) -> OrderSummary:
         if self._chosen is None:
             raise AgentError("Aucune option choisie : appelle choose() d'abord.")
+        if not self.order_id:
+            self.order_id = str(uuid.uuid4())
         answer = await self._send(prompts.checkout_message(self._chosen), "checkout")
         return self._summary_from(answer, "checkout")
 
     async def recheck(self) -> OrderSummary:
+        if not self.order_id:
+            raise AgentError("Pas de commande en cours : appelle checkout() d'abord.")
         answer = await self._send(prompts.recheck_message(), "recheck")
         return self._summary_from(answer, "recheck")
 
     async def pay(self) -> PaymentResult:
         """Clique sur le bouton de paiement ; la validation se fait dans l'application bancaire."""
-        self._paying = True
+        self._paying, self._pay_denied = True, False
         try:
             answer = await self._send(prompts.pay_message(), "pay")
+        except NeedsHuman as blocked:
+            if not self._pay_denied:
+                raise
+            # Refus du garde-fou : l'agent explique pourquoi il s'arrête, ce n'est pas un CAPTCHA.
+            await self._finish("paiement non effectué", "-")
+            raise PaymentDenied(str(blocked)) from blocked
         finally:
             self._paying = False
         if answer.payment_result is None:
@@ -283,6 +341,7 @@ class ShoppingAgent:
         now = time.monotonic()
         if answer is not None and answer.payment_result is not None:
             old = await self._memory.get(metrics.site)
-            await self._memory.put(merge_card(old, metrics.site, answer.site_notes, now - metrics.started))
+            card = merge_card(old, metrics.site, answer.site_notes, now - metrics.started, metrics.steps)
+            await self._memory.put(card)
         if self._record:
             append_result(metrics, now)

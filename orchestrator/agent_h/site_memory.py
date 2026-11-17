@@ -6,13 +6,17 @@ pratique pour développer, perdue au redémarrage.
 
 from __future__ import annotations
 
+import datetime as dt
 import os
 import re
 from typing import Protocol
 
 import httpx
+from pydantic import ValidationError
 
-from .models import SiteCard, SiteNotes
+from orchestrator.contracts import SiteCard
+
+from .models import SiteNotes
 
 MAX_LINES = 12
 # Tout ce qui ressemble à une donnée personnelle : email, numéro long, adresse avec numéro de rue.
@@ -30,17 +34,38 @@ def sanitize(lines: list[str]) -> list[str]:
 
 
 def domain_of(site: str) -> str:
-    host = re.sub(r"^https?://", "", site.strip().lower()).split("/")[0]
-    return host.removeprefix("www.")
+    """Clé de la fiche (Redis `site:{domaine}`), telle que dans docs/sites.md : www.sncf-connect.com."""
+    return re.sub(r"^https?://", "", site.strip().lower()).split("/")[0]
 
 
-def merge_card(old: SiteCard | None, domain: str, notes: SiteNotes | None, seconds: float) -> SiteCard:
-    card = old or SiteCard(domain=domain)
-    runs = card.runs + 1
-    steps = sanitize((notes.steps if notes else []) or card.steps)
-    pitfalls = sanitize(card.pitfalls + (notes.pitfalls if notes else []))
-    avg = (card.avg_seconds * card.runs + seconds) / runs
-    return SiteCard(domain=domain, steps=steps, pitfalls=pitfalls, avg_seconds=round(avg, 1), runs=runs)
+def _mean(old_mean: float | None, old_count: int, value: float | None) -> float | None:
+    if value is None:
+        return old_mean
+    return round(((old_mean or 0.0) * old_count + value) / (old_count + 1), 1)
+
+
+def merge_card(
+    old: SiteCard | None,
+    domain: str,
+    notes: SiteNotes | None,
+    seconds: float,
+    steps: int | None = None,
+    now: dt.datetime | None = None,
+) -> SiteCard:
+    """Ajoute une commande menée jusqu'au paiement à la fiche du site (contrat SiteCard)."""
+    runs = old.runs if old else 0
+    buttons = sanitize((old.useful_buttons if old else []) + (notes.useful_buttons if notes else []))
+    return SiteCard(
+        domain=domain,
+        steps=sanitize((notes.steps if notes else []) or (old.steps if old else [])),
+        useful_buttons=[button[:80] for button in buttons],
+        pitfalls=sanitize((old.pitfalls if old else []) + (notes.pitfalls if notes else [])),
+        runs=runs + 1,
+        successful_runs=(old.successful_runs if old else 0) + 1,
+        avg_duration_s=_mean(old.avg_duration_s if old else None, runs, seconds),
+        avg_steps=_mean(old.avg_steps if old else None, runs, steps),
+        updated_at=now or dt.datetime.now(dt.UTC),
+    )
 
 
 class SiteMemory(Protocol):
@@ -72,7 +97,12 @@ class UpstashSiteMemory:
 
     async def get(self, domain: str) -> SiteCard | None:
         raw = await self._cmd("GET", f"site:{domain}")
-        return SiteCard.model_validate_json(raw) if raw else None
+        if not raw:
+            return None
+        try:
+            return SiteCard.model_validate_json(raw)
+        except ValidationError:  # fiche écrite dans un ancien format : on repart de zéro
+            return None
 
     async def put(self, card: SiteCard) -> None:
         await self._cmd("SET", f"site:{card.domain}", card.model_dump_json())
