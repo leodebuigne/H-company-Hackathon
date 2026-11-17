@@ -6,7 +6,15 @@ Hackathon Eugenia 2026, piste H Company. Pilote est un assistant vocal, pensé d
 
 Objectif : fonctionner sur n'importe quel site marchand (train, livraison de repas, boutique en ligne) avec la même triple vérification. Pour le hackathon : 2 faux sites (train, puis repas), et le même code d'agent pour les deux.
 
-Stack : H Company (API Agent, SDK `hai-agents-ts` de préférence), Hugging Face (reconnaissance vocale, modèle de langage pour comprendre et résumer, synthèse vocale), Vercel (Next.js, workflow de validation, crédit de 30 $).
+Stack : H Company (API Agent, SDK Python `hai-agents`), Hugging Face (reconnaissance vocale, modèle de langage pour comprendre et résumer, synthèse vocale), orchestrateur Python 3.12 / FastAPI, Vercel (Next.js, workflow de validation, crédit de 30 $). Choix et raisons : `docs/decisions.md`.
+
+## Dépôt et contrats
+
+- `contracts/` fait foi (schémas JSON + README des messages WebSocket). Traductions : `orchestrator/contracts.py` (pydantic), `orchestrator/ports.py` (interfaces des briques), `web/lib/contracts/` (généré par `npm run contracts:gen`, ne pas éditer).
+- Ne jamais modifier un contrat seul : ouvrir une issue GitHub, le membre 5 tranche.
+- Argent en centimes entiers. Tous les champs d'un contrat sont présents (`null` si inconnu).
+- N'écrire que dans les dossiers de sa partie (voir `.github/CODEOWNERS`). Tests à côté du code.
+- Vérifier avant de pousser : `ruff check . && ruff format --check . && pytest -q` à la racine, `npm run lint && npm run typecheck && npm test` dans `web/` (npm 11).
 
 ## Adresses
 

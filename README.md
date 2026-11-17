@@ -21,8 +21,21 @@ Les mêmes adresses sont dans `.env.example` (variables `RAIL_DEMO_URL` et `REPA
 - `repas-demo/` : faux site de livraison de repas **Miam Démo** (orange), déployé sur Vercel (projet `h-company-hackathon-repas-demo`, Root Directory `repas-demo`, preset Other). Détails dans `repas-demo/README.md`.
 
 Chaque faux site a son dossier et son propre projet Vercel : ils restent indépendants, et l'application Pilote (à venir) aura aussi le sien.
-- `.env.example` : variables d'environnement attendues par l'application Pilote (sans aucune vraie clé).
+- `contracts/` : schémas JSON partagés et README des messages WebSocket. **Font foi.**
+- `orchestrator/` : Python 3.12, FastAPI, machine à états (membre 5). `orchestrator/agent_h/` : agent H (membre 1). `orchestrator/ai/` : modèles Hugging Face (membre 2).
+- `web/` : Next.js. Validation des proches (membre 3), interface vocale (membre 4).
+- `docs/` : décisions, sites de test, phrases de test, résultats.
+- `.env.example` : variables d'environnement attendues (sans aucune vraie clé).
 - `CLAUDE.md` : contexte du projet pour les assistants de code.
+
+## Démarrer
+
+```
+python3.12 -m venv .venv && . .venv/bin/activate && pip install -e ".[dev]"
+pytest -q
+
+cd web && npm install -g npm@11 && npm install && npm test
+```
 
 ## Avancement
 

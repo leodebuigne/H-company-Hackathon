@@ -1,0 +1,223 @@
+{
+  "today": "2026-11-18",
+  "conventions": "voir docs/test-phrases.md",
+  "phrases": [
+    {
+      "id": 1,
+      "text": "Je voudrais un train pour Lille demain après 14 h",
+      "expected": {
+        "kind": "new_request",
+        "category": "train",
+        "when.date": "2026-11-19",
+        "when.after": "14:00",
+        "details.destination": "Lille",
+        "missing": [
+          "details.origin"
+        ]
+      }
+    },
+    {
+      "id": 2,
+      "text": "Un aller Paris Lyon vendredi matin, pas plus de 60 euros",
+      "expected": {
+        "kind": "new_request",
+        "category": "train",
+        "when.date": "2026-11-20",
+        "when.before": "12:00",
+        "budget_cents": 6000,
+        "details.origin": "Paris",
+        "details.destination": "Lyon",
+        "missing": []
+      }
+    },
+    {
+      "id": 3,
+      "text": "Deux billets de Bordeaux à Toulouse le 24 novembre à partir de 18 h",
+      "expected": {
+        "kind": "new_request",
+        "category": "train",
+        "quantity": 2,
+        "when.date": "2026-11-24",
+        "when.after": "18:00",
+        "details.origin": "Bordeaux",
+        "details.destination": "Toulouse",
+        "missing": []
+      }
+    },
+    {
+      "id": 4,
+      "text": "Je dois aller à Marseille",
+      "expected": {
+        "kind": "new_request",
+        "category": "train",
+        "details.destination": "Marseille",
+        "missing": [
+          "details.origin",
+          "when.date"
+        ]
+      }
+    },
+    {
+      "id": 5,
+      "text": "Un train direct Paris Nantes ce soir",
+      "expected": {
+        "kind": "new_request",
+        "category": "train",
+        "when.date": "2026-11-18",
+        "when.after": "18:00",
+        "details.origin": "Paris",
+        "details.destination": "Nantes",
+        "constraints~": "direct",
+        "missing": []
+      }
+    },
+    {
+      "id": 6,
+      "text": "Paris Strasbourg demain en première classe, avec un billet échangeable",
+      "expected": {
+        "kind": "new_request",
+        "category": "train",
+        "when.date": "2026-11-19",
+        "details.origin": "Paris",
+        "details.destination": "Strasbourg",
+        "details.class~": "premi",
+        "constraints~": "changeable",
+        "missing": []
+      }
+    },
+    {
+      "id": 7,
+      "text": "euh un train euh pour Lyon demain matin depuis Paris",
+      "expected": {
+        "kind": "new_request",
+        "category": "train",
+        "when.date": "2026-11-19",
+        "when.before": "12:00",
+        "details.origin": "Paris",
+        "details.destination": "Lyon",
+        "missing": []
+      }
+    },
+    {
+      "id": 8,
+      "text": "Une pizza margherita grande taille livrée avant 20 h",
+      "expected": {
+        "kind": "new_request",
+        "category": "repas",
+        "object~": "margherita",
+        "details.size~": "grand",
+        "when.date": "2026-11-18",
+        "when.before": "20:00",
+        "missing": []
+      }
+    },
+    {
+      "id": 9,
+      "text": "Commande-moi des sushis le plus vite possible",
+      "expected": {
+        "kind": "new_request",
+        "category": "repas",
+        "object~": "sushi",
+        "when.asap": true,
+        "missing": []
+      }
+    },
+    {
+      "id": 10,
+      "text": "Deux smash classic et des frites chez Smash Corner",
+      "expected": {
+        "kind": "new_request",
+        "category": "repas",
+        "object~": "smash classic",
+        "details.restaurant": "Smash Corner",
+        "missing": []
+      }
+    },
+    {
+      "id": 11,
+      "text": "J'ai faim, je veux un truc thaï pour moins de 15 euros",
+      "expected": {
+        "kind": "new_request",
+        "category": "repas",
+        "details.cuisine~": "tha",
+        "budget_cents": 1500,
+        "missing": []
+      }
+    },
+    {
+      "id": 12,
+      "text": "Un poké saumon pour 19 h 30",
+      "expected": {
+        "kind": "new_request",
+        "category": "repas",
+        "object~": "pok",
+        "when.date": "2026-11-18",
+        "when.before": "19:30",
+        "missing": []
+      }
+    },
+    {
+      "id": 13,
+      "text": "Je veux acheter un truc",
+      "expected": {
+        "kind": "new_request",
+        "category": null,
+        "object": null,
+        "missing~": "object",
+        "question": "non null"
+      }
+    },
+    {
+      "id": 14,
+      "text": "La deuxième",
+      "expected": {
+        "kind": "choose",
+        "choice_index": 2
+      }
+    },
+    {
+      "id": 15,
+      "text": "Donne-moi plus de détails sur la troisième",
+      "expected": {
+        "kind": "details",
+        "choice_index": 3
+      }
+    },
+    {
+      "id": 16,
+      "text": "Plutôt un train plus tôt, avant midi",
+      "expected": {
+        "kind": "refine",
+        "when.before": "12:00"
+      }
+    },
+    {
+      "id": 17,
+      "text": "Oui, c'est bon",
+      "expected": {
+        "kind": "confirm"
+      }
+    },
+    {
+      "id": 18,
+      "text": "Non, pas celle-là",
+      "expected": {
+        "kind": "deny"
+      }
+    },
+    {
+      "id": 19,
+      "text": "Annule tout",
+      "expected": {
+        "kind": "cancel"
+      }
+    },
+    {
+      "id": 20,
+      "text": "Quel temps fera-t-il demain ?",
+      "expected": {
+        "kind": "other"
+      }
+    }
+  ]
+}
