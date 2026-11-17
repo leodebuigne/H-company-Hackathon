@@ -27,8 +27,10 @@ PaymentResult = Literal["refused", "accepted", "unknown"]
 # Toute erreur, tout délai dépassé ou tout écart donne "denied".
 ApprovalCallback = Callable[[OrderSummary], Awaitable[ApprovalDecision]]
 
-# Appelé par l'outil H need_human (CAPTCHA, cryptogramme, connexion). La session est en pause.
-NeedHumanCallback = Callable[[str], Awaitable[None]]
+# Appelé par l'outil H need_human (CAPTCHA, cryptogramme, connexion). Rend la main quand un humain
+# a fait le geste ("resolved", ou None) ou quand il faut arrêter la commande ("abort").
+NeedHumanDecision = Literal["resolved", "abort"]
+NeedHumanCallback = Callable[[str], Awaitable[NeedHumanDecision | None]]
 
 
 class ShoppingAgent(Protocol):
@@ -59,7 +61,10 @@ class ShoppingAgent(Protocol):
         ...
 
     async def pay(self) -> PaymentResult:
-        """Après "approved" : clique sur le bouton de paiement et lit le résultat affiché."""
+        """Appelé par l'orchestrateur seulement après la triple vérification (oui, proche, relecture, oui).
+        Avant de cliquer, l'agent appelle request_payment_approval : l'orchestrateur répond "approved"
+        seulement si la page montre toujours le récapitulatif validé (même hash). Puis l'agent lit le
+        résultat affiché. Lève PaymentDenied si rien n'a été cliqué."""
         ...
 
     async def cancel(self) -> None: ...
