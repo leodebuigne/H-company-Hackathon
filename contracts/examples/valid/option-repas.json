@@ -1,0 +1,14 @@
+{
+  "id": "opt-1",
+  "rank": 1,
+  "title": "Pizza margherita, Bella Notte",
+  "price_cents": 1050,
+  "currency": "EUR",
+  "rating": 4.6,
+  "description": "Tomate, mozzarella, basilic",
+  "conditions": null,
+  "details": {
+    "restaurant": "Bella Notte",
+    "delivery_delay": "30 min"
+  }
+}

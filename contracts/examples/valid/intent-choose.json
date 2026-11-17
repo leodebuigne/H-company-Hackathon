@@ -1,0 +1,19 @@
+{
+  "kind": "choose",
+  "text": "Je prends la deuxième",
+  "category": null,
+  "object": null,
+  "quantity": null,
+  "when": {
+    "date": null,
+    "after": null,
+    "before": null,
+    "asap": false
+  },
+  "budget_cents": null,
+  "details": {},
+  "constraints": [],
+  "choice_index": 2,
+  "missing": [],
+  "question": null
+}

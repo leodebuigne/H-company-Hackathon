@@ -1,0 +1,5 @@
+{
+  "type": "error",
+  "code": "price_changed",
+  "message": "Le prix a changé depuis la validation : la commande est annulée."
+}

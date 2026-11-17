@@ -1,0 +1,21 @@
+{
+  "kind": "new_request",
+  "text": "Une pizza margherita grande taille livrée avant 20 h, pas plus de 20 euros",
+  "category": "repas",
+  "object": "pizza margherita",
+  "quantity": 1,
+  "when": {
+    "date": "2026-11-17",
+    "after": null,
+    "before": "20:00",
+    "asap": false
+  },
+  "budget_cents": 2000,
+  "details": {
+    "size": "grande"
+  },
+  "constraints": [],
+  "choice_index": null,
+  "missing": [],
+  "question": null
+}

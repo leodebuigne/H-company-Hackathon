@@ -1,0 +1,23 @@
+{
+  "kind": "new_request",
+  "text": "Je voudrais un train pour Lille demain après 14 h",
+  "category": "train",
+  "object": "billet de train",
+  "quantity": 1,
+  "when": {
+    "date": "2026-11-18",
+    "after": "14h",
+    "before": null,
+    "asap": false
+  },
+  "budget_cents": null,
+  "details": {
+    "destination": "Lille"
+  },
+  "constraints": [],
+  "choice_index": null,
+  "missing": [
+    "details.origin"
+  ],
+  "question": "Vous partez de quelle gare ?"
+}

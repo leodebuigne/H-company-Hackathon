@@ -1,0 +1,73 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://pilote.local/contracts/intent.schema.json",
+  "title": "Intent",
+  "description": "Ce que la personne vient de dire, compris par le modèle de langage (orchestrator/ai, parse_intent). Une phrase = un Intent. Le modèle ne devine jamais : ce qui manque va dans missing[] et question propose la question à poser.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["kind", "text", "category", "object", "quantity", "when", "budget_cents", "details", "constraints", "choice_index", "missing", "question"],
+  "properties": {
+    "kind": {
+      "description": "Type de phrase. new_request : nouvelle demande d'achat. refine : préciser ou changer la recherche en cours. choose : choisir une option proposée. details : demander plus d'infos sur une option. confirm : « oui ». deny : « non ». cancel : « annule ». other : hors sujet ou incompris.",
+      "enum": ["new_request", "refine", "choose", "details", "confirm", "deny", "cancel", "other"]
+    },
+    "text": {
+      "description": "Transcription brute de la phrase.",
+      "type": "string"
+    },
+    "category": {
+      "description": "Type d'achat. Sert à choisir le site et le délai de validation.",
+      "enum": ["train", "repas", "boutique", null]
+    },
+    "object": {
+      "description": "Ce que la personne veut, en quelques mots (« billet de train », « pizza margherita »).",
+      "type": ["string", "null"]
+    },
+    "quantity": {
+      "description": "Nombre d'articles ou de voyageurs, si dit.",
+      "type": ["integer", "null"],
+      "minimum": 1
+    },
+    "when": {
+      "description": "Quand : date de départ ou de livraison. Les dates relatives (« demain ») sont résolues avec la date du jour envoyée au modèle.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["date", "after", "before", "asap"],
+      "properties": {
+        "date": { "type": ["string", "null"], "format": "date", "description": "AAAA-MM-JJ" },
+        "after": { "type": ["string", "null"], "pattern": "^([01][0-9]|2[0-3]):[0-5][0-9]$", "description": "HH:MM, « après 14 h »" },
+        "before": { "type": ["string", "null"], "pattern": "^([01][0-9]|2[0-3]):[0-5][0-9]$", "description": "HH:MM, « avant 20 h »" },
+        "asap": { "type": "boolean", "description": "« le plus vite possible », « dès que possible »" }
+      }
+    },
+    "budget_cents": {
+      "description": "Budget maximum en centimes d'euro, si dit.",
+      "type": ["integer", "null"],
+      "minimum": 0
+    },
+    "details": {
+      "description": "Précisions propres au type d'achat, en texte libre. Clés conseillées : train → origin, destination, class ; repas → restaurant, cuisine, size, options ; boutique → brand, size, color.",
+      "type": "object",
+      "additionalProperties": { "type": "string" }
+    },
+    "constraints": {
+      "description": "Autres contraintes dites, une par entrée (« sans correspondance », « végétarien », « échangeable »).",
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "choice_index": {
+      "description": "Pour kind = choose ou details : rang de l'option visée, à partir de 1 (« la deuxième » → 2).",
+      "type": ["integer", "null"],
+      "minimum": 1
+    },
+    "missing": {
+      "description": "Informations indispensables qui manquent, avec un chemin de champ (« when.date », « details.origin », « category »). Vide si on peut lancer la recherche.",
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "question": {
+      "description": "Question courte à poser à l'oral pour obtenir la première information manquante. null si missing est vide.",
+      "type": ["string", "null"]
+    }
+  }
+}

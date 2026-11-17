@@ -1,0 +1,160 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://pilote.local/contracts/ws-message.schema.json",
+  "title": "WsMessage",
+  "description": "Messages échangés sur ws://localhost:8000/ws entre l'interface (web) et l'orchestrateur. Un message = un objet JSON avec un champ type. Détails et exemples dans contracts/README.md.",
+  "oneOf": [
+    { "$ref": "#/$defs/ClientAudio" },
+    { "$ref": "#/$defs/ClientText" },
+    { "$ref": "#/$defs/ClientCancel" },
+    { "$ref": "#/$defs/ServerReady" },
+    { "$ref": "#/$defs/ServerState" },
+    { "$ref": "#/$defs/ServerSay" },
+    { "$ref": "#/$defs/ServerTranscript" },
+    { "$ref": "#/$defs/ServerIntent" },
+    { "$ref": "#/$defs/ServerOptions" },
+    { "$ref": "#/$defs/ServerSummary" },
+    { "$ref": "#/$defs/ServerApproval" },
+    { "$ref": "#/$defs/ServerAgentView" },
+    { "$ref": "#/$defs/ServerError" }
+  ],
+  "$defs": {
+    "State": {
+      "enum": ["listening", "understanding", "searching", "proposing", "cart", "confirm_1", "awaiting_relative", "recheck", "confirm_2", "paying", "done", "cancelled", "human_needed"]
+    },
+    "ClientAudio": {
+      "description": "Interface → orchestrateur. Un enregistrement complet (bouton relâché). L'orchestrateur le supprime dès la transcription.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "data", "mime"],
+      "properties": {
+        "type": { "const": "audio" },
+        "data": { "type": "string", "contentEncoding": "base64", "minLength": 1 },
+        "mime": { "type": "string", "description": "ex. audio/webm;codecs=opus" }
+      }
+    },
+    "ClientText": {
+      "description": "Interface → orchestrateur. Mode texte de secours : remplace un message audio.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "text"],
+      "properties": {
+        "type": { "const": "text" },
+        "text": { "type": "string", "minLength": 1 }
+      }
+    },
+    "ClientCancel": {
+      "description": "Interface → orchestrateur. Échap ou « annule ». Toujours accepté, dans n'importe quel état.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type"],
+      "properties": {
+        "type": { "const": "cancel" }
+      }
+    },
+    "ServerReady": {
+      "description": "Orchestrateur → interface. Premier message après connexion.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "session_id"],
+      "properties": {
+        "type": { "const": "ready" },
+        "session_id": { "type": "string", "minLength": 1 }
+      }
+    },
+    "ServerState": {
+      "description": "Orchestrateur → interface. Changement d'état : l'interface joue le son correspondant.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "state"],
+      "properties": {
+        "type": { "const": "state" },
+        "state": { "$ref": "#/$defs/State" }
+      }
+    },
+    "ServerSay": {
+      "description": "Orchestrateur → interface. Phrase à dire. Si audio est null, l'interface utilise speechSynthesis en fr-FR avec text.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "text", "audio", "mime"],
+      "properties": {
+        "type": { "const": "say" },
+        "text": { "type": "string", "minLength": 1 },
+        "audio": { "type": ["string", "null"], "contentEncoding": "base64" },
+        "mime": { "type": ["string", "null"] }
+      }
+    },
+    "ServerTranscript": {
+      "description": "Orchestrateur → interface. Ligne de transcription pour l'écran spectateur.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "role", "text"],
+      "properties": {
+        "type": { "const": "transcript" },
+        "role": { "enum": ["user", "pilote"] },
+        "text": { "type": "string" }
+      }
+    },
+    "ServerIntent": {
+      "description": "Orchestrateur → interface. Intent compris, pour l'écran spectateur.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "intent"],
+      "properties": {
+        "type": { "const": "intent" },
+        "intent": { "$ref": "intent.schema.json" }
+      }
+    },
+    "ServerOptions": {
+      "description": "Orchestrateur → interface. Options trouvées (8 au maximum).",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "options"],
+      "properties": {
+        "type": { "const": "options" },
+        "options": { "type": "array", "maxItems": 8, "items": { "$ref": "option.schema.json" } }
+      }
+    },
+    "ServerSummary": {
+      "description": "Orchestrateur → interface. Récapitulatif de la page de paiement (après checkout() et après recheck()).",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "summary"],
+      "properties": {
+        "type": { "const": "summary" },
+        "summary": { "$ref": "order-summary.schema.json" }
+      }
+    },
+    "ServerApproval": {
+      "description": "Orchestrateur → interface. Statut de la validation du proche, à chaque changement.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "status"],
+      "properties": {
+        "type": { "const": "approval" },
+        "status": { "$ref": "approval-status.schema.json" }
+      }
+    },
+    "ServerAgentView": {
+      "description": "Orchestrateur → interface. Lien vers la vue en direct de l'agent H, pour l'écran spectateur.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "agent_view_url"],
+      "properties": {
+        "type": { "const": "agent_view" },
+        "agent_view_url": { "type": "string", "pattern": "^https?://" }
+      }
+    },
+    "ServerError": {
+      "description": "Orchestrateur → interface. Erreur. Le message est aussi dit à l'oral via un say.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "code", "message"],
+      "properties": {
+        "type": { "const": "error" },
+        "code": { "enum": ["transcription_failed", "not_understood", "agent_failed", "approval_failed", "price_changed", "timeout", "internal"] },
+        "message": { "type": "string" }
+      }
+    }
+  }
+}
