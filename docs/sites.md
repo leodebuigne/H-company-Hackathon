@@ -1,59 +1,67 @@
 # Sites de test
 
-Les deux seuls sites sur lesquels l'agent a le droit d'agir. Ils sont fictifs : aucun vrai billet, aucun vrai repas, aucun vrai paiement. Pourquoi des faux sites : voir `decisions.md`.
+Choix de l'équipe : **Uber Eats** (repas) et **SNCF Connect** (train), avec une carte virtuelle éphémère à 0 €. Les faux sites restent le plan B. Analyse complète des conditions d'utilisation : `docs/plan-pilote.md`, section « Tester en réel avec des cartes éphémères ».
 
-Pas de compte à créer ni de carte à saisir : chaque site affiche une carte enregistrée fictive. L'agent n'a donc jamais à taper de numéro de carte, de cryptogramme ou de mot de passe.
+## Règles d'usage (à respecter par tout le monde)
 
-## Site 1 : Rail Démo (train)
+- Comptes de l'équipe dont la perte n'est pas grave, jamais un compte principal. Un compte de secours par site.
+- Création du compte, connexion (code SMS ou email), CAPTCHA et validation bancaire : **toujours faits par un humain**, dans le Chrome dédié (profil `~/.hai/chrome-profile`, port 9222).
+- Une commande à la fois, déclenchée par une personne. Aucune collecte de données en masse.
+- **2 tentatives de paiement par site et par jour au maximum**, pour ne pas faire bloquer le compte pour suspicion de fraude. Noter chaque tentative dans le journal ci-dessous.
+- Au pitch : ne jamais dire que Pilote est autorisé sur ces sites. Le produit commercial passera par des accords ou les interfaces partenaires.
 
-- Adresse : https://h-company-hackathon-rail-demo.vercel.app (`RAIL_DEMO_URL`)
-- Domaine (clé `site:{domaine}`) : `h-company-hackathon-rail-demo.vercel.app`
-- Code : `rail-demo/`
+## Site 1 : SNCF Connect (train)
 
-| Étape | Page | Ce que l'agent fait |
+- Adresse : https://www.sncf-connect.com
+- Domaine (clé Redis `site:{domaine}`) : `www.sncf-connect.com`
+- Conditions d'utilisation : article 17.1, scraping et robots interdits sans accord écrit. Zone grise pour quelques commandes isolées du titulaire.
+
+Vérifications à faire à la main le jour 1 (remplir avec ce qui s'est réellement passé) :
+
+| Point | Résultat | Date, qui |
 | --- | --- | --- |
-| 1 | `index.html` | Fermer le bandeau cookies, saisir départ, arrivée, date, heure, rechercher |
-| 2 | `resultats.html` | Lire jusqu'à 8 trains (horaires, durée, correspondance, prix, conditions), puis « Choisir ce train » |
-| 3 | `recap.html` | Cocher « J'accepte les conditions de vente », continuer |
-| 4 | `paiement.html` | Lire le récapitulatif. **S'arrêter avant « Payer » (`id="payer"`) et appeler `request_payment_approval`** |
-| 5 | `validation.html` | Validation bancaire simulée : **un humain** clique « Refuser » ou « Confirmer le paiement » |
-| 6 | `confirmation.html` | Réservation fictive avec référence |
+| Compte créé et connecté dans le Chrome dédié, session qui reste ouverte | | |
+| Carte à 0 € enregistrée sur le compte (vérification à 0 ou 1 € ?) | | |
+| Cryptogramme redemandé au paiement avec la carte enregistrée ? | | |
+| CAPTCHA ou protection anti-robots quand l'agent navigue ? | | |
+| Commande complète à la main : étape et message du refus bancaire | | |
+| Libellé exact du bouton qui engage l'argent | | |
 
-Gares : Paris, Lille, Lyon, Marseille, Bordeaux, Nantes, Strasbourg, Rennes, Toulouse, Nice, Montpellier. Même recherche = mêmes trains.
+## Site 2 : Uber Eats (repas)
 
-Pièges : bandeau cookies à trois boutons qui se ressemblent ; deux boutons par train (« Voir le détail » et « Choisir ce train ») ; case des conditions de vente obligatoire.
+- Adresse : https://www.ubereats.com/fr
+- Domaine : `www.ubereats.com`
+- Conditions d'utilisation : article 11 c (pas de script pour extraire des données), 7.3 (compte personnel), 16 (fermeture possible du compte).
 
-| Scénario | Ajouter à l'URL | Effet attendu dans Pilote |
+| Point | Résultat | Date, qui |
 | --- | --- | --- |
-| Normal | rien | parcours complet |
-| Prix qui change | `?scenario=hausse` | +8 € si plus de 60 s entre récapitulatif et paiement : le hash change au `recheck()`, Pilote annule et le dit |
-| Train complet | `?scenario=complet` | le train devient complet au paiement : Pilote annule et le dit |
+| Connexion par code SMS ou email faite par un humain, session qui reste ouverte | | |
+| Adresse de livraison déjà renseignée | | |
+| Carte à 0 € enregistrée sur le compte (vérification à 0 ou 1 € ?) | | |
+| Cryptogramme redemandé au paiement ? | | |
+| CAPTCHA ou protection anti-robots quand l'agent navigue ? | | |
+| Commande complète à la main : étape et message du refus bancaire | | |
+| Libellé exact du bouton qui engage l'argent | | |
 
-## Site 2 : Miam Démo (livraison de repas)
+Si l'enregistrement de la carte échoue à 0 € : mettre 1 € le temps de l'enregistrer, puis la vider. Si un site redemande le cryptogramme, l'agent appelle `need_human` et ne le tape jamais.
 
-- Adresse : https://h-company-hackathon-repas-demo.vercel.app (`REPAS_DEMO_URL`)
-- Domaine : `h-company-hackathon-repas-demo.vercel.app`
-- Code : `repas-demo/`
+## Journal des tentatives de paiement
 
-| Étape | Page | Ce que l'agent fait |
-| --- | --- | --- |
-| 1 | `index.html` | Fermer le bandeau cookies, chercher un restaurant ou un plat, filtrer par catégorie |
-| 2 | `restaurant.html?r=<id>` | Fermer la pop-up promo, choisir les plats, remplir les options obligatoires, quantité |
-| 3 | `panier.html` | Vérifier quantités, heure de livraison (dès que possible ou créneau), pourboire, minimum de commande |
-| 4 | `paiement.html` | Lire le récapitulatif (articles, frais, total). **S'arrêter avant « Commander et payer » (`id="commander"`)** |
-| 5 | `validation.html` | Validation bancaire simulée, faite par un humain |
-| 6 | `confirmation.html` | Commande fictive avec référence |
+| Date | Site | Qui | Résultat (refusé, accepté, autre) | Remarque |
+| --- | --- | --- | --- | --- |
+| | | | | |
 
-Restaurants : Bella Notte (pizza), Smash Corner (burger), Sakura Box et Bangkok Street (asiatique), Verde Bowl (healthy), La Petite Douceur (desserts).
+## Plan B : faux sites
 
-Pièges : bandeau cookies à trois boutons ; pop-up promo à la première ouverture d'un menu ; options obligatoires (sans choix, le plat n'est pas ajouté) ; minimum de commande par restaurant.
+À utiliser si un vrai site bloque l'agent ou le compte le jour de la démo. Rien n'est dépensé, aucune carte n'est nécessaire.
 
-| Scénario | Ajouter à l'URL | Effet attendu dans Pilote |
-| --- | --- | --- |
-| Normal | rien | parcours complet |
-| Frais qui changent | `?scenario=hausse` | livraison +2 € si plus de 60 s entre panier et paiement : hash différent, Pilote annule |
-| Restaurant fermé | `?scenario=ferme` | fermeture au paiement : Pilote annule et le dit |
+| Site | Adresse | Bouton d'argent | Scénarios (`?scenario=`) |
+| --- | --- | --- | --- |
+| Rail Démo (train) | https://h-company-hackathon-rail-demo.vercel.app (`RAIL_DEMO_URL`) | « Payer » (`id="payer"`) | `hausse` : +8 € après 60 s, `complet` : train complet au paiement |
+| Miam Démo (repas) | https://h-company-hackathon-repas-demo.vercel.app (`REPAS_DEMO_URL`) | « Commander et payer » (`id="commander"`) | `hausse` : livraison +2 € après 60 s, `ferme` : restaurant fermé au paiement |
 
-## Fin du parcours en démo
+Le scénario `hausse` sert aussi à montrer au jury que Pilote annule quand le prix change entre la validation du proche et le paiement (le hash du récapitulatif change au `recheck()`).
 
-Après la triple vérification, l'agent clique sur le bouton de paiement. La page de validation bancaire s'affiche. Un membre de l'équipe clique **« Refuser »** (c'est le geste « validation bancaire » prévu). Le site affiche « Paiement refusé », `pay()` renvoie `refused` et Pilote dit que la banque a refusé le paiement. C'est la preuve que tout le parcours fonctionne sans dépenser d'argent.
+Après le clic sur le bouton d'argent, ces sites affichent une validation bancaire simulée avec « Refuser » et « Confirmer le paiement » : un membre de l'équipe clique « Refuser », jamais l'agent.
+
+Leur code a été retiré de `main` le 17/11. Il reste dans l'historique : `git show 7cc62bb:rail-demo/README.md`. À vérifier avant la démo : que les deux adresses répondent encore.

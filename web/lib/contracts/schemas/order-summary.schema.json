@@ -26,7 +26,7 @@
       "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
     },
     "site": {
-      "description": "Nom de domaine du site (« h-company-hackathon-rail-demo.vercel.app »).",
+      "description": "Nom de domaine du site (« www.sncf-connect.com », « www.ubereats.com »).",
       "type": "string",
       "minLength": 1
     },

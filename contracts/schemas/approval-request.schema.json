@@ -18,7 +18,7 @@
       "minLength": 1
     },
     "site_name": {
-      "description": "Nom du site lisible par un humain (« Rail Démo »).",
+      "description": "Nom du site lisible par un humain (« SNCF Connect »).",
       "type": "string",
       "minLength": 1
     },
@@ -40,7 +40,7 @@
       }
     },
     "timeout_seconds": {
-      "description": "Délai laissé à chaque proche avant de passer au suivant. 300 en réel, 30 en démo, plus court pour un repas.",
+      "description": "Délai laissé à chaque proche avant de passer au suivant. 300 au maximum, plus court pour un repas.",
       "type": "integer",
       "minimum": 10,
       "maximum": 300

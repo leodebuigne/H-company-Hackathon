@@ -14,7 +14,8 @@
     "rating",
     "description",
     "conditions",
-    "details"
+    "details",
+    "url"
   ],
   "properties": {
     "id": {
@@ -70,6 +71,14 @@
       "additionalProperties": {
         "type": "string"
       }
+    },
+    "url": {
+      "description": "Adresse de la page de l'option si elle en a une, sinon null.",
+      "type": [
+        "string",
+        "null"
+      ],
+      "pattern": "^https?://"
     }
   }
 }

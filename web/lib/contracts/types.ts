@@ -14,7 +14,7 @@ export interface ApprovalRequest {
    */
   user_first_name: string;
   /**
-   * Nom du site lisible par un humain (« Rail Démo »).
+   * Nom du site lisible par un humain (« SNCF Connect »).
    */
   site_name: string;
   category: "train" | "repas" | "boutique";
@@ -42,7 +42,7 @@ export interface ApprovalRequest {
     }[]
   ];
   /**
-   * Délai laissé à chaque proche avant de passer au suivant. 300 en réel, 30 en démo, plus court pour un repas.
+   * Délai laissé à chaque proche avant de passer au suivant. 300 au maximum, plus court pour un repas.
    */
   timeout_seconds: number;
 }
@@ -188,6 +188,10 @@ export interface Option {
   details: {
     [k: string]: string | undefined;
   };
+  /**
+   * Adresse de la page de l'option si elle en a une, sinon null.
+   */
+  url: string | null;
 }
 
 // order-summary.schema.json
@@ -200,7 +204,7 @@ export interface OrderSummary {
    */
   order_id: string;
   /**
-   * Nom de domaine du site (« h-company-hackathon-rail-demo.vercel.app »).
+   * Nom de domaine du site (« www.sncf-connect.com », « www.ubereats.com »).
    */
   site: string;
   /**
@@ -316,6 +320,7 @@ export interface SiteCard {
 export type WsMessage =
   | ClientAudio
   | ClientText
+  | ClientConfirm
   | ClientCancel
   | ServerReady
   | ServerState
@@ -359,6 +364,13 @@ export interface ClientAudio {
 export interface ClientText {
   type: "text";
   text: string;
+}
+/**
+ * Interface → orchestrateur. Oui ou non donné au clavier (Entrée / Échap sur la question posée), équivalent d'un « oui » ou « non » oral. Accepté seulement en proposing, confirm_1 et confirm_2.
+ */
+export interface ClientConfirm {
+  type: "confirm";
+  value: boolean;
 }
 /**
  * Interface → orchestrateur. Échap ou « annule ». Toujours accepté, dans n'importe quel état.

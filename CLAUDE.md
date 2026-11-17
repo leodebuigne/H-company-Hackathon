@@ -1,50 +1,39 @@
 # Pilote : contexte pour les assistants de code
 
+Plan complet de l'équipe (benchmark, architecture, répartition, prompts par membre) : `docs/plan-pilote.md`.
+
 ## Le projet
 
-Hackathon Eugenia 2026, piste H Company. Pilote est un assistant vocal, pensé d'abord pour les personnes aveugles : la personne dit ce qu'elle veut (« un train pour Lille demain après 14 h », « une pizza livrée avant 20 h »), l'agent H navigue sur le site, résume les options à l'oral, puis commande.
+Pilote est un assistant vocal en français qui fait des achats en ligne à la place d'une personne aveugle, sur de vrais sites marchands (Uber Eats et SNCF Connect pour le hackathon). Il utilise l'agent "computer use" de H Company (navigation) et des modèles Hugging Face (voix, langage, vision).
 
-Objectif : fonctionner sur n'importe quel site marchand (train, livraison de repas, boutique en ligne) avec la même triple vérification. Pour le hackathon : 2 faux sites (train, puis repas), et le même code d'agent pour les deux.
+Avant chaque paiement : un "oui" oral, la validation d'un proche par SMS, une relecture de la page, puis un deuxième "oui". La démo paie avec une carte virtuelle à 0 € : le paiement doit être refusé par la banque, ce qui prouve que le parcours marche.
 
-Stack : H Company (API Agent, SDK Python `hai-agents`), Hugging Face (reconnaissance vocale, modèle de langage pour comprendre et résumer, synthèse vocale), orchestrateur Python 3.12 / FastAPI, Vercel (Next.js, workflow de validation, crédit de 30 $). Choix et raisons : `docs/decisions.md`.
+## Dépôt
 
-## Dépôt et contrats
+```
+contracts/              schémas JSON partagés + README des messages WebSocket (font foi)
+orchestrator/           Python 3.12, FastAPI, machine à états (membre 5)
+orchestrator/agent_h/   agent H Company (membre 1)
+orchestrator/ai/        modèles Hugging Face (membre 2)
+web/                    Next.js : validation des proches (membre 3), interface vocale (membre 4)
+docs/                   décisions, sites, phrases de test, résultats
+```
 
-- `contracts/` fait foi (schémas JSON + README des messages WebSocket). Traductions : `orchestrator/contracts.py` (pydantic), `orchestrator/ports.py` (interfaces des briques), `web/lib/contracts/` (généré par `npm run contracts:gen`, ne pas éditer).
-- Ne jamais modifier un contrat seul : ouvrir une issue GitHub, le membre 5 tranche.
-- Argent en centimes entiers. Tous les champs d'un contrat sont présents (`null` si inconnu).
-- N'écrire que dans les dossiers de sa partie (voir `.github/CODEOWNERS`). Tests à côté du code.
-- Vérifier avant de pousser : `ruff check . && ruff format --check . && pytest -q` à la racine, `npm run lint && npm run typecheck && npm test` dans `web/` (npm 11).
+Traductions des contrats : `orchestrator/contracts.py` (pydantic), `orchestrator/ports.py` (interfaces des briques), `web/lib/contracts/` (généré par `npm run contracts:gen`, ne pas éditer). Argent en centimes entiers. Tous les champs sont présents (`null` si inconnu).
 
-## Adresses
+## Règles absolues
 
-- Faux site de train : https://h-company-hackathon-rail-demo.vercel.app (variable `RAIL_DEMO_URL` dans `.env.example`)
-- Scénarios de test : ajouter `?scenario=hausse` (prix +8 € après 60 s entre récapitulatif et paiement) ou `?scenario=complet` à l'URL.
-- Code du faux site de train : `rail-demo/`. Le bouton de paiement a l'id `payer` sur `paiement.html`.
-- Faux site de repas Miam Démo : https://h-company-hackathon-repas-demo.vercel.app (variable `REPAS_DEMO_URL`), code dans `repas-demo/`. Bouton `commander` sur `paiement.html`. Scénarios `?scenario=hausse` (frais de livraison +2 € après 60 s) et `?scenario=ferme`.
+- Ne modifie jamais un contrat seul : ouvre une issue GitHub, le membre 5 tranche.
+- N'écris que dans les dossiers de ta partie (voir `.github/CODEOWNERS`).
+- Aucune clé dans le code : lis les variables d'environnement et ajoute leur nom, sans valeur, à `.env.example`.
+- L'agent ne tape jamais de numéro de carte, de cryptogramme ni de mot de passe, ne résout jamais de CAPTCHA, ne crée jamais de compte, et ne clique jamais sur un bouton qui engage de l'argent sans approbation.
+- Une commande à la fois, déclenchée par une personne. 2 tentatives de paiement par site et par jour au maximum. Aucune collecte de données en masse.
+- Aucune donnée de santé ou de handicap stockée. L'audio est supprimé dès qu'il est transcrit.
+- Pilote annonce à l'oral qu'il est une IA : « Je suis Pilote, un assistant automatique ».
+- Si une API externe ne se comporte pas comme décrit, lis la documentation officielle au lieu de deviner (H : https://hub.hcompany.ai/llms.txt, Hugging Face : https://huggingface.co/docs/inference-providers) et note l'écart dans `docs/decisions.md`.
+- Travaille sur ta branche, en petits commits, avec des tests à côté du code.
 
-## Agent générique et mémoire des sites
+## Vérifier avant de pousser
 
-- Une seule consigne générique pour tous les sites, complétée par la demande et la fiche du site. Aucun code propre à un site.
-- Toute action qui engage de l'argent (Payer, Commander, Acheter, Valider la commande) est soumise à approbation, sur tous les sites.
-- Compréhension commune : chaque demande devient {site, objet, contraintes, date, budget}. Récapitulatif standard : articles, quantités, frais, total, date ou heure de livraison.
-- Mémoire des sites : après chaque commande réussie, enregistrer une fiche par site (étapes suivies, boutons utiles, pièges, temps) et l'ajouter à la consigne à la visite suivante. Le modèle n'est pas réentraîné. Stockage simple sur Vercel (Blob ou clé-valeur).
-
-## Parcours de validation (à respecter)
-
-1. L'agent lit le récapitulatif tiré de la page du site ; l'utilisateur dit « oui ».
-2. Identifiant de commande unique (site, articles, total) ; SMS au proche n° 1 avec un lien signé, à usage unique, valable 5 min (30 s en démo). Sans réponse : proche n° 2 puis n° 3. Délai réglable par type d'achat (plus court pour un repas).
-3. Si un proche valide : l'agent relit la page ; si rien n'a changé, l'utilisateur redit « oui ».
-4. Seulement alors, approuver l'action « Payer » dans H. La validation bancaire (`validation.html`) est faite par la personne.
-
-Refus, absence de réponse ou erreur = aucun paiement.
-
-## Règles à ne jamais casser
-
-- Agir uniquement sur les faux sites, jamais sur SNCF Connect, Uber Eats ou Amazon.
-- Ne jamais lire, dicter ni stocker un numéro de carte ou un cryptogramme. Aucun mot de passe en clair.
-- Aucun champ sur le handicap ou la santé. Supprimer l'audio après transcription.
-- La fiche d'un site ne contient aucune donnée personnelle (ni nom, ni adresse, ni contenu de commande).
-- L'agent annonce à l'oral qu'il est une IA (« Je suis Pilote, un assistant automatique »).
-- Le proche peut seulement valider ou refuser, jamais acheter ni modifier.
-- Aucune clé API dans le dépôt : tout passe par les variables d'environnement.
+- Racine : `ruff check . && ruff format --check . && pytest -q`
+- `web/` (npm 11) : `npm run contracts:check && npm run lint && npm run typecheck && npm test`

@@ -24,6 +24,5 @@
 # /web/app/(pilote)/            @TODO-membre-4
 # /web/components/              @TODO-membre-4
 
-# Faux sites
-# /rail-demo/                   @leodebuigne
-# /repas-demo/                  @leodebuigne
+# Plan d'équipe
+/docs/plan-pilote.md            @leodebuigne

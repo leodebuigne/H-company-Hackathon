@@ -21,7 +21,7 @@ HHMM_PATTERN = r"^([01][0-9]|2[0-3]):[0-5][0-9]$"
 
 OrderId = Annotated[str, Field(pattern=UUID_PATTERN)]
 Cents = Annotated[int, Field(ge=0)]
-# URL lue telle quelle sur la page : pas de validation stricte (les faux sites mettent des | dans la query).
+# URL lue telle quelle sur la page, sans validation stricte (query parfois non encodée).
 HttpUrlStr = Annotated[str, Field(pattern=r"^https?://")]
 Category = Literal["train", "repas", "boutique"]
 
@@ -84,6 +84,7 @@ class Option(_Strict):
     description: str | None
     conditions: str | None
     details: dict[str, str]
+    url: HttpUrlStr | None
 
 
 # --- OrderSummary -----------------------------------------------------------
@@ -179,11 +180,18 @@ class ClientText(_Strict):
     text: Annotated[str, Field(min_length=1)]
 
 
+class ClientConfirm(_Strict):
+    type: Literal["confirm"]
+    value: bool
+
+
 class ClientCancel(_Strict):
     type: Literal["cancel"]
 
 
-ClientMessage = Annotated[ClientAudio | ClientText | ClientCancel, Field(discriminator="type")]
+ClientMessage = Annotated[
+    ClientAudio | ClientText | ClientConfirm | ClientCancel, Field(discriminator="type")
+]
 
 
 class ServerReady(_Strict):

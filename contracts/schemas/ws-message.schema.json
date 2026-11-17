@@ -6,6 +6,7 @@
   "oneOf": [
     { "$ref": "#/$defs/ClientAudio" },
     { "$ref": "#/$defs/ClientText" },
+    { "$ref": "#/$defs/ClientConfirm" },
     { "$ref": "#/$defs/ClientCancel" },
     { "$ref": "#/$defs/ServerReady" },
     { "$ref": "#/$defs/ServerState" },
@@ -41,6 +42,16 @@
       "properties": {
         "type": { "const": "text" },
         "text": { "type": "string", "minLength": 1 }
+      }
+    },
+    "ClientConfirm": {
+      "description": "Interface → orchestrateur. Oui ou non donné au clavier (Entrée / Échap sur la question posée), équivalent d'un « oui » ou « non » oral. Accepté seulement en proposing, confirm_1 et confirm_2.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "value"],
+      "properties": {
+        "type": { "const": "confirm" },
+        "value": { "type": "boolean" }
       }
     },
     "ClientCancel": {

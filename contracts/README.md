@@ -24,6 +24,28 @@ Traductions :
 
 Les tests (`orchestrator/tests/test_contracts.py` et `web/lib/contracts/contracts.test.ts`) vérifient en CI que les exemples valides passent, que les invalides sont refusés, et que Python et TypeScript suivent les schémas.
 
+## Correspondance avec le plan d'équipe
+
+Le plan (`docs/plan-pilote.md`) donnait une première liste de champs. Les contrats la précisent ; voici où chaque champ du plan se retrouve.
+
+| Plan | Contrat |
+| --- | --- |
+| `Intent.site` | `Intent.category` (train, repas, boutique) : l'orchestrateur choisit le site |
+| `Intent.item` | `Intent.object` |
+| `Intent.date` | `Intent.when` (`date`, `after`, `before`, `asap`) |
+| `Intent.budget_max_eur` | `Intent.budget_cents` |
+| `Option.price_eur` | `Option.price_cents` |
+| `OrderSummary.fees_eur` | `OrderSummary.fees[]` (libellé + montant) |
+| `OrderSummary.total_eur` | `OrderSummary.total_cents` |
+| `OrderSummary.delivery` | `OrderSummary.when_label` |
+| `OrderSummary.refund_terms` | `OrderSummary.conditions` |
+| `ApprovalRequest.timeout_s` | `ApprovalRequest.timeout_seconds` |
+| `ApprovalStatus.state`, `by`, `at` | `ApprovalStatus.status`, `decided_by`, `decided_at` |
+| `SiteCard.avg_seconds` | `SiteCard.avg_duration_s` |
+| message `error {message}` | `error {code, message}` |
+
+Pourquoi les centimes : un total en euros à virgule (14.5 contre 14.50) change le hash sans que le prix change. Le statut s'appelle `status` et non `state` pour ne pas le confondre avec l'état de la commande.
+
 ## Règles communes
 
 - **Argent en centimes entiers** (`price_cents`, `total_cents`, `amount_cents`). Jamais de nombre à virgule. 14,50 € = `1450`. Devise toujours `"EUR"`.
@@ -54,6 +76,7 @@ Adresse : `ws://localhost:8000/ws`. Chaque message est un objet JSON avec un cha
 | --- | --- | --- |
 | `audio` | `data` (base64), `mime` | Bouton ou espace relâché. Un message = un enregistrement complet. |
 | `text` | `text` | Mode texte de secours. Traité exactement comme une transcription. |
+| `confirm` | `value` (booléen) | Oui ou non au clavier, équivalent d'un « oui » ou « non » oral. Accepté en `proposing`, `confirm_1`, `confirm_2`. |
 | `cancel` | | Échap ou « annule ». Accepté dans tous les états. |
 
 ### Orchestrateur → interface
