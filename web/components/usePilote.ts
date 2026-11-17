@@ -1,43 +1,84 @@
 "use client";
 
-// Connexion à l'orchestrateur et état partagé de l'interface (utilisateur ou spectateur).
+// Connexion à l'orchestrateur et état partagé de l'interface (utilisateur ou écran jury).
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { ClientMessage, Option, OrderState, OrderSummary, ServerMessage } from "./protocol";
+import type { ApprovalStatus, ClientMessage, Intent, Option, OrderSummary, ServerMessage, State } from "./protocol";
 
 export const ORCHESTRATOR_URL = process.env.NEXT_PUBLIC_ORCHESTRATOR_WS ?? "ws://localhost:8000/ws";
 
-export type LogEntry = { id: number; who: "pilote" | "user" | "system"; text: string; at: number };
+export type LogEntry = { id: number; who: "pilote" | "user" | "system"; text: string };
 
 export interface PiloteSnapshot {
   connected: boolean;
-  state: OrderState;
+  sessionId: string | null;
+  state: State;
+  intent: Intent | null;
   options: Option[];
   summary: OrderSummary | null;
+  approval: ApprovalStatus | null;
   log: LogEntry[];
   agentViewUrl: string | null;
-  humanReason: string | null;
   lastSay: string;
 }
 
 const INITIAL: PiloteSnapshot = {
   connected: false,
+  sessionId: null,
   state: "listening",
+  intent: null,
   options: [],
   summary: null,
+  approval: null,
   log: [],
   agentViewUrl: null,
-  humanReason: null,
   lastSay: "",
 };
 
 let logId = 0;
+const entry = (who: LogEntry["who"], text: string): LogEntry => ({ id: ++logId, who, text });
 
-export function usePilote(role: "user" | "spectator", onMessage?: (msg: ServerMessage) => void) {
+export function reduce(s: PiloteSnapshot, msg: ServerMessage): PiloteSnapshot {
+  switch (msg.type) {
+    case "ready":
+      return { ...s, sessionId: msg.session_id };
+    case "say":
+      // L'historique vient des messages transcript (role pilote), pour ne pas doubler les phrases.
+      return { ...s, lastSay: msg.text };
+    case "state": {
+      // Une nouvelle demande efface la commande précédente
+      const fresh = msg.state === "understanding" && ["done", "cancelled", "listening"].includes(s.state);
+      return {
+        ...s,
+        state: msg.state,
+        ...(fresh ? { intent: null, options: [], summary: null, approval: null, agentViewUrl: null } : {}),
+      };
+    }
+    case "transcript":
+      return { ...s, log: [...s.log, entry(msg.role, msg.text)] };
+    case "intent":
+      return { ...s, intent: msg.intent };
+    case "options":
+      return { ...s, options: msg.options };
+    case "summary":
+      return { ...s, summary: msg.summary };
+    case "approval":
+      return { ...s, approval: msg.status };
+    case "agent_view":
+      return { ...s, agentViewUrl: msg.agent_view_url };
+    case "error":
+      return { ...s, log: [...s.log, entry("system", msg.message)] };
+  }
+}
+
+export function usePilote(onMessage?: (msg: ServerMessage) => void) {
   const [snap, setSnap] = useState<PiloteSnapshot>(INITIAL);
   const wsRef = useRef<WebSocket | null>(null);
   const onMessageRef = useRef(onMessage);
-  onMessageRef.current = onMessage;
+
+  useEffect(() => {
+    onMessageRef.current = onMessage;
+  }, [onMessage]);
 
   useEffect(() => {
     let stopped = false;
@@ -46,10 +87,7 @@ export function usePilote(role: "user" | "spectator", onMessage?: (msg: ServerMe
     const connect = () => {
       const ws = new WebSocket(ORCHESTRATOR_URL);
       wsRef.current = ws;
-      ws.onopen = () => {
-        setSnap((s) => ({ ...s, connected: true }));
-        ws.send(JSON.stringify({ type: "hello", role } satisfies ClientMessage));
-      };
+      ws.onopen = () => setSnap((s) => ({ ...s, connected: true }));
       ws.onclose = () => {
         setSnap((s) => ({ ...s, connected: false }));
         if (!stopped) retry = setTimeout(connect, 2000);
@@ -72,48 +110,15 @@ export function usePilote(role: "user" | "spectator", onMessage?: (msg: ServerMe
       clearTimeout(retry);
       wsRef.current?.close();
     };
-  }, [role]);
+  }, []);
 
+  // Ce que dit ou tape l'utilisateur revient par le message transcript (role user).
   const send = useCallback((msg: ClientMessage) => {
     const ws = wsRef.current;
     if (!ws || ws.readyState !== WebSocket.OPEN) return false;
-    // Ce que dit ou tape l'utilisateur revient par le message "transcript", pour que
-    // l'interface et l'écran spectateur affichent le même historique.
     ws.send(JSON.stringify(msg));
     return true;
   }, []);
 
   return { ...snap, send };
-}
-
-function entry(who: LogEntry["who"], text: string): LogEntry {
-  return { id: ++logId, who, text, at: Date.now() };
-}
-
-function reduce(s: PiloteSnapshot, msg: ServerMessage): PiloteSnapshot {
-  switch (msg.type) {
-    case "say":
-      return { ...s, lastSay: msg.text, log: [...s.log, entry("pilote", msg.text)] };
-    case "state": {
-      const fresh = msg.state === "understanding" && ["done", "cancelled", "listening"].includes(s.state);
-      return {
-        ...s,
-        state: msg.state,
-        humanReason: msg.state === "human_needed" ? s.humanReason : null,
-        ...(fresh ? { options: [], summary: null, agentViewUrl: null } : {}),
-      };
-    }
-    case "options":
-      return { ...s, options: msg.options };
-    case "summary":
-      return { ...s, summary: msg.summary };
-    case "error":
-      return { ...s, log: [...s.log, entry("system", `Erreur : ${msg.message}`)] };
-    case "transcript":
-      return { ...s, log: [...s.log, entry("user", msg.text)] };
-    case "agent_view":
-      return { ...s, agentViewUrl: msg.url };
-    case "human_needed":
-      return { ...s, humanReason: msg.reason, log: [...s.log, entry("system", `Intervention humaine : ${msg.reason}`)] };
-  }
 }

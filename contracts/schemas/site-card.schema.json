@@ -1,0 +1,57 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://pilote.local/contracts/site-card.schema.json",
+  "title": "SiteCard",
+  "description": "Fiche mémoire d'un site, stockée dans Redis sous site:{domain} après une commande menée jusqu'au paiement, puis ajoutée à la consigne de l'agent à la visite suivante. Aucune donnée personnelle : ni nom, ni adresse, ni contenu de commande, ni prix.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["domain", "steps", "useful_buttons", "pitfalls", "runs", "successful_runs", "avg_duration_s", "avg_steps", "updated_at"],
+  "properties": {
+    "domain": {
+      "type": "string",
+      "minLength": 1
+    },
+    "steps": {
+      "description": "Étapes du parcours, dans l'ordre, décrites de façon générique (« Fermer le bandeau cookies avec Refuser », « Cocher J'accepte les conditions de vente »).",
+      "type": "array",
+      "items": { "type": "string", "maxLength": 200 },
+      "maxItems": 20
+    },
+    "useful_buttons": {
+      "description": "Libellés de boutons utiles (« Choisir ce train », pas « Voir le détail »).",
+      "type": "array",
+      "items": { "type": "string", "maxLength": 80 },
+      "maxItems": 20
+    },
+    "pitfalls": {
+      "description": "Pièges rencontrés et comment les éviter.",
+      "type": "array",
+      "items": { "type": "string", "maxLength": 200 },
+      "maxItems": 20
+    },
+    "runs": {
+      "description": "Nombre de commandes menées sur ce site.",
+      "type": "integer",
+      "minimum": 0
+    },
+    "successful_runs": {
+      "description": "Commandes arrivées jusqu'à la demande d'approbation de paiement.",
+      "type": "integer",
+      "minimum": 0
+    },
+    "avg_duration_s": {
+      "description": "Durée moyenne entre start() et la demande d'approbation, en secondes.",
+      "type": ["number", "null"],
+      "minimum": 0
+    },
+    "avg_steps": {
+      "description": "Nombre moyen d'étapes de l'agent H par commande.",
+      "type": ["number", "null"],
+      "minimum": 0
+    },
+    "updated_at": {
+      "type": "string",
+      "format": "date-time"
+    }
+  }
+}

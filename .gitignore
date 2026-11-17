@@ -1,0 +1,33 @@
+# Secrets : seul .env.example est versionné
+.env
+.env.*
+!.env.example
+
+# Python
+.venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+
+# Node / Next.js
+node_modules/
+web/.next/
+web/out/
+web/next-env.d.ts
+*.tsbuildinfo
+.vercel/
+
+# Audio : jamais versionné, supprimé après transcription
+*.webm
+*.wav
+*.mp3
+*.ogg
+
+# Profil Chrome dédié de l'agent H (compte connecté)
+.hai/
+chrome-profile/
+
+# Divers
+.DS_Store

@@ -2,7 +2,7 @@
 // Générés avec Web Audio (aucun fichier à charger). Le navigateur exige un premier geste
 // de l'utilisateur avant de jouer un son : appeler unlockAudio() au premier appui.
 
-import type { OrderState } from "./protocol";
+import type { State } from "./protocol";
 
 export type Earcon = "listening" | "thinking" | "waiting" | "question" | "success" | "error";
 
@@ -49,7 +49,7 @@ export function playEarcon(name: Earcon) {
   PATTERNS[name]();
 }
 
-export function earconForState(state: OrderState): Earcon | null {
+export function earconForState(state: State): Earcon | null {
   switch (state) {
     case "listening":
       return null; // le son « j'écoute » est joué quand on appuie pour parler

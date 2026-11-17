@@ -1,0 +1,28 @@
+# Qui relit quoi. La dernière règle qui correspond l'emporte.
+# Remplacer les TODO par les identifiants GitHub de l'équipe puis décommenter.
+
+# Membre 5 : contrats, orchestrateur, docs, configuration du dépôt (par défaut, tout le reste)
+*                               @rlescao-creator
+/contracts/                     @rlescao-creator
+/orchestrator/contracts.py      @rlescao-creator
+/orchestrator/ports.py          @rlescao-creator
+/web/lib/contracts/             @rlescao-creator
+/.github/                       @rlescao-creator
+
+# Membre 1 : agent H
+# /orchestrator/agent_h/        @TODO-membre-1
+
+# Membre 2 : IA Hugging Face
+# /orchestrator/ai/             @TODO-membre-2
+
+# Membre 3 : validation des proches
+# /web/app/api/approvals/       @TODO-membre-3
+# /web/app/v/                   @TODO-membre-3
+# /web/lib/approvals/           @TODO-membre-3
+
+# Membre 4 : interface vocale
+# /web/app/(pilote)/            @TODO-membre-4
+# /web/components/              @TODO-membre-4
+
+# Plan d'équipe
+/docs/plan-pilote.md            @leodebuigne

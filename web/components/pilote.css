@@ -130,3 +130,9 @@ body { font-family: system-ui, -apple-system, "Segoe UI", sans-serif; line-heigh
   .spectator-steps { grid-template-columns: repeat(3, 1fr); }
   .spectator-grid { grid-template-columns: 1fr; }
 }
+
+.spectator-intent { margin: 0; font-size: 1.4rem; color: var(--muted); }
+.spectator-approval { margin: 0; font-size: 1.6rem; font-weight: 700; }
+.spectator-approval.is-pending { color: var(--warn); }
+.spectator-approval.is-approved { color: var(--ok); }
+.spectator-approval.is-denied { color: var(--rec); }

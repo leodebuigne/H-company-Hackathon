@@ -1,0 +1,84 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://pilote.local/contracts/option.schema.json",
+  "title": "Option",
+  "description": "Une option trouvée par l'agent H sur le site (un train, un plat, un produit). search() et refine() en renvoient 8 au maximum, dans l'ordre affiché par le site.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "id",
+    "rank",
+    "title",
+    "price_cents",
+    "currency",
+    "rating",
+    "description",
+    "conditions",
+    "details",
+    "url"
+  ],
+  "properties": {
+    "id": {
+      "description": "Identifiant stable dans la session, choisi par l'agent (ex. « opt-1 »). C'est lui qu'on passe à choose(option_id).",
+      "type": "string",
+      "minLength": 1
+    },
+    "rank": {
+      "description": "Position dans la liste, à partir de 1. Correspond à « la première », « la deuxième ».",
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 8
+    },
+    "title": {
+      "description": "Nom court lisible à l'oral (« Train de 14 h 12, direct », « Pizza margherita, Bella Notte »).",
+      "type": "string",
+      "minLength": 1
+    },
+    "price_cents": {
+      "description": "Prix affiché, en centimes.",
+      "type": "integer",
+      "minimum": 0
+    },
+    "currency": {
+      "const": "EUR"
+    },
+    "rating": {
+      "description": "Note sur 5 si le site l'affiche.",
+      "type": [
+        "number",
+        "null"
+      ],
+      "minimum": 0,
+      "maximum": 5
+    },
+    "description": {
+      "description": "Une phrase de description si le site en donne une.",
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "conditions": {
+      "description": "Conditions affichées (échange, remboursement), telles que lues sur la page.",
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "details": {
+      "description": "Autres informations lues sur la page, en texte (ex. departure, arrival, duration, via, delivery_delay, restaurant).",
+      "type": "object",
+      "additionalProperties": {
+        "type": "string"
+      }
+    },
+    "url": {
+      "description": "Adresse de la page de l'option si elle en a une, sinon null.",
+      "type": [
+        "string",
+        "null"
+      ],
+      "pattern": "^https?://"
+    }
+  }
+}

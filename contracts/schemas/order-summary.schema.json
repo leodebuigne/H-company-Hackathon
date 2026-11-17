@@ -1,0 +1,88 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://pilote.local/contracts/order-summary.schema.json",
+  "title": "OrderSummary",
+  "description": "Récapitulatif lu par l'agent H sur la page de paiement. Renvoyé par checkout() puis par recheck(). C'est ce qui est lu à l'utilisateur et envoyé au proche.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["order_id", "site", "page_url", "items", "fees", "total_cents", "currency", "when_label", "conditions", "payment_button_label", "hash", "read_at"],
+  "properties": {
+    "order_id": {
+      "description": "Identifiant unique de la tentative de commande (UUID v4), créé par l'agent au checkout() et conservé par recheck(). Clé d'idempotence des outils H et clé Redis approval:{order_id}.",
+      "type": "string",
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+    },
+    "site": {
+      "description": "Nom de domaine du site (« www.sncf-connect.com », « www.ubereats.com »).",
+      "type": "string",
+      "minLength": 1
+    },
+    "page_url": {
+      "description": "Adresse de la page de paiement au moment de la lecture.",
+      "type": "string",
+      "pattern": "^https?://"
+    },
+    "items": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name", "quantity", "unit_price_cents", "total_cents", "options"],
+        "properties": {
+          "name": { "type": "string", "minLength": 1 },
+          "quantity": { "type": "integer", "minimum": 1 },
+          "unit_price_cents": { "type": ["integer", "null"], "minimum": 0 },
+          "total_cents": { "type": "integer", "minimum": 0 },
+          "options": {
+            "description": "Options choisies, telles qu'affichées (« Grande », « Supplément fromage »).",
+            "type": "array",
+            "items": { "type": "string" }
+          }
+        }
+      }
+    },
+    "fees": {
+      "description": "Frais affichés en plus des articles (livraison, service, pourboire). Vide s'il n'y en a pas.",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["label", "amount_cents"],
+        "properties": {
+          "label": { "type": "string", "minLength": 1 },
+          "amount_cents": { "type": "integer", "minimum": 0 }
+        }
+      }
+    },
+    "total_cents": {
+      "description": "Total à payer affiché sur la page, en centimes.",
+      "type": "integer",
+      "minimum": 0
+    },
+    "currency": { "const": "EUR" },
+    "when_label": {
+      "description": "Date ou heure de départ ou de livraison, telle qu'affichée (« mercredi 18 novembre, départ 14 h 12 », « livraison vers 19 h 40 »).",
+      "type": ["string", "null"]
+    },
+    "conditions": {
+      "description": "Mention échangeable ou remboursable si le site l'indique, sinon null.",
+      "type": ["string", "null"]
+    },
+    "payment_button_label": {
+      "description": "Texte exact du bouton qui engage l'argent (« Payer », « Commander et payer »).",
+      "type": "string",
+      "minLength": 1
+    },
+    "hash": {
+      "description": "Empreinte SHA-256 (hexadécimal) des articles, quantités et total normalisés. Algorithme dans contracts/README.md, implémentation de référence orchestrator/contracts.py:summary_hash.",
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "read_at": {
+      "description": "Heure de lecture de la page (ISO 8601 avec fuseau).",
+      "type": "string",
+      "format": "date-time"
+    }
+  }
+}

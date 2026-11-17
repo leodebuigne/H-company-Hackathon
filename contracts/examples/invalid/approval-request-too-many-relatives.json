@@ -1,0 +1,65 @@
+{
+  "order_id": "3f1c2a9e-8b7d-4c6e-9a5f-1d2e3f4a5b6c",
+  "user_first_name": "Camille",
+  "site_name": "Miam Démo",
+  "category": "repas",
+  "summary": {
+    "order_id": "3f1c2a9e-8b7d-4c6e-9a5f-1d2e3f4a5b6c",
+    "site": "h-company-hackathon-repas-demo.vercel.app",
+    "page_url": "https://h-company-hackathon-repas-demo.vercel.app/paiement.html?r=bella&panier=bella-marg~l~1|bella-tira~~1",
+    "items": [
+      {
+        "name": "Pizza margherita",
+        "quantity": 1,
+        "unit_price_cents": 1350,
+        "total_cents": 1350,
+        "options": [
+          "Grande"
+        ]
+      },
+      {
+        "name": "Tiramisu maison",
+        "quantity": 1,
+        "unit_price_cents": 550,
+        "total_cents": 550,
+        "options": []
+      }
+    ],
+    "fees": [
+      {
+        "label": "Livraison",
+        "amount_cents": 249
+      },
+      {
+        "label": "Frais de service",
+        "amount_cents": 99
+      }
+    ],
+    "total_cents": 2248,
+    "currency": "EUR",
+    "when_label": "Livraison dès que possible, environ 30 min",
+    "conditions": null,
+    "payment_button_label": "Commander et payer",
+    "hash": "e1fcc93baf080038bee8d33ccff9fe1f8f5bc317760d230c1f4e58ca0b4ca8dc",
+    "read_at": "2026-11-17T19:02:11+01:00"
+  },
+  "relatives": [
+    {
+      "first_name": "Léa",
+      "phone": "+33600000001"
+    },
+    {
+      "first_name": "Hugo",
+      "phone": "+33600000002"
+    },
+    {
+      "first_name": "A",
+      "phone": "+33600000003"
+    },
+    {
+      "first_name": "B",
+      "phone": "+33600000004"
+    }
+  ],
+  "timeout_seconds": 30
+}

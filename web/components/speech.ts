@@ -27,7 +27,7 @@ export function hasFrenchVoice() {
   return frenchVoice !== null;
 }
 
-type Item = { text: string; audio?: string | null };
+type Item = { text: string; audio?: string | null; mime?: string | null };
 
 export class Speaker {
   private queue: Item[] = [];
@@ -40,8 +40,8 @@ export class Speaker {
     return this.busy;
   }
 
-  enqueue(text: string, audio?: string | null) {
-    this.queue.push({ text, audio });
+  enqueue(text: string, audio?: string | null, mime?: string | null) {
+    this.queue.push({ text, audio, mime });
     if (!this.busy) void this.next();
   }
 
@@ -66,7 +66,7 @@ export class Speaker {
     if (!item) return this.setBusy(false);
     this.setBusy(true);
     try {
-      if (item.audio) await this.playAudio(item.audio);
+      if (item.audio) await this.playAudio(item.audio, item.mime);
       else await this.speakWithBrowser(item.text);
     } catch {
       // un son bloqué ou une voix absente ne doit pas bloquer la file
@@ -74,9 +74,9 @@ export class Speaker {
     if (this.busy) void this.next();
   }
 
-  private playAudio(base64: string): Promise<void> {
+  private playAudio(base64: string, mime?: string | null): Promise<void> {
     return new Promise((resolve) => {
-      const src = base64.startsWith("data:") ? base64 : `data:audio/mpeg;base64,${base64}`;
+      const src = base64.startsWith("data:") ? base64 : `data:${mime ?? "audio/mpeg"};base64,${base64}`;
       const audio = new Audio(src);
       this.current = audio;
       audio.onended = () => resolve();

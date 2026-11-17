@@ -1,0 +1,17 @@
+{
+  "id": "opt-2",
+  "rank": 2,
+  "title": "Train de 14 h 27, direct",
+  "price_cents": 4300,
+  "currency": "EUR",
+  "rating": null,
+  "description": null,
+  "conditions": "Échangeable et remboursable (frais de 5 €)",
+  "details": {
+    "departure": "14:27",
+    "arrival": "15:31",
+    "duration": "1 h 04",
+    "via": "direct"
+  },
+  "url": null
+}

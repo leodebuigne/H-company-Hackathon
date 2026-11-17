@@ -1,0 +1,24 @@
+{
+  "domain": "h-company-hackathon-rail-demo.vercel.app",
+  "steps": [
+    "Fermer le bandeau cookies avec « Tout refuser »",
+    "Remplir départ, arrivée, date et heure puis « Rechercher »",
+    "Cliquer « Choisir ce train » (pas « Voir le détail »)",
+    "Cocher « J'accepte les conditions de vente » puis « Continuer vers le paiement »",
+    "S'arrêter avant « Payer » et demander l'approbation"
+  ],
+  "useful_buttons": [
+    "Choisir ce train",
+    "Continuer vers le paiement",
+    "Payer"
+  ],
+  "pitfalls": [
+    "Trois boutons cookies qui se ressemblent",
+    "Deux boutons par train"
+  ],
+  "runs": 5,
+  "successful_runs": 5,
+  "avg_duration_s": 74.5,
+  "avg_steps": 18.2,
+  "updated_at": "2026-11-17T17:00:00+01:00"
+}

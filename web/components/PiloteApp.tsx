@@ -6,17 +6,20 @@
 //   Barre d'espace maintenue : parler      Entrée : oui      N : non
 //   Échap : annuler (à tout moment)        R : répéter la dernière phrase
 
+import Link from "next/link";
 import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 import { earconForState, playEarcon, unlockAudio } from "./earcons";
-import { CONFIRM_STATES, STATE_LABELS, formatEuros, type ServerMessage } from "./protocol";
+import { CONFIRM_STATES, STATE_LABELS, formatCents, type ServerMessage } from "./protocol";
 import { PushToTalkRecorder } from "./recorder";
 import { Speaker } from "./speech";
 import { usePilote } from "./usePilote";
 
-const GREETING =
-  "Je suis Pilote, un assistant automatique. " +
+// Obligatoire (AI Act, article 50). Normalement dit par l'orchestrateur à la connexion ;
+// répété ici si sa phrase d'accueil n'a pas pu être jouée.
+const AI_DISCLOSURE = "Je suis Pilote, un assistant automatique.";
+const KEYBOARD_HELP =
   "Maintenez la barre d'espace pour me parler, et relâchez quand vous avez fini. " +
-  "Appuyez sur Entrée pour dire oui, sur N pour dire non, et sur Échap pour annuler à tout moment.";
+  "Entrée pour dire oui, N pour dire non, Échap pour annuler à tout moment, R pour répéter.";
 
 // "voice" : Pilote parle lui-même. "screenreader" : Pilote se tait et laisse VoiceOver lire les annonces.
 // Jamais les deux à la fois, sinon les deux voix se superposent.
@@ -33,47 +36,53 @@ export default function PiloteApp() {
 
   const speakerRef = useRef<Speaker | null>(null);
   const recorderRef = useRef<PushToTalkRecorder | null>(null);
-  const voiceModeRef = useRef(voiceMode);
-  voiceModeRef.current = voiceMode;
-  const talkButtonRef = useRef<HTMLButtonElement>(null);
+  const voiceModeRef = useRef<VoiceMode>("voice");
+  const startedRef = useRef(false);
 
-  if (typeof window !== "undefined" && !speakerRef.current) {
-    speakerRef.current = new Speaker();
-    speakerRef.current.onChange = setSpeaking;
+  useEffect(() => {
+    const speaker = new Speaker();
+    speaker.onChange = setSpeaking;
+    speakerRef.current = speaker;
     recorderRef.current = new PushToTalkRecorder();
-  }
+    return () => speaker.stop();
+  }, []);
+
+  useEffect(() => {
+    voiceModeRef.current = voiceMode;
+  }, [voiceMode]);
 
   // Une phrase à dire : à voix haute (mode voix) ou via la région ARIA live (mode lecteur d'écran)
-  const tell = useCallback((text: string, audio?: string | null) => {
-    if (voiceModeRef.current === "voice") speakerRef.current?.enqueue(text, audio);
+  const tell = useCallback((text: string, audio?: string | null, mime?: string | null) => {
+    if (voiceModeRef.current === "voice") speakerRef.current?.enqueue(text, audio, mime);
     else setAnnounce((prev) => (prev === text ? `${text} ` : text)); // force la relecture d'un texte identique
   }, []);
 
   const onMessage = useCallback(
     (msg: ServerMessage) => {
-      if (msg.type === "say") tell(msg.text, msg.audio);
+      // Avant le premier geste, le navigateur bloque le son : on gardera la phrase pour le démarrage.
+      if (!startedRef.current) return;
+      if (msg.type === "say") tell(msg.text, msg.audio, msg.mime);
       if (msg.type === "state") {
         const earcon = earconForState(msg.state);
         if (earcon) playEarcon(earcon);
       }
-      if (msg.type === "error") {
-        playEarcon("error");
-        tell(`Une erreur est survenue : ${msg.message}`);
-      }
+      if (msg.type === "error") playEarcon("error"); // l'explication arrive dans le say suivant
     },
     [tell]
   );
 
-  const pilote = usePilote("user", onMessage);
-  const { connected, state, options, summary, lastSay, humanReason, send } = pilote;
+  const { connected, state, options, summary, lastSay, send } = usePilote(onMessage);
   const awaitingConfirm = CONFIRM_STATES.includes(state);
 
   const start = useCallback(() => {
+    if (startedRef.current) return;
     unlockAudio(); // le navigateur n'autorise le son qu'après un geste de l'utilisateur
+    startedRef.current = true;
     setStarted(true);
-    tell(GREETING);
-    talkButtonRef.current?.focus();
-  }, [tell]);
+    const greeting = lastSay && lastSay.includes("assistant automatique") ? lastSay : `${AI_DISCLOSURE} ${lastSay}`;
+    tell(greeting.trim());
+    tell(KEYBOARD_HELP);
+  }, [lastSay, tell]);
 
   const startTalking = useCallback(async () => {
     if (recorderRef.current?.isRecording) return;
@@ -164,24 +173,24 @@ export default function PiloteApp() {
     };
   }, [started, awaitingConfirm, start, startTalking, stopTalking, cancel, confirm, repeat]);
 
-  // Annonce de l'état de connexion (une seule fois par changement)
+  // Annonce de la perte et du retour de la connexion
   const wasConnected = useRef<boolean | null>(null);
   useEffect(() => {
-    if (!started) return;
-    if (wasConnected.current === true && !connected) {
+    if (startedRef.current && wasConnected.current === true && !connected) {
       playEarcon("error");
-      tell("La connexion avec Pilote est coupée. Je réessaie.");
+      speakerRef.current?.enqueue("La connexion avec Pilote est coupée. Je réessaie.");
     }
-    if (wasConnected.current === false && connected) tell("La connexion est rétablie.");
+    if (startedRef.current && wasConnected.current === false && connected) {
+      speakerRef.current?.enqueue("La connexion est rétablie.");
+    }
     wasConnected.current = connected;
-  }, [connected, started, tell]);
+  }, [connected]);
 
   const submitText = (e: FormEvent) => {
     e.preventDefault();
     const text = textInput.trim();
     if (!text) return;
-    unlockAudio();
-    if (!started) setStarted(true);
+    start();
     if (/^\s*annul/i.test(text)) cancel();
     else send({ type: "text", text });
     setTextInput("");
@@ -210,15 +219,9 @@ export default function PiloteApp() {
       <section className="pilote-status" aria-label="Où en est la commande">
         <p className="pilote-state">{STATE_LABELS[state]}</p>
         <p className="pilote-lastsay">{lastSay || "Appuyez sur le bouton ou sur la barre d'espace pour commencer."}</p>
-        {humanReason && state === "human_needed" && (
-          <p className="pilote-alert" role="alert">
-            Un humain doit intervenir : {humanReason}
-          </p>
-        )}
       </section>
 
       <button
-        ref={talkButtonRef}
         type="button"
         className={`pilote-talk ${recording ? "is-recording" : ""} ${speaking ? "is-speaking" : ""}`}
         aria-pressed={started ? recording : undefined}
@@ -264,15 +267,21 @@ export default function PiloteApp() {
           <ul>
             {summary.items.map((item, i) => (
               <li key={i}>
-                {item.quantity} × {item.title}
-                {item.price_eur != null && ` — ${formatEuros(item.price_eur)}`}
+                {item.quantity} × {item.name}
+                {item.options.length > 0 && ` (${item.options.join(", ")})`} — {formatCents(item.total_cents)}
+              </li>
+            ))}
+            {summary.fees.map((fee, i) => (
+              <li key={`fee-${i}`}>
+                {fee.label} — {formatCents(fee.amount_cents)}
               </li>
             ))}
           </ul>
           <p>
-            Frais : {formatEuros(summary.fees_eur)} · <strong>Total : {formatEuros(summary.total_eur)}</strong>
+            <strong>Total : {formatCents(summary.total_cents)}</strong>
+            {summary.when_label && ` · ${summary.when_label}`}
           </p>
-          {summary.refund_terms && <p>{summary.refund_terms}</p>}
+          {summary.conditions && <p>{summary.conditions}</p>}
         </section>
       )}
 
@@ -282,7 +291,7 @@ export default function PiloteApp() {
           <ol>
             {options.slice(0, 3).map((o) => (
               <li key={o.id}>
-                {o.title} — {formatEuros(o.price_eur)}
+                {o.title} — {formatCents(o.price_cents)}
               </li>
             ))}
           </ol>
@@ -312,12 +321,7 @@ export default function PiloteApp() {
       <fieldset className="pilote-settings">
         <legend>Qui lit les réponses ?</legend>
         <label>
-          <input
-            type="radio"
-            name="voice-mode"
-            checked={voiceMode === "voice"}
-            onChange={() => setVoiceMode("voice")}
-          />
+          <input type="radio" name="voice-mode" checked={voiceMode === "voice"} onChange={() => setVoiceMode("voice")} />
           La voix de Pilote
         </label>
         <label>
@@ -332,9 +336,9 @@ export default function PiloteApp() {
           />
           Mon lecteur d&apos;écran (VoiceOver)
         </label>
-        <a href="/spectateur" target="_blank" rel="noreferrer">
+        <Link href="/spectateur" target="_blank" rel="noreferrer">
           Ouvrir l&apos;écran spectateur
-        </a>
+        </Link>
       </fieldset>
     </main>
   );

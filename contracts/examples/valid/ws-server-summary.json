@@ -1,0 +1,27 @@
+{
+  "type": "summary",
+  "summary": {
+    "order_id": "9b2e4f6a-1c3d-4e5f-8a7b-6c5d4e3f2a1b",
+    "site": "h-company-hackathon-rail-demo.vercel.app",
+    "page_url": "https://h-company-hackathon-rail-demo.vercel.app/paiement.html",
+    "items": [
+      {
+        "name": "Paris → Lille, mercredi 18 novembre, 14 h 27",
+        "quantity": 1,
+        "unit_price_cents": 4300,
+        "total_cents": 4300,
+        "options": [
+          "2de classe"
+        ]
+      }
+    ],
+    "fees": [],
+    "total_cents": 4300,
+    "currency": "EUR",
+    "when_label": "Mercredi 18 novembre 2026, départ 14 h 27, arrivée 15 h 31",
+    "conditions": "Échangeable et remboursable (frais de 5 €)",
+    "payment_button_label": "Payer",
+    "hash": "55802628693ffd0afc79618a4b6d36ea529bbbbc4fe8e39bdc4297059b0ca8e7",
+    "read_at": "2026-11-17T16:40:00+01:00"
+  }
+}

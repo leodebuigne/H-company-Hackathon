@@ -1,8 +1,10 @@
-// Base minimale pour développer l'interface (membre 4).
-// À remplacer par le squelette du membre 5 lors de la fusion si besoin.
+import type { Metadata } from "next";
 import type { ReactNode } from "react";
 
-export const metadata = { title: "Pilote" };
+export const metadata: Metadata = {
+  title: "Pilote",
+  description: "Assistant vocal d'achat en ligne",
+};
 
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
