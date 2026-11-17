@@ -136,6 +136,7 @@ Adresse : `ws://localhost:8000/ws`. Chaque message est un objet JSON avec un cha
 ## Interfaces Python des briques
 
 Dans `orchestrator/ports.py` :
-- `ShoppingAgent` (membre 1) : `start`, `search`, `refine`, `choose`, `checkout`, `recheck`, `pay`, `cancel`, propriété `agent_view_url`. Construit avec deux callbacks : `request_payment_approval(summary) -> "approved" | "denied"` et `need_human(reason)`.
+- `ShoppingAgent` (membre 1) : `start`, `search`, `refine`, `choose`, `checkout`, `recheck`, `pay`, `cancel`, propriété `agent_view_url`. Construit avec deux callbacks : `request_payment_approval(summary) -> "approved" | "denied"` et `need_human(reason) -> "resolved" | "abort"`.
+- **Paiement** : l'orchestrateur n'appelle `pay()` qu'après le premier oui, la validation du proche, `recheck()` avec le même hash et le deuxième oui. Pendant `pay()`, l'outil `request_payment_approval` reçoit le récapitulatif lu au moment du clic : l'orchestrateur répond `approved` seulement s'il est dans l'état `paying` et si le hash est celui qui a été validé. Tout le reste répond `denied`.
 - `AI` (membre 2) : `transcribe`, `parse_intent`, `summarize_options`, `confirm_statement`, `describe_product`, `speak`. Toutes asynchrones.
 - `Approvals` : client de l'API de validation (membre 3), écrit par le membre 5.

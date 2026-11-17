@@ -29,5 +29,8 @@ web/next-env.d.ts
 .hai/
 chrome-profile/
 
+# Journal de l'orchestrateur
+logs/
+
 # Divers
 .DS_Store
