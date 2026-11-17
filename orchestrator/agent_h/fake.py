@@ -13,20 +13,47 @@ import asyncio
 import logging
 import os
 import uuid
-from typing import Optional
 
 from .base import ApprovalCallback, NeedsHuman, PaymentDenied
 from .models import Intent, Option, OrderItem, OrderSummary, PaymentResult, SiteCard
 
 TRAIN_OPTIONS = [
-    Option(id="o1", title="TGV INOUI 14 h 12 → 15 h 15, direct", price_eur=42.0, details="Durée 1 h 03, échangeable"),
-    Option(id="o2", title="TGV INOUI 14 h 46 → 15 h 49, direct", price_eur=38.0, details="Durée 1 h 03, non remboursable"),
+    Option(
+        id="o1",
+        title="TGV INOUI 14 h 12 → 15 h 15, direct",
+        price_eur=42.0,
+        details="Durée 1 h 03, échangeable",
+    ),
+    Option(
+        id="o2",
+        title="TGV INOUI 14 h 46 → 15 h 49, direct",
+        price_eur=38.0,
+        details="Durée 1 h 03, non remboursable",
+    ),
     Option(id="o3", title="TER 15 h 05 → 17 h 22, 1 correspondance", price_eur=27.5, details="Durée 2 h 17"),
 ]
 FOOD_OPTIONS = [
-    Option(id="o1", title="Pizza margherita, Pizzeria Napoli", price_eur=11.5, rating=4.6, details="Livraison 25-35 min"),
-    Option(id="o2", title="Pizza margherita, Luigi & Co", price_eur=12.9, rating=4.4, details="Livraison 20-30 min"),
-    Option(id="o3", title="Pizza margherita, Bella Italia", price_eur=10.0, rating=4.1, details="Livraison 40-50 min"),
+    Option(
+        id="o1",
+        title="Pizza margherita, Pizzeria Napoli",
+        price_eur=11.5,
+        rating=4.6,
+        details="Livraison 25-35 min",
+    ),
+    Option(
+        id="o2",
+        title="Pizza margherita, Luigi & Co",
+        price_eur=12.9,
+        rating=4.4,
+        details="Livraison 20-30 min",
+    ),
+    Option(
+        id="o3",
+        title="Pizza margherita, Bella Italia",
+        price_eur=10.0,
+        rating=4.1,
+        details="Livraison 40-50 min",
+    ),
 ]
 
 
@@ -34,10 +61,10 @@ class FakeShoppingAgent:
     def __init__(
         self,
         *,
-        approval_callback: Optional[ApprovalCallback] = None,
+        approval_callback: ApprovalCallback | None = None,
         price_change_on_recheck: bool = False,
-        need_human_at: Optional[str] = None,
-        speed: Optional[float] = None,
+        need_human_at: str | None = None,
+        speed: float | None = None,
     ) -> None:
         logging.getLogger(__name__).warning("Agent FACTICE : aucune action sur un vrai site.")
         self.order_id = ""
@@ -45,9 +72,9 @@ class FakeShoppingAgent:
         self._price_change = price_change_on_recheck
         self._need_human_at = need_human_at
         self._speed = float(os.getenv("PILOTE_FAKE_SPEED", "1.0")) if speed is None else speed
-        self._intent: Optional[Intent] = None
+        self._intent: Intent | None = None
         self._options: list[Option] = []
-        self._chosen: Optional[Option] = None
+        self._chosen: Option | None = None
 
     async def _wait(self, seconds: float, phase: str) -> None:
         await asyncio.sleep(seconds * self._speed)
@@ -58,7 +85,7 @@ class FakeShoppingAgent:
         assert self._intent is not None
         return "sncf" in self._intent.site.lower() or "train" in self._intent.item.lower()
 
-    async def start(self, intent: Intent, site_card: Optional[SiteCard] = None) -> None:
+    async def start(self, intent: Intent, site_card: SiteCard | None = None) -> None:
         self._intent = intent
         self.order_id = uuid.uuid4().hex[:12]
         await self._wait(1.0, "start")

@@ -25,14 +25,14 @@ export HAI_API_KEY=...   # ou : .venv/bin/holo login
 ```python
 from orchestrator.agent_h import make_agent, Intent
 
-agent = make_agent()                      # vrai agent H ; USE_FAKE_AGENT=1 pour la version factice
+agent = make_agent()  # vrai agent H ; USE_FAKE_AGENT=1 pour la version factice
 await agent.start(Intent(site="ubereats.com", item="une pizza margherita"))
-options = await agent.search()            # 8 options max
+options = await agent.search()  # 8 options max
 await agent.choose(options[0].id)
-summary = await agent.checkout()          # page de paiement, rien n'est cliqué
+summary = await agent.checkout()  # page de paiement, rien n'est cliqué
 # ... l'utilisateur confirme qu'il veut payer ...
-result = await agent.pay()                # clic, puis validation dans l'application bancaire
-                                          # "accepted" = vraie commande payée
+result = await agent.pay()  # clic, puis validation dans l'application bancaire
+# "accepted" = vraie commande payée
 ```
 
 | Méthode | Ce qu'elle fait |

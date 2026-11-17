@@ -52,6 +52,8 @@ async def main(cloud_only: bool) -> int:
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
     parser.add_argument("--cloud", action="store_true", help="tester seulement le navigateur cloud")
     sys.exit(asyncio.run(main(parser.parse_args().cloud)))

@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from typing import Awaitable, Callable, Literal, Optional, Protocol
+from collections.abc import Awaitable, Callable
+from typing import Literal, Protocol
 
 from .models import Intent, Option, OrderSummary, PaymentResult, SiteCard
 
@@ -30,7 +31,7 @@ class PaymentDenied(AgentError):
 class ShoppingAgentProtocol(Protocol):
     order_id: str
 
-    async def start(self, intent: Intent, site_card: Optional[SiteCard] = None) -> None: ...
+    async def start(self, intent: Intent, site_card: SiteCard | None = None) -> None: ...
     async def search(self) -> list[Option]: ...
     async def refine(self, message: str) -> list[Option]: ...
     async def choose(self, option_id: str) -> None: ...

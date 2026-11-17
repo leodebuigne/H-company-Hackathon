@@ -30,7 +30,7 @@ import asyncio
 import os
 import time
 import uuid
-from typing import Any, Optional
+from typing import Any
 
 from hai_agents import AsyncClient
 from hai_agents.tools import Tool, tool
@@ -38,24 +38,25 @@ from hai_agents.tools import Tool, tool
 from . import prompts
 from .base import AgentError, ApprovalCallback, NeedHumanCallback, NeedsHuman, PaymentDenied
 from .metrics import RunMetrics, append_result
-from .models import AgentAnswer, Intent, Option, OrderSummary, PaymentResult, SiteCard, summary_hash
+from .models import AgentAnswer, Intent, Option, OrderSummary, PaymentResult, SiteCard
 from .site_memory import SiteMemory, domain_of, merge_card, site_memory_from_env
 
 OK_STATUSES = {"idle", "completed"}
+
 
 class ShoppingAgent:
     def __init__(
         self,
         *,
-        client: Optional[AsyncClient] = None,
-        agent: Optional[str] = None,
-        browser_host: Optional[str] = None,
-        approval_callback: Optional[ApprovalCallback] = None,
-        need_human_callback: Optional[NeedHumanCallback] = None,
-        memory: Optional[SiteMemory] = None,
+        client: AsyncClient | None = None,
+        agent: str | None = None,
+        browser_host: str | None = None,
+        approval_callback: ApprovalCallback | None = None,
+        need_human_callback: NeedHumanCallback | None = None,
+        memory: SiteMemory | None = None,
         step_timeout_s: float = 600,
         record_metrics: bool = True,
-        max_total_eur: Optional[float] = None,
+        max_total_eur: float | None = None,
     ) -> None:
         self._client = client
         self._agent_name = agent if agent is not None else os.getenv("PILOTE_H_AGENT") or None
@@ -70,16 +71,16 @@ class ShoppingAgent:
         )
 
         self.order_id = ""
-        self.agent_view_url: Optional[str] = None
+        self.agent_view_url: str | None = None
         self._session: Any = None
         self._cursor = 0
-        self._intent: Optional[Intent] = None
+        self._intent: Intent | None = None
         self._options: list[Option] = []
-        self._chosen: Optional[Option] = None
+        self._chosen: Option | None = None
         self._paying = False
         self._tool_cache: dict[tuple[str, str], str] = {}
-        self._metrics: Optional[RunMetrics] = None
-        self._last_answer: Optional[AgentAnswer] = None
+        self._metrics: RunMetrics | None = None
+        self._last_answer: AgentAnswer | None = None
 
     # --- outils exécutés dans ce processus quand l'agent les appelle ----------------
 
@@ -156,17 +157,28 @@ class ShoppingAgent:
             fresh = result.next_from_index > self._cursor
             self._cursor = result.next_from_index
             if result.status not in OK_STATUSES:
-                raise AgentError(f"Étape {phase} : session {result.status} ({result.error or result.error_code})")
+                raise AgentError(
+                    f"Étape {phase} : session {result.status} ({result.error or result.error_code})"
+                )
             if result.pending_approvals:  # garde-fou de la plateforme : on refuse tout ce qui n'est pas armé
                 for call in result.pending_approvals:
                     await self._session.deny(call.tool_req.id, "Paiement non approuvé par Pilote.")
                 continue
             if fresh and result.answer is not None:
-                answer = result.answer if isinstance(result.answer, AgentAnswer) else AgentAnswer.model_validate(result.answer)
+                answer = (
+                    result.answer
+                    if isinstance(result.answer, AgentAnswer)
+                    else AgentAnswer.model_validate(result.answer)
+                )
                 self._last_answer = answer
                 if self._metrics:
                     self._metrics.phases[phase] = round(time.monotonic() - started, 1)
-                if answer.blocked_reason and not answer.options and not answer.order_summary and not answer.payment_result:
+                if (
+                    answer.blocked_reason
+                    and not answer.options
+                    and not answer.order_summary
+                    and not answer.payment_result
+                ):
                     raise NeedsHuman(answer.blocked_reason)
                 return answer
             await asyncio.sleep(1)  # le message n'a pas encore réveillé la session
@@ -180,7 +192,7 @@ class ShoppingAgent:
 
     # --- interface publique ----------------------------------------------------------
 
-    async def start(self, intent: Intent, site_card: Optional[SiteCard] = None) -> None:
+    async def start(self, intent: Intent, site_card: SiteCard | None = None) -> None:
         client = await self._ensure_client()
         self._intent = intent
         self.order_id = uuid.uuid4().hex[:12]
@@ -246,7 +258,9 @@ class ShoppingAgent:
             self._paying = False
         if answer.payment_result is None:
             await self._finish("paiement non effectué", "-")
-            raise PaymentDenied(answer.blocked_reason or "L'agent n'a pas pu payer (plafond ou total illisible).")
+            raise PaymentDenied(
+                answer.blocked_reason or "L'agent n'a pas pu payer (plafond ou total illisible)."
+            )
         await self._finish("paiement tenté", answer.payment_result, answer)
         return answer.payment_result
 
@@ -257,7 +271,7 @@ class ShoppingAgent:
             finally:
                 await self._finish("annulée", "-")
 
-    async def _finish(self, outcome: str, payment: str, answer: Optional[AgentAnswer] = None) -> None:
+    async def _finish(self, outcome: str, payment: str, answer: AgentAnswer | None = None) -> None:
         if self._metrics is None:
             return
         metrics, self._metrics = self._metrics, None

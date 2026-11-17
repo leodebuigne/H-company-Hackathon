@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import os
 import re
-from typing import Optional, Protocol
+from typing import Protocol
 
 import httpx
 
@@ -34,7 +34,7 @@ def domain_of(site: str) -> str:
     return host.removeprefix("www.")
 
 
-def merge_card(old: Optional[SiteCard], domain: str, notes: Optional[SiteNotes], seconds: float) -> SiteCard:
+def merge_card(old: SiteCard | None, domain: str, notes: SiteNotes | None, seconds: float) -> SiteCard:
     card = old or SiteCard(domain=domain)
     runs = card.runs + 1
     steps = sanitize((notes.steps if notes else []) or card.steps)
@@ -44,7 +44,7 @@ def merge_card(old: Optional[SiteCard], domain: str, notes: Optional[SiteNotes],
 
 
 class SiteMemory(Protocol):
-    async def get(self, domain: str) -> Optional[SiteCard]: ...
+    async def get(self, domain: str) -> SiteCard | None: ...
     async def put(self, card: SiteCard) -> None: ...
 
 
@@ -52,7 +52,7 @@ class InMemorySiteMemory:
     def __init__(self) -> None:
         self._cards: dict[str, SiteCard] = {}
 
-    async def get(self, domain: str) -> Optional[SiteCard]:
+    async def get(self, domain: str) -> SiteCard | None:
         return self._cards.get(domain)
 
     async def put(self, card: SiteCard) -> None:
@@ -64,13 +64,13 @@ class UpstashSiteMemory:
         self._url = url.rstrip("/")
         self._headers = {"Authorization": f"Bearer {token}"}
 
-    async def _cmd(self, *args: str) -> Optional[str]:
+    async def _cmd(self, *args: str) -> str | None:
         async with httpx.AsyncClient(timeout=10) as http:
             resp = await http.post(self._url, headers=self._headers, json=list(args))
             resp.raise_for_status()
             return resp.json().get("result")
 
-    async def get(self, domain: str) -> Optional[SiteCard]:
+    async def get(self, domain: str) -> SiteCard | None:
         raw = await self._cmd("GET", f"site:{domain}")
         return SiteCard.model_validate_json(raw) if raw else None
 

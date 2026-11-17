@@ -4,7 +4,14 @@ from __future__ import annotations
 
 import pytest
 
-from orchestrator.agent_h import FakeShoppingAgent, Intent, OrderItem, OrderSummary, PaymentDenied, summary_hash
+from orchestrator.agent_h import (
+    FakeShoppingAgent,
+    Intent,
+    OrderItem,
+    OrderSummary,
+    PaymentDenied,
+    summary_hash,
+)
 from orchestrator.agent_h.agent import ShoppingAgent
 from orchestrator.agent_h.models import SiteNotes
 from orchestrator.agent_h.site_memory import InMemorySiteMemory, domain_of, merge_card, sanitize
@@ -21,8 +28,12 @@ def summary(total: float, name: str = "Pizza margherita", qty: int = 1) -> Order
 
 
 def test_hash_ignores_case_spaces_and_order():
-    a = OrderSummary(items=[OrderItem(name="Pizza  Margherita"), OrderItem(name="Coca", quantity=2)], total_eur=14)
-    b = OrderSummary(items=[OrderItem(name="coca", quantity=2), OrderItem(name="pizza margherita")], total_eur=14.0)
+    a = OrderSummary(
+        items=[OrderItem(name="Pizza  Margherita"), OrderItem(name="Coca", quantity=2)], total_eur=14
+    )
+    b = OrderSummary(
+        items=[OrderItem(name="coca", quantity=2), OrderItem(name="pizza margherita")], total_eur=14.0
+    )
     assert summary_hash(a) == summary_hash(b)
 
 
@@ -36,7 +47,12 @@ def test_hash_changes_with_price_or_quantity():
 
 
 def test_sanitize_drops_personal_data():
-    lines = ["Fermer le bandeau cookies", "Adresse : 12 rue de Lille", "leo@example.com", "Carte 4242424242424242"]
+    lines = [
+        "Fermer le bandeau cookies",
+        "Adresse : 12 rue de Lille",
+        "leo@example.com",
+        "Carte 4242424242424242",
+    ]
     assert sanitize(lines) == ["Fermer le bandeau cookies"]
 
 
@@ -45,7 +61,9 @@ def test_domain_of():
 
 
 def test_merge_card_counts_runs_and_average():
-    first = merge_card(None, "ubereats.com", SiteNotes(steps=["Chercher le plat"], pitfalls=["Pop-up appli"]), 60)
+    first = merge_card(
+        None, "ubereats.com", SiteNotes(steps=["Chercher le plat"], pitfalls=["Pop-up appli"]), 60
+    )
     second = merge_card(first, "ubereats.com", SiteNotes(pitfalls=["Pop-up appli", "Bandeau cookies"]), 30)
     assert second.runs == 2 and second.avg_seconds == 45
     assert second.steps == ["Chercher le plat"]

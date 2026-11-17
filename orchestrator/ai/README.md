@@ -10,7 +10,8 @@ Interface : `AI` dans `orchestrator/ports.py` (fonctions asynchrones). Contrats 
 | `benchmark.py` | compare des modèles sur `docs/test-phrases.json` |
 
 ```python
-from orchestrator.ai import build_ai   # FakeAI ou HFAI selon USE_FAKE_AI
+from orchestrator.ai import build_ai  # FakeAI ou HFAI selon USE_FAKE_AI
+
 ai = build_ai()
 ```
 

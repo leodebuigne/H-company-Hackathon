@@ -5,7 +5,6 @@ from __future__ import annotations
 import datetime as dt
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Optional
 
 RESULTS_PATH = Path(__file__).resolve().parents[2] / "docs" / "results-agent.md"
 HEADER = (
@@ -22,7 +21,7 @@ class RunMetrics:
     agent: str
     started: float
     phases: dict[str, float] = field(default_factory=dict)
-    steps: Optional[int] = None
+    steps: int | None = None
     outcome: str = "en cours"
     payment: str = "-"
 

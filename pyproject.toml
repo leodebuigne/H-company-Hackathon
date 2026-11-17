@@ -47,3 +47,9 @@ target-version = "py312"
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "B", "UP", "ASYNC"]
+
+# Consignes et descriptions d'outils lues par le modèle : on ne coupe pas ces lignes.
+[tool.ruff.lint.per-file-ignores]
+"orchestrator/agent_h/prompts.py" = ["E501"]
+"orchestrator/agent_h/agent.py" = ["E501"]
+"orchestrator/agent_h/metrics.py" = ["E501"]

@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from typing import Optional
-
 from .models import Intent, Option, SiteCard
 
 GENERIC_INSTRUCTIONS = """\
@@ -32,7 +30,7 @@ Si tu rencontres un CAPTCHA, une demande de cryptogramme ou une page de connexio
 """
 
 
-def site_card_text(card: Optional[SiteCard]) -> str:
+def site_card_text(card: SiteCard | None) -> str:
     if card is None or (not card.steps and not card.pitfalls):
         return "Fiche du site : aucune (première visite)."
     lines = [f"Fiche du site {card.domain} ({card.runs} visites précédentes) :"]
@@ -52,7 +50,7 @@ def intent_text(intent: Intent) -> str:
     return "\n".join(parts)
 
 
-def search_message(intent: Intent, card: Optional[SiteCard], with_instructions: bool) -> str:
+def search_message(intent: Intent, card: SiteCard | None, with_instructions: bool) -> str:
     head = GENERIC_INSTRUCTIONS + "\n" if with_instructions else ""
     return (
         f"{head}{site_card_text(card)}\n\n{intent_text(intent)}\n\n"
@@ -84,7 +82,7 @@ def recheck_message() -> str:
 def pay_message() -> str:
     return (
         "Étape : paiement. Appelle request_payment_approval avec le récapitulatif affiché. Si la réponse "
-        "est \"approved\", clique une seule fois sur le bouton de paiement. Si la banque demande une "
+        'est "approved", clique une seule fois sur le bouton de paiement. Si la banque demande une '
         "validation dans son application, attends jusqu'à 5 minutes que le titulaire valide sur son "
         "téléphone. Renvoie ensuite payment_result (refused, accepted ou unknown), le message exact "
         "affiché dans payment_message, et site_notes."

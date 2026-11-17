@@ -15,14 +15,14 @@ Usage côté orchestrateur :
 from __future__ import annotations
 
 import os
-from typing import Any, Optional
+from typing import Any
 
 from .base import AgentError, NeedsHuman, PaymentDenied, ShoppingAgentProtocol
 from .fake import FakeShoppingAgent
 from .models import AgentAnswer, Intent, Option, OrderItem, OrderSummary, SiteCard, summary_hash
 
 
-def make_agent(fake: Optional[bool] = None, **kwargs: Any) -> ShoppingAgentProtocol:
+def make_agent(fake: bool | None = None, **kwargs: Any) -> ShoppingAgentProtocol:
     """Renvoie le vrai agent H, qui agit sur les vrais sites. C'est le comportement par défaut.
 
     La version factice n'est utilisée que si on la demande explicitement
