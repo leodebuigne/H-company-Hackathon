@@ -20,8 +20,6 @@ KINDS = {
     "intent": ("intent.schema.json", c.Intent),
     "option": ("option.schema.json", c.Option),
     "order-summary": ("order-summary.schema.json", c.OrderSummary),
-    "approval-request": ("approval-request.schema.json", c.ApprovalRequest),
-    "approval-status": ("approval-status.schema.json", c.ApprovalStatus),
     "site-card": ("site-card.schema.json", c.SiteCard),
     "ws": ("ws-message.schema.json", c.ClientMessage | c.ServerMessage),
 }

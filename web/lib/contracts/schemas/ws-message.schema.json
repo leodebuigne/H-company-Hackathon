@@ -38,9 +38,6 @@
       "$ref": "#/$defs/ServerSummary"
     },
     {
-      "$ref": "#/$defs/ServerApproval"
-    },
-    {
       "$ref": "#/$defs/ServerAgentView"
     },
     {
@@ -56,7 +53,6 @@
         "proposing",
         "cart",
         "confirm_1",
-        "awaiting_relative",
         "recheck",
         "confirm_2",
         "paying",
@@ -284,23 +280,6 @@
         }
       }
     },
-    "ServerApproval": {
-      "description": "Orchestrateur → interface. Statut de la validation du proche, à chaque changement.",
-      "type": "object",
-      "additionalProperties": false,
-      "required": [
-        "type",
-        "status"
-      ],
-      "properties": {
-        "type": {
-          "const": "approval"
-        },
-        "status": {
-          "$ref": "approval-status.schema.json"
-        }
-      }
-    },
     "ServerAgentView": {
       "description": "Orchestrateur → interface. Lien vers la vue en direct de l'agent H, pour l'écran spectateur.",
       "type": "object",
@@ -337,7 +316,6 @@
             "transcription_failed",
             "not_understood",
             "agent_failed",
-            "approval_failed",
             "price_changed",
             "timeout",
             "internal"

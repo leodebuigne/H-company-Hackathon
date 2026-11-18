@@ -32,7 +32,7 @@ await agent.start(intent)  # orchestrator.contracts.Intent ; le site se déduit 
 options = await agent.search()  # list[contracts.Option], 8 au maximum
 await agent.choose(options[0].id)
 summary = await agent.checkout()  # contracts.OrderSummary ; rien n'est cliqué ; crée l'order_id (UUID)
-# ... pay() déclenche approval_callback(summary) : triple vérification de l'orchestrateur ...
+# ... pay() déclenche approval_callback(summary) : double confirmation de l'orchestrateur ...
 result = await agent.pay()  # "refused", "accepted" ou "unknown"
 ```
 

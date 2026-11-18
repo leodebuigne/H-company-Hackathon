@@ -6,7 +6,7 @@
 
 ## En bref
 
-Pilote est un assistant vocal qui fait les achats en ligne à la place d'une personne aveugle ou malvoyante, sur de vrais sites, avec une triple vérification avant chaque paiement. Le projet repose sur l'agent de navigation de H Company et sur les modèles de Hugging Face (voix, compréhension, vision).
+Pilote est un assistant vocal qui fait les achats en ligne à la place d'une personne aveugle ou malvoyante, sur de vrais sites, avec une double confirmation avant chaque paiement. Le projet repose sur l'agent de navigation de H Company et sur les modèles de Hugging Face (voix, compréhension, vision).
 
 Ce qui change par rapport au premier plan : plus de faux sites. La démo se fait sur de vrais sites marchands avec une carte virtuelle éphémère à 0 €. Le paiement est refusé par la banque, ce qui prouve que tout le parcours fonctionne sans dépenser d'argent.
 
@@ -38,11 +38,11 @@ Pilote permet à une personne aveugle de dire « commande-moi une pizza margheri
 1. **Il agit, il ne décrit pas.** L'agent de H Company navigue, remplit et va jusqu'au paiement, là où Be My Eyes et Envision s'arrêtent à la description.
 2. **N'importe quel site, sans partenariat.** Les agents d'Amazon, OpenAI ou Google ne marchent qu'avec leurs marchands partenaires. Pilote travaille sur le site tel qu'il est, grâce au « computer use ».
 3. **Une conversation pensée pour l'oreille.** Au plus 3 options annoncées à la fois, nom, prix et note d'abord, détails sur demande, confirmations sous forme d'affirmations (« J'ai mis dans le panier une margherita à 11,50 € »). Ce sont les recommandations de l'étude CHI 2026.
-4. **Un paiement qu'on ne peut pas déclencher par erreur.** L'agent s'arrête toujours avant le bouton qui engage de l'argent. Il faut un « oui » oral, la validation d'un proche par SMS, puis un deuxième « oui » après relecture de la page. La carte est enregistrée à l'avance sur le compte marchand : personne ne la dicte ni ne la lit.
+4. **Un paiement qu'on ne peut pas déclencher par erreur.** L'agent s'arrête toujours avant le bouton qui engage de l'argent. Il faut un « oui » oral, puis un deuxième « oui » après relecture de la page. La carte est enregistrée à l'avance sur le compte marchand : personne ne la dicte ni ne la lit.
 5. **Un agent qui « écoute » ce qu'il voit.** Une description orale des produits (couleur, aspect, avis résumés) grâce aux modèles de vision de Hugging Face, ce qu'aucun agent d'achat grand public ne fait pour un utilisateur qui ne voit pas.
 6. **Une mémoire des sites.** Après chaque commande, Pilote garde une fiche du site (étapes, pièges, bandeaux cookies). La fois suivante, il va plus vite. Aucune donnée personnelle dans la fiche.
 
-**Ce qu'on montre au jury.** Une commande complète à la voix sur un vrai site, la validation SMS d'un proche en direct, puis le paiement refusé par la banque grâce à la carte éphémère à 0 €. Le refus prouve que l'argent serait vraiment parti si la carte avait été approvisionnée.
+**Ce qu'on montre au jury.** Une commande complète à la voix sur un vrai site, puis le paiement refusé par la banque grâce à la carte éphémère à 0 €. Le refus prouve que l'argent serait vraiment parti si la carte avait été approvisionnée.
 
 **Modèle économique à pitcher.** Abonnement pour les particuliers, et licence pour les associations et les mutuelles qui accompagnent les personnes aveugles. Plus tard, branchement sur les paiements dédiés aux agents de Visa et Mastercard.
 
@@ -87,13 +87,13 @@ Un seul dépôt GitHub, quatre briques indépendantes qui ne se parlent qu'à tr
 
 _(Schéma de l'architecture : voir le doc en ligne.)_
 
-L'orchestrateur reçoit la voix, demande la compréhension à Hugging Face, pilote l'agent H, et attend la validation du proche avant d'autoriser le clic de paiement.
+L'orchestrateur reçoit la voix, demande la compréhension à Hugging Face, pilote l'agent H, et n'autorise le clic de paiement qu'après les deux « oui » et la relecture de la page.
 
 **Choix techniques (et pourquoi).**
 
-- **Orchestrateur en Python (FastAPI)**, lancé sur l'ordinateur de démo. Le SDK Python de H se connecte tout seul au Chrome local, le SDK TypeScript demande une étape de plus ([doc H](https://hub.hcompany.ai/agents-api/your-browser.md)). Et une commande peut attendre plusieurs minutes un proche : un processus qui tourne en continu est plus sûr qu'une fonction serverless.
-- **Interface et pages de validation en Next.js.** L'interface vocale tourne sur l'ordinateur de démo. Les pages Valider / Refuser envoyées par SMS sont déployées sur Vercel, car le proche doit les ouvrir depuis son téléphone.
-- **Redis hébergé (Upstash, via Vercel)** pour partager l'état des validations et les fiches de sites entre Vercel et l'orchestrateur.
+- **Orchestrateur en Python (FastAPI)**, lancé sur l'ordinateur de démo. Le SDK Python de H se connecte tout seul au Chrome local, le SDK TypeScript demande une étape de plus ([doc H](https://hub.hcompany.ai/agents-api/your-browser.md)). Et une commande peut durer plusieurs minutes : un processus qui tourne en continu est plus sûr qu'une fonction serverless.
+- **Interface en Next.js.** L'interface vocale tourne sur l'ordinateur de démo.
+- **Redis hébergé (Upstash)** pour garder les fiches de sites.
 - **Hugging Face Inference Providers** pour la voix, le langage et la vision, avec un seul `HF_TOKEN` ([doc HF](https://huggingface.co/docs/inference-providers/index)).
 
 **Arborescence du dépôt.**
@@ -104,7 +104,7 @@ pilote/
   orchestrator/         # Python, FastAPI, machine à états (membre 5)
     agent_h/            # sessions H, consignes, fiches de sites (membre 1)
     ai/                 # voix, compréhension, résumés, vision (membre 2)
-  web/                  # Next.js : interface vocale + pages de validation (membres 3 et 4)
+  web/                  # Next.js : interface vocale (membre 4)
   docs/                 # décisions, sites testés, résultats des tests
   .env.example
 ```
@@ -115,27 +115,19 @@ pilote/
 | --- | --- | --- | --- |
 | `Intent` | `site`, `item`, `constraints[]`, `date`, `budget_max_eur`, `missing[]` | ai (membre 2) | orchestrateur, agent H |
 | `Option` | `id`, `title`, `price_eur`, `rating`, `details`, `url` | agent H (membre 1) | ai (résumé oral), interface |
-| `OrderSummary` | `order_id`, `site`, `items[]`, `fees_eur`, `total_eur`, `delivery`, `refund_terms`, `hash` | agent H (membre 1) | validation, interface |
-| `ApprovalRequest` | `order_id`, `summary`, `relatives[]`, `timeout_s` | orchestrateur | validation (membre 3) |
-| `ApprovalStatus` | `order_id`, `state` (`pending`, `approved`, `denied`, `expired`), `by`, `at` | validation (membre 3) | orchestrateur |
+| `OrderSummary` | `order_id`, `site`, `items[]`, `fees_eur`, `total_eur`, `delivery`, `refund_terms`, `hash` | agent H (membre 1) | interface |
 | `SiteCard` | `domain`, `steps[]`, `pitfalls[]`, `avg_seconds`, `runs` | agent H (membre 1) | agent H |
 
-**Machine à états d'une commande** (seul l'orchestrateur la fait avancer) : `listening` → `understanding` → `searching` → `proposing` → `cart` → `confirm_1` → `awaiting_relative` → `recheck` → `confirm_2` → `paying` → `done`. Sorties possibles à tout moment : `cancelled`, `human_needed` (CAPTCHA, cryptogramme, erreur).
+**Machine à états d'une commande** (seul l'orchestrateur la fait avancer) : `listening` → `understanding` → `searching` → `proposing` → `cart` → `confirm_1` → `recheck` → `confirm_2` → `paying` → `done`. Sorties possibles à tout moment : `cancelled`, `human_needed` (CAPTCHA, cryptogramme, erreur).
 
 **Messages WebSocket entre interface et orchestrateur** (`ws://localhost:8000/ws`) :
 
 - Interface → orchestrateur : `{type:"audio", data}` (webm en base64), `{type:"text", text}` (mode texte de secours), `{type:"confirm", value}`, `{type:"cancel"}`.
 - Orchestrateur → interface : `{type:"say", text, audio}`, `{type:"state", state}`, `{type:"options", options}`, `{type:"summary", summary}`, `{type:"error", message}`.
 
-**API de validation (sur Vercel)**, protégée par un secret partagé côté orchestrateur :
+**L'arrêt avant paiement.** La documentation de H ne décrit pas de réglage « bloquer tel bouton » ([doc H](https://hub.hcompany.ai/agents-api/custom-tools.md)). On passe donc par un outil personnalisé : la consigne oblige l'agent à appeler `request_payment_approval(summary)` avant tout clic qui engage de l'argent. Notre fonction ne répond qu'après la double confirmation, avec `approved` ou `denied`. Un second outil, `need_human(reason)`, sert pour les CAPTCHA et le cryptogramme.
 
-- `POST /api/approvals` crée la demande et envoie le SMS au proche n° 1.
-- `GET /api/approvals/{order_id}` renvoie l'`ApprovalStatus` (l'orchestrateur interroge toutes les 2 secondes).
-- `/v/{token}` : page Valider / Refuser, lien signé, à usage unique, valable 5 minutes.
-
-**L'arrêt avant paiement.** La documentation de H ne décrit pas de réglage « bloquer tel bouton » ([doc H](https://hub.hcompany.ai/agents-api/custom-tools.md)). On passe donc par un outil personnalisé : la consigne oblige l'agent à appeler `request_payment_approval(summary)` avant tout clic qui engage de l'argent. Notre fonction ne répond qu'après la triple vérification, avec `approved` ou `denied`. Un second outil, `need_human(reason)`, sert pour les CAPTCHA et le cryptogramme.
-
-**Variables d'environnement** (dans `.env.example`, sans valeur) : `HAI_API_KEY` (nom utilisé dans la doc H, à confirmer), `HF_TOKEN`, `UPSTASH_REDIS_REST_URL`, `UPSTASH_REDIS_REST_TOKEN`, `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_FROM`, `PILOTE_SHARED_SECRET`, `PUBLIC_VALIDATION_URL`.
+**Variables d'environnement** (dans `.env.example`, sans valeur) : `HAI_API_KEY` (nom utilisé dans la doc H, à confirmer), `HF_TOKEN`, `UPSTASH_REDIS_REST_URL`, `UPSTASH_REDIS_REST_TOKEN`.
 
 ## Ordre de travail
 
@@ -145,9 +137,8 @@ Les contrats sont figés le jour 1 à 11 h, et le parcours complet à la voix do
 | --- | --- | --- | --- | --- |
 | 1 Agent H | Test de H, agent factice | Recherche, panier sur le site 1 | Arrêt avant paiement, mémoire des sites | Site 2, 5 essais par site |
 | 2 IA HF | IA factice, Whisper testé | Intent, résumés, benchmark LLM | Vision produits, synthèse vocale | Réglages fins, slide benchmark |
-| 3 Validation | Version factice, Redis branché | SMS, liens signés, page Valider | Cascade des proches, 6 scénarios testés | Plan B démo, journal |
 | 4 Interface | Faux serveur WS, bouton parler | Sons, lecture, mode texte | Écran du jury, test VoiceOver | Finitions, test yeux fermés |
-| 5 Intégration | Contrats à 11 h, sites et carte | Orchestrateur, intégration texte | Triple vérification, intégration voix | 20 tests, vidéo, pitch |
+| 5 Intégration | Contrats à 11 h, sites et carte | Orchestrateur, intégration texte | Double confirmation, intégration voix | 20 tests, vidéo, pitch |
 | **Jalon** | Contrats figés (11 h) | Parcours texte jusqu'au panier | **Parcours voix complet, paiement refusé** | Démo, plan B prêt |
 
 Chaque jalon se vérifie en fin de journée, en équipe. S'il n'est pas atteint, le lendemain matin commence par lui, avant toute nouvelle fonctionnalité.
@@ -160,7 +151,6 @@ Chaque membre possède un dossier et n'écrit nulle part ailleurs. Chacun livre 
 | --- | --- | --- | --- | --- |
 | 1 | Agent H : navigation, panier, arrêt avant paiement, mémoire des sites | `orchestrator/agent_h/` | J1 soir (`FakeShoppingAgent`) | J3 midi sur le site 1 |
 | 2 | IA Hugging Face : voix, compréhension, résumés, description des produits | `orchestrator/ai/` | J1 soir (`FakeAI`) | J2 soir |
-| 3 | Validation des proches : SMS, liens signés, pages Valider / Refuser | `web/app/api/`, `web/app/v/`, `web/lib/approvals/` | J1 soir (statut toujours « approuvé ») | J3 midi |
 | 4 | Interface vocale accessible + écran spectateur pour le jury | `web/app/(pilote)/`, `web/components/` | J1 soir (faux serveur WebSocket) | J2 soir |
 | 5 (toi) | Contrats, orchestrateur, intégration, sites réels, démo et pitch | `contracts/`, `orchestrator/` (hors sous-dossiers ci-dessus), `docs/` | Contrats J1 à 11 h | Intégration complète J3 soir |
 
@@ -175,17 +165,17 @@ Chaque membre colle dans son assistant de code (Claude Code ou autre) le context
 ```text
 Tu travailles sur Pilote, un projet de hackathon d'une équipe de 5 personnes.
 Pilote est un assistant vocal en français qui fait des achats en ligne à la place d'une personne aveugle, sur de vrais sites marchands. Il utilise l'agent "computer use" de H Company (navigation) et des modèles Hugging Face (voix, langage, vision).
-Avant chaque paiement : un "oui" oral, la validation d'un proche par SMS, une relecture de la page, puis un deuxième "oui". La démo paie avec une carte virtuelle à 0 € : le paiement doit être refusé par la banque, ce qui prouve que le parcours marche.
+Avant chaque paiement : un "oui" oral, une relecture de la page, puis un deuxième "oui". La démo paie avec une carte virtuelle à 0 € : le paiement doit être refusé par la banque, ce qui prouve que le parcours marche.
 
 Dépôt : monorepo pilote/
   contracts/              schémas JSON partagés + README des messages WebSocket
   orchestrator/           Python 3.12, FastAPI, machine à états
   orchestrator/agent_h/   agent H Company
   orchestrator/ai/        modèles Hugging Face
-  web/                    Next.js : interface vocale + pages de validation (Vercel)
+  web/                    Next.js : interface vocale
   docs/                   décisions, résultats de tests
 
-Contrat : les fichiers de contracts/ font foi (Intent, Option, OrderSummary, ApprovalRequest, ApprovalStatus, SiteCard, messages WebSocket). Ne modifie jamais un contrat seul : ouvre une issue GitHub, le membre 5 tranche.
+Contrat : les fichiers de contracts/ font foi (Intent, Option, OrderSummary, SiteCard, messages WebSocket). Ne modifie jamais un contrat seul : ouvre une issue GitHub, le membre 5 tranche.
 
 Règles absolues :
 - N'écris que dans les dossiers de ta partie.
@@ -215,7 +205,7 @@ Objectif : à partir d'un Intent, trouver des options sur un vrai site, remplir 
    - cancel() : annule la session.
 4. Consigne générique en français, identique pour tous les sites : "Trouve ce que l'utilisateur demande, renvoie les options, et avant TOUT clic qui engage de l'argent (Payer, Commander, Acheter, Valider la commande), appelle l'outil request_payment_approval avec le récapitulatif et attends sa réponse. Si tu rencontres un CAPTCHA, un cryptogramme demandé ou une connexion nécessaire, appelle need_human et ne fais rien d'autre."
 5. Déclare deux outils personnalisés (doc : https://hub.hcompany.ai/agents-api/custom-tools.md) :
-   - request_payment_approval(summary) : appelle un callback async fourni par l'orchestrateur, qui ne répond qu'après la triple vérification ("approved" ou "denied").
+   - request_payment_approval(summary) : appelle un callback async fourni par l'orchestrateur, qui ne répond "approved" que si la page montre toujours le récapitulatif accepté ("approved" ou "denied").
    - need_human(reason) : appelle un callback de l'orchestrateur et met la session en pause.
    Les outils peuvent être appelés plusieurs fois pour la même action : rends-les idempotents (clé = order_id).
 6. Hash du récapitulatif : articles + quantités + total, normalisés.
@@ -246,26 +236,6 @@ Objectif : tout ce qui touche à la voix, au langage et à la vision passe par H
 Fini quand : les 20 phrases donnent le bon Intent dans au moins 18 cas, chaque résumé dure moins de 20 secondes à l'oral, et transcribe + parse_intent répondent en moins de 3 secondes au total.
 ```
 
-### Membre 3 — Validation des proches
-
-```text
-Ta partie : web/app/api/approvals/, web/app/v/, web/lib/approvals/ (Next.js, TypeScript, déployé sur Vercel). Branche : feat/validation.
-Objectif : quand l'orchestrateur demande une validation, un proche reçoit un SMS, ouvre un lien, valide ou refuse ; sans réponse, on passe au proche suivant ; par défaut, on refuse.
-
-Étapes, dans l'ordre :
-1. Livre tout de suite une version factice : POST /api/approvals renvoie un statut "approved" après 5 secondes, sans SMS.
-2. Stockage : Redis Upstash (intégration Vercel), clés approval:{order_id} et token:{token}.
-3. POST /api/approvals (en-tête Authorization: Bearer PILOTE_SHARED_SECRET) : reçoit un ApprovalRequest, crée un jeton signé HMAC, à usage unique, valable 5 minutes, et envoie au proche n° 1 un SMS court : prénom de l'utilisateur, site, total, lien.
-4. GET /api/approvals/{order_id} (même en-tête) : renvoie l'ApprovalStatus. Pas de minuteur en serverless : c'est cet appel, répété toutes les 2 secondes par l'orchestrateur, qui détecte qu'un délai est dépassé et envoie le SMS au proche suivant. Après le dernier proche : "expired".
-5. Page /v/{token} : lisible au lecteur d'écran, deux gros boutons Valider et Refuser, le récapitulatif (site, articles, total), rien d'autre (pas d'historique). Un jeton déjà utilisé ou expiré affiche "Lien expiré" et ne change rien.
-6. SMS : Twilio par défaut (variables TWILIO_*). En compte d'essai, seuls les numéros vérifiés reçoivent les SMS : enregistre ceux de l'équipe. Vérifie le coût d'un SMS vers la France et l'expéditeur affiché.
-7. Plan B : page /demo/approvals (protégée par un code) qui liste les demandes en attente avec Valider / Refuser, si le SMS n'arrive pas pendant la démo.
-8. Journal : order_id, heure, qui a décidé, conservé 30 jours, sans contenu audio.
-9. Important : la protection de déploiement Vercel doit être désactivée pour ce projet, sinon les proches tombent sur une page de connexion Vercel.
-
-Fini quand : les 6 scénarios passent (proche 1 valide, proche 1 refuse, cascade vers le proche 2, personne ne répond, lien réutilisé, lien expiré), testés avec de vrais téléphones.
-```
-
 ### Membre 4 — Interface vocale accessible
 
 ```text
@@ -276,7 +246,7 @@ Objectif : une personne aveugle utilise Pilote de bout en bout sans jamais regar
 1. Écris web/mock-ws.mjs : un faux serveur WebSocket qui rejoue un parcours complet (say, state, options, summary) selon contracts/README.md. Tu développes contre lui jusqu'à l'intégration.
 2. Parler : un seul gros bouton et la barre d'espace maintenue pour parler (MediaRecorder, webm), envoyé en {type:"audio"}.
 3. Écouter : joue l'audio des messages "say" ; si audio est vide, utilise speechSynthesis en fr-FR.
-4. Sons courts pour chaque état : j'écoute, je réfléchis, j'attends votre proche, succès, erreur. L'utilisateur doit savoir où il en est sans voir.
+4. Sons courts pour chaque état : j'écoute, je réfléchis, question, succès, erreur. L'utilisateur doit savoir où il en est sans voir.
 5. Première phrase de chaque session : "Je suis Pilote, un assistant automatique."
 6. Mode texte de secours : un champ de saisie qui envoie {type:"text"}.
 7. Accessibilité : régions ARIA live, focus géré, tout au clavier, contraste suffisant, rien qui ne soit que visuel. Teste avec VoiceOver (Mac) les yeux fermés.
@@ -293,15 +263,15 @@ Ta partie : contracts/, orchestrator/ (hors agent_h/ et ai/), docs/, la configur
 Objectif : que les 4 briques s'assemblent en un parcours complet, et que la démo soit prête.
 
 Étapes, dans l'ordre :
-1. Jour 1, avant 11 h : squelette du dépôt (arborescence, .env.example, .gitignore, CODEOWNERS, protection de la branche main), contracts/ avec les 6 schémas JSON et le README des messages WebSocket, tests d'intégration continue (lint + tests Python et TypeScript). Merge et préviens l'équipe : plus personne ne change un contrat sans toi.
+1. Jour 1, avant 11 h : squelette du dépôt (arborescence, .env.example, .gitignore, CODEOWNERS, protection de la branche main), contracts/ avec les 5 schémas JSON et le README des messages WebSocket, tests d'intégration continue (lint + tests Python et TypeScript). Merge et préviens l'équipe : plus personne ne change un contrat sans toi.
 2. Jour 1 : docs/sites.md. Choisis 2 sites réels avec l'équipe, lis leurs conditions d'utilisation, crée les comptes à la main dans le Chrome dédié, enregistre la carte éphémère, et teste un paiement refusé à la main. Note ce qui se passe (vérification à l'enregistrement, cryptogramme redemandé, CAPTCHA).
-3. Orchestrateur FastAPI : route WebSocket /ws, machine à états (listening, understanding, searching, proposing, cart, confirm_1, awaiting_relative, recheck, confirm_2, paying, done, cancelled, human_needed). Branche les versions factices des 4 briques, puis les vraies une par une grâce à des variables USE_FAKE_AGENT, USE_FAKE_AI, USE_FAKE_APPROVALS.
-4. Le callback request_payment_approval : premier "oui" oral (confirm_1), appel POST /api/approvals, attente du statut, recheck() de l'agent, comparaison du hash, deuxième "oui" (confirm_2), puis renvoie "approved" : l'agent clique, et pay() lit le résultat affiché. Le moindre écart de prix, refus, délai ou erreur donne "denied", annoncé à l'oral.
+3. Orchestrateur FastAPI : route WebSocket /ws, machine à états (listening, understanding, searching, proposing, cart, confirm_1, recheck, confirm_2, paying, done, cancelled, human_needed). Branche les versions factices des briques, puis les vraies une par une grâce à des variables USE_FAKE_AGENT et USE_FAKE_AI.
+4. Le callback request_payment_approval : premier "oui" oral (confirm_1), recheck() de l'agent, comparaison du hash, deuxième "oui" (confirm_2), puis renvoie "approved" : l'agent clique, et pay() lit le résultat affiché. Le moindre écart de prix, délai ou erreur donne "denied", annoncé à l'oral.
 5. Annulation possible à tout moment, et un délai maximum par étape. Journal des étapes sans audio.
-6. Jalons d'intégration : J2 soir, parcours complet en mode texte jusqu'au panier ; J3 soir, parcours complet à la voix avec SMS et paiement refusé sur le site 1.
+6. Jalons d'intégration : J2 soir, parcours complet en mode texte jusqu'au panier ; J3 soir, parcours complet à la voix et paiement refusé sur le site 1.
 7. Jour 4 : site 2, 20 tests complets, vidéo de secours, script de démo minuté, pitch.
 
-Fini quand : 5 parcours complets à la voix d'affilée se terminent par un paiement refusé par la banque, sans qu'aucun humain touche le clavier en dehors des gestes prévus (validation du proche, validation bancaire).
+Fini quand : 5 parcours complets à la voix d'affilée se terminent par un paiement refusé par la banque, sans qu'aucun humain touche le clavier en dehors des gestes prévus (validation bancaire).
 ```
 
 ## Règles GitHub
@@ -309,7 +279,7 @@ Fini quand : 5 parcours complets à la voix d'affilée se terminent par un paiem
 Le merge final se passe bien si les contrats sont figés tôt et si on fusionne un peu chaque jour, pas tout le dernier soir.
 
 - **Un dépôt neuf** `pilote`, créé par le membre 5 le jour 1 au matin. Branche `main` protégée : pas de push direct, une relecture obligatoire.
-- **Une branche par membre** : `feat/agent-h`, `feat/ai`, `feat/validation`, `feat/interface`, `feat/orchestrator`.
+- **Une branche par membre** : `feat/agent-h`, `feat/ai`, `feat/interface`, `feat/orchestrator`.
 - **Fichier CODEOWNERS** : chaque dossier a son propriétaire, `contracts/` appartient au membre 5. GitHub demande automatiquement la bonne relecture.
 - **Petites PR, fusionnées tous les jours à 18 h.** Les tests d'intégration continue doivent passer avant la fusion.
 - **Les versions factices d'abord.** Tant qu'une brique réelle n'est pas prête, l'orchestrateur utilise sa version factice : personne n'attend personne.
@@ -324,12 +294,11 @@ Ce plan suppose un hackathon de 4 jours avec démo le jour 4, comme le premier p
 - [ ] Uber Eats et SNCF Connect retenus : quels comptes de l'équipe sacrifie-t-on s'ils sont bloqués ?
 - [ ] Quelle banque pour la carte virtuelle éphémère, et peut-on l'enregistrer chez le marchand à 0 € ?
 - [ ] Les sites choisis redemandent-ils le cryptogramme pour une carte enregistrée ?
-- [ ] Fournisseur de SMS (Twilio par défaut) et budget accepté ?
 - [ ] Qui prend quelle partie, selon les compétences de chacun ?
 - [ ] Quelle synthèse vocale française via Hugging Face, puisque Inference Providers ne propose pas cette tâche ?
 - [ ] Nom exact de la variable de clé H (`HAI_API_KEY` dans la doc) et plan H : le plan gratuit permet 3 sessions simultanées et 60 millions de jetons par mois ([doc H](https://hub.hcompany.ai/agents-api/plans-and-limits.md)), a priori suffisant.
 - [ ] Désactiver la protection de déploiement Vercel sur les 2 faux sites, sinon l'agent ne peut pas les ouvrir en plan B.
-- [ ] Qui présente la démo, et qui joue le proche qui reçoit le SMS ?
+- [ ] Qui présente la démo ?
 
 ## Sources
 

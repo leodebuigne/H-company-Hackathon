@@ -1,4 +1,4 @@
-"""Parcours complets de la machine à états, avec les versions factices de l'IA, de l'agent et des proches.
+"""Parcours complets de la machine à états, avec les versions factices de l'IA et de l'agent.
 
 Chaque message envoyé aux écrans est vérifié contre contracts/schemas/ws-message.schema.json.
 """
@@ -7,13 +7,9 @@ import asyncio
 import datetime as dt
 from typing import Any
 
-import pytest
-
 from orchestrator.agent_h.fake import FakeShoppingAgent
 from orchestrator.ai.fake import FakeAI
-from orchestrator.approvals import FakeApprovals
 from orchestrator.config import Settings
-from orchestrator.contracts import Relative
 from orchestrator.session import WAITING, Session, merge_answer
 
 from .test_contracts import _validator
@@ -37,7 +33,6 @@ class Harness:
         self,
         *,
         agent: dict[str, Any] | None = None,
-        approvals: FakeApprovals | None = None,
         **settings: Any,
     ) -> None:
         self.messages: list[dict[str, Any]] = []
@@ -59,9 +54,7 @@ class Harness:
             self.agents.append(fake)
             return fake
 
-        self.approvals = approvals or FakeApprovals("approved", delay_s=0)
         config = {
-            "poll_interval_s": 0.01,
             "journal_path": None,
             "confirm_timeout_s": 5,
             "human_timeout_s": 5,
@@ -70,7 +63,6 @@ class Harness:
         self.session = Session(
             ai=FakeAI(),
             agent_factory=factory,
-            approvals=self.approvals,
             settings=Settings(**config),
             today=lambda: TODAY,
         )
@@ -118,7 +110,7 @@ async def _to_confirm_1(h: Harness) -> None:
     await h.wait("confirm_1")
 
 
-async def test_full_order_with_triple_check():
+async def test_full_order_with_two_confirmations():
     async with Harness() as h:
         assert h.of("ready") and "Je suis Pilote, un assistant automatique" in h.of("say")[0]["text"]
         await _to_confirm_1(h)
@@ -131,12 +123,11 @@ async def test_full_order_with_triple_check():
         assert h.paid == 1
         expected = [
             "listening", "understanding", "searching", "proposing", "understanding", "cart",
-            "confirm_1", "awaiting_relative", "recheck", "confirm_2", "understanding", "paying",
+            "confirm_1", "recheck", "confirm_2", "understanding", "paying",
             "done", "listening",
         ]  # fmt: skip
         assert h.states() == expected
-        assert h.of("approval")[-1]["status"]["status"] == "approved"
-        assert "Léa a validé" in h.said() and "Le paiement est accepté" in h.said()
+        assert "Rien n'a changé" in h.said() and "Le paiement est accepté" in h.said()
 
 
 async def test_missing_information_is_asked_then_merged():
@@ -149,25 +140,13 @@ async def test_missing_information_is_asked_then_merged():
         assert h.agents[0]._intent.details == {"destination": "Lille", "origin": "Paris"}
 
 
-async def test_first_no_buys_nothing_and_asks_no_relative():
+async def test_first_no_buys_nothing():
     async with Harness() as h:
         await _to_confirm_1(h)
         await h.confirm(False)
         await h.wait("listening")
-        assert h.approvals.requests == {} and h.paid == 0
+        assert h.paid == 0
         assert "cancelled" in h.states()
-
-
-@pytest.mark.parametrize(
-    ("decision", "spoken"), [("denied", "Léa a refusé"), ("expired", "Personne n'a répondu")]
-)
-async def test_relative_refusal_or_silence_buys_nothing(decision, spoken):
-    async with Harness(approvals=FakeApprovals(decision, delay_s=0)) as h:
-        await _to_confirm_1(h)
-        await h.confirm(True)
-        await h.wait("listening")
-        assert h.paid == 0 and spoken in h.said()
-        assert "confirm_2" not in h.states()
 
 
 async def test_price_change_on_recheck_cancels():
@@ -177,7 +156,7 @@ async def test_price_change_on_recheck_cancels():
         await h.wait("listening")
         assert h.paid == 0
         assert h.of("error")[-1]["code"] == "price_changed"
-        assert "La page a changé depuis la validation" in h.said()
+        assert "La page a changé depuis votre accord" in h.said()
 
 
 async def test_cancel_message_stops_a_long_search():
@@ -189,11 +168,11 @@ async def test_cancel_message_stops_a_long_search():
         assert "cancelled" in h.states() and "Rien n'a été acheté" in h.said()
 
 
-async def test_spoken_cancel_while_waiting_for_relative():
-    async with Harness(approvals=FakeApprovals("approved", delay_s=60)) as h:
+async def test_spoken_cancel_while_waiting_for_the_second_yes():
+    async with Harness() as h:
         await _to_confirm_1(h)
         await h.confirm(True)
-        await h.wait("awaiting_relative")
+        await h.wait("confirm_2")
         await h.text("Annule")
         await h.wait("listening")
         assert h.paid == 0 and h.states()[-2] == "cancelled"
@@ -249,15 +228,6 @@ async def test_second_screen_gets_current_state():
         assert any(m["type"] == "summary" for m in late[before:]), "les deux écrans reçoivent la suite"
 
 
-async def test_no_relative_configured_with_real_approvals():
-    async with Harness(use_fake_approvals=False) as h:
-        await h.text("Un train de Paris pour Lille demain")
-        await h.wait("proposing")
-        await h.text("La première")
-        await h.wait("listening")
-        assert h.of("error")[-1]["code"] == "approval_failed" and h.paid == 0
-
-
 async def test_invalid_client_message_is_ignored():
     async with Harness() as h:
         await h.session.receive({"type": "pay_now"})
@@ -281,15 +251,6 @@ def test_merge_answer_fills_the_asked_field():
     merged = merge_answer(pending, _intent("other", "Je pars de Paris."))
     assert merged.details == {"destination": "Lille", "origin": "Paris"}
     assert merged.missing == [] and merged.kind == "new_request"
-
-
-def test_relatives_for_fake_and_real():
-    assert (
-        Settings(relatives=(Relative(first_name="Hugo", phone="+33600000002"),))
-        .relatives_for_approval()[0]
-        .first_name
-        == "Hugo"
-    )
 
 
 async def test_a_purchase_clicked_during_checkout_is_announced_not_hidden():
@@ -336,7 +297,7 @@ async def test_direct_buy_asks_once_for_a_paid_ticket_then_says_it():
         await h.wait_said("C'est acheté")
         said = h.said()
         assert "J'achète" in said and "Votre commande est confirmée." in said
-        assert "awaiting_relative" not in h.states() and "confirm_2" not in h.states()  # ni proche ni 2e oui
+        assert "confirm_2" not in h.states()  # pas de 2e oui
         assert "done" in h.states()
 
 
@@ -431,11 +392,9 @@ def test_spoken_digits_reads_words_and_figures():
     assert spoken_digits("1 2 3") == "123" and spoken_digits("mon code est 908") == "908"
 
 
-async def test_direct_buy_never_asks_a_relative_only_the_code():
-    # Même réglage que la démo : proche factice qui REFUSE. S'il était consulté, rien ne serait acheté.
-    refusing = FakeApprovals("denied", delay_s=0)
-    async with Harness(direct_buy=True, purchase_code="123", approvals=refusing) as h:
+async def test_direct_buy_asks_only_the_code():
+    async with Harness(direct_buy=True, purchase_code="123") as h:
         await _to_code_prompt(h)
         await h.text("un deux trois")
         await h.wait_said("C'est acheté")
-        assert "awaiting_relative" not in h.states() and "J'ai envoyé un message" not in h.said()
+        assert "confirm_2" not in h.states()

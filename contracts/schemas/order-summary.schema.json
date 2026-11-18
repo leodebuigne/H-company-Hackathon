@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://pilote.local/contracts/order-summary.schema.json",
   "title": "OrderSummary",
-  "description": "Récapitulatif lu par l'agent H sur la page de paiement. Renvoyé par checkout() puis par recheck(). C'est ce qui est lu à l'utilisateur et envoyé au proche.",
+  "description": "Récapitulatif lu par l'agent H sur la page de paiement. Renvoyé par checkout() puis par recheck(). C'est ce qui est lu à l'utilisateur.",
   "type": "object",
   "additionalProperties": false,
   "required": ["order_id", "site", "page_url", "items", "fees", "total_cents", "currency", "when_label", "conditions", "payment_button_label", "hash", "read_at"],

@@ -294,7 +294,3 @@ kbd {
 }
 
 .spectator-intent { margin: 0; font-size: 1.4rem; color: var(--muted); }
-.spectator-approval { margin: 0; font-size: 1.6rem; font-weight: 700; }
-.spectator-approval.is-pending { color: var(--warn); }
-.spectator-approval.is-approved { color: var(--ok); }
-.spectator-approval.is-denied { color: var(--rec); }

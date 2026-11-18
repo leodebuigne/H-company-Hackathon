@@ -3,7 +3,7 @@
 // Connexion à l'orchestrateur et état partagé de l'interface (utilisateur ou écran jury).
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { ApprovalStatus, ClientMessage, Intent, Option, OrderSummary, ServerMessage, State } from "./protocol";
+import type { ClientMessage, Intent, Option, OrderSummary, ServerMessage, State } from "./protocol";
 
 export const ORCHESTRATOR_URL = process.env.NEXT_PUBLIC_ORCHESTRATOR_WS_URL ?? "ws://localhost:8000/ws";
 
@@ -16,7 +16,6 @@ export interface PiloteSnapshot {
   intent: Intent | null;
   options: Option[];
   summary: OrderSummary | null;
-  approval: ApprovalStatus | null;
   log: LogEntry[];
   agentViewUrl: string | null;
   lastSay: string;
@@ -29,7 +28,6 @@ const INITIAL: PiloteSnapshot = {
   intent: null,
   options: [],
   summary: null,
-  approval: null,
   log: [],
   agentViewUrl: null,
   lastSay: "",
@@ -51,7 +49,7 @@ export function reduce(s: PiloteSnapshot, msg: ServerMessage): PiloteSnapshot {
       return {
         ...s,
         state: msg.state,
-        ...(fresh ? { intent: null, options: [], summary: null, approval: null, agentViewUrl: null } : {}),
+        ...(fresh ? { intent: null, options: [], summary: null, agentViewUrl: null } : {}),
       };
     }
     case "transcript":
@@ -62,8 +60,6 @@ export function reduce(s: PiloteSnapshot, msg: ServerMessage): PiloteSnapshot {
       return { ...s, options: msg.options };
     case "summary":
       return { ...s, summary: msg.summary };
-    case "approval":
-      return { ...s, approval: msg.status };
     case "agent_view":
       return { ...s, agentViewUrl: msg.agent_view_url };
     case "error":

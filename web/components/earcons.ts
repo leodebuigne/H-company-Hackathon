@@ -4,7 +4,7 @@
 
 import type { State } from "./protocol";
 
-export type Earcon = "listening" | "thinking" | "waiting" | "question" | "success" | "error";
+export type Earcon = "listening" | "thinking" | "question" | "success" | "error";
 
 let ctx: AudioContext | null = null;
 
@@ -34,8 +34,6 @@ const PATTERNS: Record<Earcon, () => void> = {
   listening: () => { tone(660, 0, 0.09); tone(990, 0.09, 0.12); },
   // Deux notes graves et douces : « je réfléchis / je travaille »
   thinking: () => { tone(392, 0, 0.12, 0.12, "triangle"); tone(392, 0.2, 0.12, 0.12, "triangle"); },
-  // Trois pulsations lentes : « j'attends votre proche »
-  waiting: () => { [0, 0.45, 0.9].forEach((s) => tone(523, s, 0.18, 0.12)); },
   // Note qui monte, comme une question : « à vous de répondre »
   question: () => { tone(587, 0, 0.12); tone(784, 0.14, 0.22); },
   // Petit accord majeur : « c'est fait »
@@ -63,8 +61,6 @@ export function earconForState(state: State): Earcon | null {
     case "confirm_1":
     case "confirm_2":
       return "question";
-    case "awaiting_relative":
-      return "waiting";
     case "done":
       return "success";
     case "cancelled":

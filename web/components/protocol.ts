@@ -8,7 +8,6 @@ import type {
   ClientConfirm,
   ClientText,
   ServerAgentView,
-  ServerApproval,
   ServerError,
   ServerIntent,
   ServerOptions,
@@ -20,7 +19,7 @@ import type {
   State,
 } from "@/lib/contracts";
 
-export type { ApprovalStatus, Intent, Option, OrderSummary, State } from "@/lib/contracts";
+export type { Intent, Option, OrderSummary, State } from "@/lib/contracts";
 
 /** Interface → orchestrateur (confirm compris : Entrée / N au clavier). */
 export type ClientMessage = ClientAudio | ClientText | ClientConfirm | ClientCancel;
@@ -34,7 +33,6 @@ export type ServerMessage =
   | ServerIntent
   | ServerOptions
   | ServerSummary
-  | ServerApproval
   | ServerAgentView
   | ServerError;
 
@@ -45,7 +43,6 @@ export const STATE_LABELS: Record<State, string> = {
   proposing: "Je propose des options",
   cart: "Je prépare l'achat",
   confirm_1: "Confirmation",
-  awaiting_relative: "J'attends la validation du proche",
   recheck: "Je relis la page de paiement",
   confirm_2: "Deuxième confirmation",
   paying: "Achat en cours",
@@ -74,12 +71,12 @@ export const STEPS: { states: State[]; label: string }[] = [
   { states: ["listening", "understanding"], label: "Demande" },
   { states: ["searching"], label: "Recherche" },
   { states: ["proposing"], label: "Choix" },
-  { states: ["cart", "confirm_1", "awaiting_relative", "recheck", "confirm_2", "paying"], label: "Achat" },
+  { states: ["cart", "confirm_1", "recheck", "confirm_2", "paying"], label: "Achat" },
   { states: ["done"], label: "Terminé" },
 ];
 
 /** États où une commande est en train d'être achetée (après le choix). */
-export const BUY_STATES: State[] = ["cart", "confirm_1", "awaiting_relative", "recheck", "confirm_2", "paying"];
+export const BUY_STATES: State[] = ["cart", "confirm_1", "recheck", "confirm_2", "paying"];
 
 /** États où Pilote travaille seul : on affiche depuis combien de temps. */
 export const BUSY_STATES: State[] = ["understanding", "searching", "cart", "recheck", "paying"];

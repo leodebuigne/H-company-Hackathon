@@ -28,10 +28,10 @@ Le navigateur bloque tout son avant un geste de l'utilisateur. La phrase d'accue
 - `protocol.ts` : réexporte les types de `@/lib/contracts` (aucun champ ajouté) et les libellés d'état.
 - `usePilote.ts` : connexion WebSocket, reconnexion automatique, état partagé (`reduce`, testé dans `usePilote.test.ts`).
 - `PiloteApp.tsx` : interface utilisateur (bouton pour parler, oui / non, mode texte, réglage de la voix).
-- `SpectatorScreen.tsx` : écran du jury (étapes, intention comprise, conversation, options ou récapitulatif, validation du proche, lien vers l'agent H).
+- `SpectatorScreen.tsx` : écran du jury (étapes, intention comprise, conversation, options ou récapitulatif, lien vers l'agent H).
 - `recorder.ts` : enregistrement du micro (webm/opus sur Chrome, mp4 sur Safari), envoyé avec son `mime`.
 - `speech.ts` : lecture des `say` (audio fourni avec son `mime`, sinon voix française du navigateur).
-- `earcons.ts` : sons d'état (j'écoute, je réfléchis, j'attends votre proche, question, succès, erreur).
+- `earcons.ts` : sons d'état (j'écoute, je réfléchis, question, succès, erreur).
 - `../mock-ws.mjs` : faux orchestrateur qui rejoue une commande de train ; il ignore et signale tout message hors contrat.
 
 ## Choix d'accessibilité

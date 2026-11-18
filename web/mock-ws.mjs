@@ -182,38 +182,19 @@ async function chooseOption(text) {
     say(
       `J'ai mis dans le panier le ${choice.title}, pour ${euros(choice.price_cents)}, sans frais. ` +
         (choice.conditions ? `${choice.conditions}. ` : "") +
-        "Dites oui pour demander la validation à votre proche, ou non pour annuler."
+        "Dites oui pour continuer, ou non pour annuler."
     );
     setState("confirm_1");
   });
 }
 
-const approval = (status, extra = {}) => ({
-  type: "approval",
-  status: {
-    order_id: summary.order_id,
-    status,
-    current_relative: status === "pending" ? 1 : null,
-    relatives_count: 2,
-    decided_by: null,
-    decided_at: null,
-    expires_at: status === "pending" ? new Date(Date.now() + 300000).toISOString() : null,
-    updated_at: now(),
-    ...extra,
-  },
-});
-
 async function afterConfirm1() {
   const myRun = run;
-  setState("awaiting_relative");
-  broadcast(approval("pending"));
-  say("J'ai envoyé la demande à Léa par SMS. J'attends sa réponse.");
-  await step(myRun, 6000, () => broadcast(approval("approved", { decided_by: "Léa", decided_at: now() })));
-  await step(myRun, 300, () => setState("recheck"));
+  setState("recheck");
   await step(myRun, 1800, () => {
     summary = { ...summary, read_at: now() };
     broadcast({ type: "summary", summary });
-    say(`Léa a validé. J'ai relu la page de paiement : rien n'a changé, le total est de ${euros(summary.total_cents)}. Je paie ?`);
+    say(`J'ai relu la page de paiement : rien n'a changé, le total est de ${euros(summary.total_cents)}. Je paie ?`);
     setState("confirm_2");
   });
 }

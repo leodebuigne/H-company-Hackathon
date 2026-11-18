@@ -1,14 +1,14 @@
-"""Session Pilote : la machine à états qui relie la voix, l'IA, l'agent H et la validation des proches.
+"""Session Pilote : la machine à états qui relie la voix, l'IA et l'agent H.
 
 Une seule session pour tout l'orchestrateur : l'interface vocale et l'écran du jury s'y connectent
 chacun avec leur WebSocket et reçoivent les mêmes messages. Seule cette classe fait avancer l'état.
 
 Parcours d'une commande (contracts/README.md) :
-listening → understanding → searching → proposing → cart → confirm_1 → awaiting_relative
-→ recheck → confirm_2 → paying → done. Sorties possibles : cancelled, human_needed.
+listening → understanding → searching → proposing → cart → confirm_1 → recheck → confirm_2
+→ paying → done. Sorties possibles : cancelled, human_needed.
 
-Règle de sécurité : l'agent n'appelle pay() qu'après le premier oui, la validation du proche, la
-relecture de la page (même hash) et le deuxième oui. Pendant pay(), l'outil H
+Règle de sécurité : l'agent n'appelle pay() qu'après le premier oui, la relecture de la page
+(même hash) et le deuxième oui. Pendant pay(), l'outil H
 request_payment_approval passe par approve_payment(), qui ne répond "approved" que si l'état est
 `paying` et si la page montre toujours le récapitulatif validé. Tout le reste répond "denied".
 """
@@ -35,11 +35,8 @@ from pydantic import BaseModel, TypeAdapter, ValidationError
 from orchestrator.agent_h.base import AgentError, NeedsHuman, PaymentDenied, UnapprovedPurchase
 from orchestrator.ai.hf import QUESTIONS, SPEAK_MIME, AIError, complete_intent
 from orchestrator.ai.speech_text import euros
-from orchestrator.approvals import ApprovalsError
 from orchestrator.config import Settings
 from orchestrator.contracts import (
-    ApprovalRequest,
-    ApprovalStatus,
     ClientAudio,
     ClientConfirm,
     ClientMessage,
@@ -47,9 +44,7 @@ from orchestrator.contracts import (
     Intent,
     Option,
     OrderSummary,
-    Relative,
     ServerAgentView,
-    ServerApproval,
     ServerError,
     ServerIntent,
     ServerOptions,
@@ -65,7 +60,6 @@ from orchestrator.ports import (
     AI,
     AgentFactory,
     ApprovalDecision,
-    Approvals,
     HistoryTurn,
     NeedHumanDecision,
     ShoppingAgent,
@@ -78,7 +72,6 @@ INTRO = "Je suis Pilote, un assistant automatique. Que voulez-vous commander ?"
 NEXT = "Que voulez-vous commander ?"
 # États où Pilote attend une réponse de la personne.
 WAITING: set[State] = {"listening", "proposing", "confirm_1", "confirm_2", "human_needed"}
-SITE_NAMES = {"www.sncf-connect.com": "SNCF Connect", "www.ubereats.com": "Uber Eats"}
 CLIENT_MESSAGE: TypeAdapter[ClientMessage] = TypeAdapter(ClientMessage)
 SendFn = Callable[[dict[str, Any]], Awaitable[None]]
 
@@ -210,13 +203,11 @@ class Session:
         *,
         ai: AI,
         agent_factory: AgentFactory,
-        approvals: Approvals,
         settings: Settings,
         today: Callable[[], dt.date] = _paris_today,
     ) -> None:
         self.ai = ai
         self.agent_factory = agent_factory
-        self.approvals = approvals
         self.settings = settings
         self.today = today
         self.session_id = uuid.uuid4().hex[:8]
@@ -260,7 +251,7 @@ class Session:
         """Nouvel écran : il reçoit l'état courant, puis la phrase d'accueil (à lui seul)."""
         self._clients.add(send)
         await self._send_to(send, ServerReady(session_id=self.session_id))
-        for key in ("state", "intent", "options", "summary", "approval", "agent_view"):
+        for key in ("state", "intent", "options", "summary", "agent_view"):
             if key in self._snapshot:
                 await self._send_raw(send, self._snapshot[key])
         if self.state in ("listening", "done", "cancelled"):
@@ -295,7 +286,7 @@ class Session:
     async def _emit(self, message: BaseModel) -> None:
         data = message.model_dump(mode="json")
         key = data["type"]
-        if key in ("state", "intent", "options", "summary", "approval", "agent_view"):
+        if key in ("state", "intent", "options", "summary", "agent_view"):
             self._snapshot[key] = data
         for send in list(self._clients):
             await self._send_raw(send, data)
@@ -487,7 +478,7 @@ class Session:
 
     async def _order(self) -> None:
         intent = await self._get_request()
-        for key in ("options", "summary", "approval", "agent_view"):
+        for key in ("options", "summary", "agent_view"):
             self._snapshot.pop(key, None)
         self._intent = intent
         options = await self._search(intent)
@@ -497,13 +488,10 @@ class Session:
             return
         summary = await self._checkout(option)
         statement = await self.ai.confirm_statement(summary)
-        first = self._relatives()[0].first_name
-        if not await self._yes_no("confirm_1", f"{statement} Je demande à {first} de valider. D'accord ?"):
+        if not await self._yes_no("confirm_1", f"{statement} D'accord ?"):
             raise Abort("D'accord, je n'achète rien.")
-        status = await self._wait_relative(summary)
         await self._recheck(summary)
-        who = status.decided_by or "Votre proche"
-        question = f"{who} a validé et rien n'a changé : {euros(summary.total_cents)}. Je paie ?"
+        question = f"Rien n'a changé : {euros(summary.total_cents)}. Je paie ?"
         if not await self._yes_no("confirm_2", question):
             raise Abort("D'accord, je ne paie pas.")
         await self._pay(summary)
@@ -636,70 +624,6 @@ class Session:
         await self._emit(ServerSummary(summary=summary))
         return summary
 
-    def _relatives(self) -> tuple[Relative, ...]:
-        relatives = self.settings.relatives_for_approval()
-        if not relatives:
-            raise Abort("Aucun proche n'est configuré pour valider. Je n'achète rien.", "approval_failed")
-        return relatives
-
-    async def _wait_relative(self, summary: OrderSummary) -> ApprovalStatus:
-        relatives = self._relatives()
-        category = (self._intent.category if self._intent else None) or "boutique"
-        request = ApprovalRequest(
-            order_id=summary.order_id,
-            user_first_name=self.settings.user_first_name,
-            site_name=SITE_NAMES.get(summary.site, summary.site),
-            category=category,
-            summary=summary,
-            relatives=list(relatives),
-            timeout_seconds=self.settings.approval_timeout(category),
-        )
-        await self._set_state("awaiting_relative")
-        try:
-            status = await self.approvals.create(request)
-        except ApprovalsError as error:
-            raise Abort(
-                "Je n'arrive pas à joindre le service de validation. Je n'achète rien.", "approval_failed"
-            ) from error
-        await self._emit(ServerApproval(status=status))
-        self._journal("approval_requested", relatives=len(relatives))
-        await self._say(f"J'ai envoyé un message à {relatives[0].first_name}. J'attends sa réponse.")
-        loop = asyncio.get_running_loop()
-        deadline = loop.time() + request.timeout_seconds * len(relatives) + 60
-        failures = 0
-        while not status.is_final:
-            if loop.time() > deadline:
-                raise Abort("Personne n'a répondu à temps. Je n'achète rien.", "timeout")
-            await asyncio.sleep(self.settings.poll_interval_s)
-            try:
-                new = await self.approvals.get(summary.order_id)
-            except ApprovalsError as error:
-                failures += 1
-                if failures >= 5:
-                    raise Abort(
-                        "Le service de validation ne répond plus. Je n'achète rien.", "approval_failed"
-                    ) from error
-                continue
-            failures = 0
-            if new.model_dump(exclude={"updated_at"}) != status.model_dump(exclude={"updated_at"}):
-                await self._emit(ServerApproval(status=new))
-                if new.status == "pending" and new.current_relative != status.current_relative:
-                    previous = self._name_at(relatives, status.current_relative)
-                    nxt = self._name_at(relatives, new.current_relative)
-                    await self._say(f"{previous} n'a pas répondu. J'écris à {nxt}.")
-            status = new
-        self._journal("approval_final", status=status.status)
-        if status.status == "approved":
-            return status
-        if status.status == "denied":
-            raise Abort(f"{status.decided_by or 'Votre proche'} a refusé. Je n'achète rien.")
-        raise Abort("Personne n'a répondu à temps. Je n'achète rien.")
-
-    @staticmethod
-    def _name_at(relatives: tuple[Relative, ...], rank: int | None) -> str:
-        index = min(max((rank or 1) - 1, 0), len(relatives) - 1)
-        return relatives[index].first_name
-
     async def _recheck(self, approved: OrderSummary) -> None:
         assert self._agent is not None
         await self._set_state("recheck")
@@ -708,7 +632,7 @@ class Session:
         if current.hash != approved.hash or current.order_id != approved.order_id:
             self._journal("price_changed", before=approved.total_cents, after=current.total_cents)
             raise Abort(
-                f"La page a changé depuis la validation : le total est de {euros(current.total_cents)} "
+                f"La page a changé depuis votre accord : le total est de {euros(current.total_cents)} "
                 f"au lieu de {euros(approved.total_cents)}. Je n'achète rien.",
                 "price_changed",
             )

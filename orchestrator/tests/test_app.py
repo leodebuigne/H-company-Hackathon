@@ -7,7 +7,6 @@ from fastapi.testclient import TestClient
 from orchestrator.agent_h.fake import FakeShoppingAgent
 from orchestrator.ai.fake import FakeAI
 from orchestrator.app import create_app
-from orchestrator.approvals import FakeApprovals
 from orchestrator.config import Settings
 from orchestrator.session import Session
 
@@ -22,8 +21,7 @@ def _session() -> Session:
         agent_factory=lambda approve, human: FakeShoppingAgent(
             approval_callback=approve, need_human_callback=human, speed=0
         ),
-        approvals=FakeApprovals("approved", delay_s=0),
-        settings=Settings(poll_interval_s=0.01, journal_path=None),
+        settings=Settings(journal_path=None),
         today=lambda: dt.date(2026, 11, 18),
     )
 

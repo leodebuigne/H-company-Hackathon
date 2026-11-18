@@ -60,7 +60,7 @@ Si l'enregistrement de la carte échoue à 0 € : mettre 1 € le temps de l'en
 | Rail Démo (train) | https://h-company-hackathon-rail-demo.vercel.app (`RAIL_DEMO_URL`) | « Payer » (`id="payer"`) | `hausse` : +8 € après 60 s, `complet` : train complet au paiement |
 | Miam Démo (repas) | https://h-company-hackathon-repas-demo.vercel.app (`REPAS_DEMO_URL`) | « Commander et payer » (`id="commander"`) | `hausse` : livraison +2 € après 60 s, `ferme` : restaurant fermé au paiement |
 
-Le scénario `hausse` sert aussi à montrer au jury que Pilote annule quand le prix change entre la validation du proche et le paiement (le hash du récapitulatif change au `recheck()`).
+Le scénario `hausse` sert aussi à montrer au jury que Pilote annule quand le prix change entre la première confirmation et le paiement (le hash du récapitulatif change au `recheck()`).
 
 Après le clic sur le bouton d'argent, ces sites affichent une validation bancaire simulée avec « Refuser » et « Confirmer le paiement » : un membre de l'équipe clique « Refuser », jamais l'agent.
 
