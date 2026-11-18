@@ -25,17 +25,20 @@ import {
   STEPS,
   formatCents,
   type ServerMessage,
+  type State,
 } from "./protocol";
 import { PushToTalkRecorder, RELEASE_TAIL_MS } from "./recorder";
 import { Speaker, listFrenchVoices, setBrowserVoice } from "./speech";
 import { usePilote } from "./usePilote";
 import Orb, { type OrbMode } from "./Orb";
+import { WakeWordListener, wakeWordSupported } from "./wakeword";
 
 // Obligatoire (AI Act, article 50). Normalement dit par l'orchestrateur à la connexion ;
 // répété ici si sa phrase d'accueil n'a pas pu être jouée.
 const AI_DISCLOSURE = "Je suis Pilote, un assistant automatique.";
 const KEYBOARD_HELP =
-  "Appuyez une fois sur la barre d'espace, puis parlez : je réponds quand vous vous taisez. " +
+  "Ensuite, parlez-moi simplement : je vous écoute après chaque réponse. Pour me réveiller, dites « Bonjour Pilote ». " +
+  "Vous pouvez aussi appuyer une fois sur la barre d'espace, puis parler. " +
   "Entrée pour dire oui, N pour dire non, Échap pour annuler à tout moment, R pour répéter.";
 
 // "voice" : Pilote parle lui-même. "screenreader" : Pilote se tait et laisse VoiceOver lire les annonces.
@@ -44,7 +47,13 @@ type VoiceMode = "voice" | "screenreader";
 
 // Appui plus court que ça = « appuyer une fois puis parler » : Pilote écoute et s'arrête quand on se tait.
 const TAP_MS = 450;
-const HANDS_FREE = { silenceMs: 1600, noSpeechMs: 7000, maxMs: 30000 };
+const HANDS_FREE = { silenceMs: 1400, noSpeechMs: 7000, maxMs: 30000 };
+
+// États où Pilote attend une réponse : il réécoute tout seul après avoir parlé (conversation mains libres).
+const AUTO_LISTEN_STATES: State[] = ["listening", "proposing", "confirm_1", "confirm_2", "human_needed"];
+
+// Réaction immédiate quand on a fini de parler, le temps que Pilote comprenne et réponde.
+const ACKS = ["D'accord.", "Entendu.", "Très bien, je regarde.", "Je m'en occupe.", "Voyons cela."];
 
 // Réglages gardés dans ce navigateur seulement (aucune donnée personnelle).
 const PREFS_KEY = "pilote-prefs";
@@ -108,6 +117,9 @@ export default function PiloteApp() {
   const startedRef = useRef(false);
   const pressedAtRef = useRef(0);
   const handsFreeRef = useRef(false);
+  const autoListenRef = useRef(false); // écoute lancée par Pilote (pas par un appui) : silence = rien à dire
+  const awaitingReplyRef = useRef(false); // on a parlé, la réponse de Pilote n'est pas encore arrivée
+  const wakeRef = useRef<WakeWordListener | null>(null);
 
   useEffect(() => {
     const speaker = new Speaker();
@@ -172,7 +184,10 @@ export default function PiloteApp() {
         setBusySince(BUSY_STATES.includes(msg.state) ? Date.now() : null);
       // Avant le premier geste, le navigateur bloque le son : on gardera la phrase pour le démarrage.
       if (!startedRef.current) return;
-      if (msg.type === "say") tell(msg.text, msg.audio, msg.mime);
+      if (msg.type === "say") {
+        awaitingReplyRef.current = false;
+        tell(msg.text, msg.audio, msg.mime);
+      }
       if (msg.type === "state") {
         const earcon = earconForState(msg.state);
         if (earcon) playEarcon(earcon);
@@ -216,6 +231,17 @@ export default function PiloteApp() {
     tell(KEYBOARD_HELP);
   }, [lastSay, tell]);
 
+  // Réaction immédiate pendant que Pilote comprend : seulement pour une nouvelle demande ou un choix,
+  // jamais pendant un oui / non ou la saisie du code.
+  const stateRef = useRef(state);
+  useEffect(() => {
+    stateRef.current = state;
+  }, [state]);
+  const acknowledge = useCallback(() => {
+    if (!["listening", "proposing"].includes(stateRef.current)) return;
+    tell(ACKS[Math.floor(Math.random() * ACKS.length)]);
+  }, [tell]);
+
   // Envoie ce qui a été enregistré (ou l'abandonne si rien n'a été dit)
   const finishTalking = useCallback(
     async (reason: "release" | "silence" | "no_speech" | "max" | "tap") => {
@@ -224,8 +250,12 @@ export default function PiloteApp() {
       handsFreeRef.current = false;
       setHandsFree(false);
       setRecording(false);
+      const auto = autoListenRef.current;
+      autoListenRef.current = false;
       if (reason === "no_speech") {
         rec.discard();
+        // Écoute automatique sans réponse : Pilote se tait et attend « Bonjour Pilote ».
+        if (auto) return;
         return tell(
           "Je n'ai rien entendu. Appuyez et parlez quand vous voulez.",
         );
@@ -234,10 +264,13 @@ export default function PiloteApp() {
       if (!recording)
         return tell("C'était trop court. Appuyez une fois, puis parlez.");
       playEarcon("thinking");
-      if (!send({ type: "audio", data: recording.data, mime: recording.mime }))
+      awaitingReplyRef.current = true;
+      if (!send({ type: "audio", data: recording.data, mime: recording.mime })) {
+        awaitingReplyRef.current = false;
         tell("Je ne suis pas connecté à Pilote pour le moment.");
+      } else acknowledge();
     },
-    [send, tell],
+    [send, tell, acknowledge],
   );
 
   // Appui (barre d'espace ou bouton)
@@ -285,6 +318,56 @@ export default function PiloteApp() {
     await finishTalking("release");
   }, [finishTalking]);
 
+  // Écoute mains libres lancée par Pilote ou par « Bonjour Pilote » : on parle, Pilote répond au silence.
+  const listenHandsFree = useCallback(
+    async (auto: boolean) => {
+      const rec = recorderRef.current;
+      if (!rec || rec.isRecording || mutedRef.current) return;
+      wakeRef.current?.stop();
+      try {
+        await rec.start();
+      } catch {
+        return;
+      }
+      autoListenRef.current = auto;
+      handsFreeRef.current = true;
+      setHandsFree(true);
+      setRecording(true);
+      playEarcon("listening");
+      rec.watchSilence({ ...HANDS_FREE, onStop: (reason) => void finishTalking(reason) });
+    },
+    [finishTalking],
+  );
+
+  // Conversation : quand Pilote a fini de parler et attend une réponse, il réécoute tout seul.
+  useEffect(() => {
+    if (!started || speaking || recording || voiceMode !== "voice") return;
+    if (!AUTO_LISTEN_STATES.includes(state) || awaitingReplyRef.current) return;
+    const timer = setTimeout(() => {
+      if (speakerRef.current?.speaking || recorderRef.current?.isRecording) return;
+      void listenHandsFree(true);
+    }, 350);
+    return () => clearTimeout(timer);
+  }, [started, speaking, recording, state, voiceMode, listenHandsFree]);
+
+  // « Bonjour Pilote » : écoute du mot d'activation quand Pilote ne parle pas et n'enregistre pas.
+  useEffect(() => {
+    const wake = (wakeRef.current ??= new WakeWordListener());
+    wake.onWake = (rest) => {
+      if (rest.split(/\s+/).filter(Boolean).length >= 2) {
+        // « Bonjour Pilote, un train pour Lille » : la demande est déjà là
+        playEarcon("thinking");
+        awaitingReplyRef.current = true;
+        speakerRef.current?.stop();
+        send({ type: "text", text: rest });
+        acknowledge();
+      } else void listenHandsFree(false);
+    };
+    if (started && !speaking && !recording && voiceMode === "voice") wake.start();
+    else wake.stop();
+  }, [started, speaking, recording, voiceMode, listenHandsFree, send, acknowledge]);
+  useEffect(() => () => wakeRef.current?.stop(), []);
+
   // Niveau du micro pour l'anneau du bouton
   useEffect(() => {
     if (!recording) return;
@@ -328,7 +411,10 @@ export default function PiloteApp() {
       start();
       speakerRef.current?.stop();
       if (/^\s*annul/i.test(text)) cancel();
-      else send({ type: "text", text });
+      else {
+        awaitingReplyRef.current = true;
+        send({ type: "text", text });
+      }
     },
     [start, cancel, send],
   );
@@ -524,6 +610,7 @@ export default function PiloteApp() {
               {talkLabel}
             </p>
             <p id="pilote-help" className="pilote-help">
+              {started && wakeWordSupported() && <>Dites « Bonjour Pilote » · </>}
               <kbd>Espace</kbd> pour parler · <kbd>Échap</kbd> pour annuler
               {lastSay && started && (
                 <>

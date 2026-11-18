@@ -37,10 +37,16 @@ restaurant, une date ou un résultat.
 - Ne dis jamais qu'un achat ou un paiement a été fait si la phrase de référence ne le dit pas.
 - Garde le sens de la phrase de référence et la même demande finale (question posée, choix \
 attendu).
+- Écris toujours les nombres, heures et prix en chiffres (14 h 44, 49 euros), jamais en lettres.
 - Tu es une IA : ne prétends pas être humain.
 Réponds uniquement avec la phrase à dire."""
 
 _NUMBER = re.compile(r"\d+(?:[.,]\d+)?")
+_SPELLED = re.compile(
+    r"\b(deux|trois|quatre|cinq|six|sept|huit|neuf|dix|onze|douze|treize|quatorze|quinze|seize|"
+    r"vingt|trente|quarante|cinquante|soixante|cent|mille)\b",
+    re.IGNORECASE,
+)
 _MONEY_WORDS = re.compile(r"\b(achet|pay[ée]|paiement|command[ée]e?\b|réserv)", re.IGNORECASE)
 
 
@@ -54,6 +60,8 @@ def facts_ok(reply: str, allowed: str, fallback: str) -> bool:
         return False
     if not _numbers(reply) <= _numbers(allowed):
         return False
+    if _SPELLED.search(reply) and not _SPELLED.search(allowed):
+        return False  # un nombre en lettres échapperait à la vérification
     if _MONEY_WORDS.search(reply) and not _MONEY_WORDS.search(fallback):
         return False
     return True

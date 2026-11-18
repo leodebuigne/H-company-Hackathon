@@ -196,3 +196,10 @@ Retour : Pilote semblait réciter des phrases toutes faites. Ses phrases de conv
 - **Garde-fous** : chaque nombre de la réponse doit venir des faits, de la phrase d'avance ou de la phrase de la personne ; une réponse qui annonce un achat ou un paiement absent de la phrase d'avance est refusée ; délai de 4 s ; au moindre doute, la phrase écrite d'avance.
 - **Restent fixes** : l'annonce « je suis une IA », la demande du code, le montant payé, les résultats de paiement et d'annulation.
 - Mesuré : 1,4 à 2,1 s par réponse. `PILOTE_CONVERSATION=0` revient aux phrases écrites d'avance.
+
+## 2026-11-18 : conversation mains libres et « Bonjour Pilote » (v2 locale, membre 4)
+
+- **Mains libres** : après chaque réponse de Pilote qui attend quelque chose (demande, choix, oui / non, code, geste humain), la page réécoute toute seule et envoie au silence (1,4 s). Sans parole pendant 7 s, elle se tait.
+- **« Bonjour Pilote »** : quand Pilote ne parle pas et n'enregistre pas, la reconnaissance vocale du navigateur (Chrome, Safari) guette « Bonjour Pilote ». La suite de la phrase (« Bonjour Pilote, un train pour Lille ») est envoyée directement. Un premier geste (Espace ou toucher l'orbe) reste nécessaire : le navigateur bloque le son et le micro sans lui.
+- **Réaction immédiate** : « D'accord. », « Je m'en occupe. »… dès qu'on a fini de parler (nouvelle demande ou choix seulement).
+- **Modèle des réponses** : Qwen3-30B-A3B essayé, plus lent ce soir (plus de 4 s, donc phrase d'avance) ; Llama 3.3 70B gardé (1,5 à 1,7 s). Les nombres doivent être écrits en chiffres : un nombre en lettres échapperait à la vérification et fait reprendre la phrase d'avance.

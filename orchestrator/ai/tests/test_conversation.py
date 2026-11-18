@@ -45,3 +45,8 @@ async def test_reply_falls_back_on_error_or_invented_fact():
         await conversation.reply(_Chat("Il coûte 12 euros."), "m", situation="s", fallback=ref, facts=ref)
         == ref
     )
+
+
+def test_numbers_written_in_words_are_refused():
+    facts = "Numéro 1 : départ 14:44, 49 euros."
+    assert not facts_ok("Il part à quatorze heures quarante-quatre.", facts, facts)
