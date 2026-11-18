@@ -5,6 +5,7 @@ from pathlib import Path
 import pytest
 
 from orchestrator.ai import FakeAI
+from orchestrator.ai.speech_text import for_speech
 from orchestrator.contracts import Intent, Option, OrderSummary
 from orchestrator.ports import AI
 
@@ -87,3 +88,23 @@ async def test_confirm_statement_is_an_assertion_with_total():
 
 async def test_describe_product_returns_text():
     assert await FakeAI().describe_product(b"\x89PNG", "De quelle couleur ?")
+
+
+@pytest.mark.parametrize(
+    ("shown", "spoken"),
+    [
+        ("TGV 14:44 → 15:48", "TGV 14 heures 44 vers 15 heures 48"),
+        ("TGV INOUI 14 h 12 → 15 h 15", "TGV Inoui 14 heures 12 vers 15 heures 15"),
+        ("Durée 1h56, avant 20 h", "Durée 1 heure 56, avant 20 heures"),
+        (
+            "2de classe dès 115 €, 1re classe dès 180 €",
+            "seconde classe dès 115 euros, première classe dès 180 euros",
+        ),
+        ("Direct — 42,00 €", "Direct, 42 euros"),
+        ("Trouvé : 1, TGV inOui. 2, TER", "Trouvé : Première option : TGV Inoui. Deuxième option : TER"),
+        ("Livraison 19h30 · 3,50 € de frais", "Livraison 19 heures 30, 3 euros 50 de frais"),
+        ("Départ à 10:00, 45 min", "Départ à 10 heures, 45 minutes"),
+    ],
+)
+def test_for_speech_reads_times_prices_and_arrows_aloud(shown, spoken):
+    assert for_speech(shown) == spoken

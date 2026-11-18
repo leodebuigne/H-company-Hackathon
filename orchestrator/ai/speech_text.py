@@ -6,6 +6,8 @@ la confirmation serait grave. Elles sont aussi plus rapides, et identiques dans 
 
 from __future__ import annotations
 
+import re
+
 from orchestrator.contracts import Option, OrderSummary
 
 MAX_SPOKEN_OPTIONS = 3
@@ -50,3 +52,53 @@ def order_statement(summary: OrderSummary) -> str:
     if summary.conditions:
         sentence += f" {summary.conditions.rstrip('.')}."
     return sentence
+
+
+_ORDINAL_OPTIONS = [
+    "Première",
+    "Deuxième",
+    "Troisième",
+    "Quatrième",
+    "Cinquième",
+    "Sixième",
+    "Septième",
+    "Huitième",
+]
+
+_SPOKEN_REPLACEMENTS = [
+    # « 1, TGV… » est mal lu (« Zon ») : on dit « Première option : TGV… »
+    (
+        re.compile(r"(^|[:.]\s*)([1-8]),\s+"),
+        lambda m: f"{m.group(1)}{_ORDINAL_OPTIONS[int(m.group(2)) - 1]} option : ",
+    ),
+    (re.compile(r"\binoui\b", re.IGNORECASE), "Inoui"),
+    (re.compile(r"\s*(→|->|⟶)\s*"), " vers "),
+    (re.compile(r"\s+[·•|—–]\s+"), ", "),
+    (re.compile(r"\b1(?:re|ère)\b"), "première"),
+    (re.compile(r"\b2(?:de|nde)\b"), "seconde"),
+    (re.compile(r"\b(\d+)(?:e|ème)\b"), r"\1ième"),
+    # « h » seul est épelé par Kokoro (« 14, H44 ») : on écrit « heures » en toutes lettres.
+    (re.compile(r"\b(\d{1,2})\s*[:h]\s*(\d{2})\b"), lambda m: _hours(m.group(1), m.group(2))),
+    (re.compile(r"\b(\d{1,2})\s*h\b"), lambda m: _hours(m.group(1), "00")),
+    (re.compile(r"(\d+),00\s*(?:€|EUR\b)"), r"\1 euros"),
+    (re.compile(r"(\d+),(\d{2})\s*(?:€|EUR\b)"), r"\1 euros \2"),
+    (re.compile(r"(\d+)\s*(?:€|EUR\b)"), r"\1 euros"),
+    (re.compile(r"\b(\d+)\s*min\b"), r"\1 minutes"),
+    (re.compile(r"\s{2,}"), " "),
+]
+
+
+def _hours(hours: str, minutes: str) -> str:
+    unit = "heure" if int(hours) <= 1 else "heures"
+    return f"{int(hours)} {unit}" if minutes == "00" else f"{int(hours)} {unit} {minutes}"
+
+
+def for_speech(text: str) -> str:
+    """Réécrit un texte affiché pour qu'il sonne juste à l'oral (heures, flèches, prix, abréviations).
+
+    « 14:44 → 15:48, 2de classe » -> « 14 heures 44 vers 15 heures 48, seconde classe ».
+    Ne change que la prononciation : le texte affiché à l'écran reste celui du site.
+    """
+    for pattern, replacement in _SPOKEN_REPLACEMENTS:
+        text = pattern.sub(replacement, text)
+    return text.strip()

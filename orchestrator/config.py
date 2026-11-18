@@ -20,6 +20,7 @@ DEFAULT_STEP_TIMEOUTS: dict[str, float] = {
     "checkout": 600,
     "recheck": 300,
     "pay": 600,
+    "buy": 900,  # achat direct : panier + paiement en une étape
     "cancel": 30,
 }
 
@@ -57,6 +58,15 @@ def parse_relatives(raw: str) -> tuple[Relative, ...]:
     return tuple(relatives)
 
 
+def _purchase_code(raw: str) -> str | None:
+    code = raw.strip()
+    if not code:
+        return None
+    if len(code) != 3 or not code.isdigit():
+        raise ValueError("PILOTE_PURCHASE_CODE : exactement 3 chiffres")
+    return code
+
+
 @dataclass(frozen=True)
 class Settings:
     use_fake_agent: bool = True
@@ -75,6 +85,11 @@ class Settings:
     journal_path: str | None = "logs/journal.jsonl"
     fake_approval_decision: str = "approved"
     fake_approval_delay_s: float = 5.0
+    # Achat direct : choisir une option vaut ordre d'achat (pas de « oui », ni proche, ni relecture).
+    # Seul garde-fou gardé : le total affiché ne doit pas dépasser le prix de l'option choisie.
+    direct_buy: bool = False
+    # Code secret à 3 chiffres demandé à l'oral avant chaque achat (achat direct). None = pas de code.
+    purchase_code: str | None = None
 
     @classmethod
     def from_env(cls, env: Mapping[str, str] | None = None) -> Settings:
@@ -96,6 +111,8 @@ class Settings:
             journal_path=env.get("PILOTE_JOURNAL_PATH", "").strip() or "logs/journal.jsonl",
             fake_approval_decision=decision,
             fake_approval_delay_s=_number(env, "PILOTE_FAKE_APPROVAL_DELAY_S", 5.0),
+            direct_buy=_flag(env, "PILOTE_DIRECT_BUY", False),
+            purchase_code=_purchase_code(env.get("PILOTE_PURCHASE_CODE", "")),
         )
 
     def approval_timeout(self, category: str | None) -> int:

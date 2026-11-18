@@ -4,17 +4,8 @@
 // Il ne fait que regarder : il n'envoie aucune commande et ne parle pas.
 
 import { useEffect, useRef } from "react";
-import { STATE_LABELS, formatCents, type ApprovalStatus, type Intent, type State } from "./protocol";
+import { STATE_LABELS, STEPS, formatCents, type ApprovalStatus, type Intent } from "./protocol";
 import { usePilote } from "./usePilote";
-
-const STEPS: { states: State[]; label: string }[] = [
-  { states: ["listening", "understanding"], label: "Écoute" },
-  { states: ["searching", "proposing"], label: "Recherche" },
-  { states: ["cart", "confirm_1"], label: "Panier · 1er oui" },
-  { states: ["awaiting_relative"], label: "Validation du proche" },
-  { states: ["recheck", "confirm_2"], label: "Relecture · 2e oui" },
-  { states: ["paying", "done"], label: "Paiement" },
-];
 
 /** « billet de train · Paris → Lille · 2026-11-18 après 14:00 » */
 function describeIntent(intent: Intent): string {

@@ -96,12 +96,13 @@ class FakeShoppingAgent:
     ) -> None:
         logging.getLogger(__name__).warning("Agent FACTICE : aucune action sur un vrai site.")
         self.order_id = ""
+        self.last_payment_message: str | None = None
         self.agent_view_url: str | None = None
         self._approval_callback = approval_callback
         self._need_human_callback = need_human_callback
         self._price_change = price_change_on_recheck
         self._need_human_at = need_human_at
-        self._speed = float(os.getenv("PILOTE_FAKE_SPEED", "1.0")) if speed is None else speed
+        self._speed = float(os.getenv("PILOTE_FAKE_SPEED") or "1.0") if speed is None else speed
         self._intent: Intent | None = None
         self._options: list[Option] = []
         self._chosen: Option | None = None
@@ -177,6 +178,20 @@ class FakeShoppingAgent:
             raise PaymentDenied("Paiement non approuvé : rien n'a été cliqué.")
         await self._wait(4.0, "pay")  # le temps de valider dans l'application bancaire
         return "accepted"  # simulation : aucune commande réelle
+
+    async def buy(self) -> PaymentResult:
+        """Achat direct simulé : approbation demandée sur le récapitulatif du panier, puis « accepté »."""
+        if not self.order_id:
+            self.order_id = str(uuid.uuid4())
+        summary = self._summary(extra_eur=8.0 if self._price_change else 0.0)
+        decision = "approved"
+        if self._approval_callback is not None:
+            decision = await self._approval_callback(summary)
+        if decision != "approved":
+            raise PaymentDenied("Achat non approuvé : rien n'a été cliqué.")
+        await self._wait(4.0, "pay")
+        self.last_payment_message = "Votre commande est confirmée."
+        return "accepted"
 
     async def cancel(self) -> None:
         self._chosen = None
