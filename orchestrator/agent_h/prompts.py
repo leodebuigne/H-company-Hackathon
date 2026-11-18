@@ -6,7 +6,7 @@ import os
 
 from orchestrator.contracts import Intent, Option, SiteCard
 
-from .shops import search_query
+from .shops import SiteChoice, search_query
 
 GENERIC_INSTRUCTIONS = """\
 Tu es l'agent de navigation de Pilote, un assistant qui fait des achats en ligne pour une personne aveugle. Elle ne voit pas l'écran : tout ce que tu rapportes doit être exact et vérifiable.
@@ -233,23 +233,21 @@ def pay_message() -> str:
     )
 
 
-def purchase_message(
-    intent: Intent,
-    site: str,
-    shop: str,
-    card: SiteCard | None,
-    chosen: Option,
-    step: str,
-    memory: str = "",
-) -> str:
-    """Achat après une comparaison : nouvelle session sur la boutique choisie, à partir de son accueil."""
-    remembered = f"{memory}\n" if memory else ""
-    return (
-        f"{site_card_text(card)}\n\n{remembered}{intent_text(intent, site)}\n\n"
-        f"Contexte : plusieurs boutiques ont été comparées et l'utilisateur a choisi une option chez {shop}. "
-        f"Le navigateur est ouvert sur l'accueil de {shop}. Retrouve ce produit avec la barre de recherche du "
-        "site (tape son nom tel qu'il est écrit, sans le nom de la boutique), ouvre sa page et vérifie que c'est "
-        "le même produit au même prix. S'il n'est plus disponible ou si le prix a changé, arrête-toi et "
-        "explique-le dans blocked_reason.\n"
-        f"{option_text(chosen)}\n\n{step}"
-    )
+def site_note(choice: SiteChoice) -> str:
+    """Consigne sur le site choisi par la personne : lien direct, ou site officiel à trouver d'abord."""
+    if choice.product_link:
+        return (
+            f"La personne a donné le lien de la page à utiliser sur {choice.name} : le navigateur est déjà "
+            "ouvert dessus. Si c'est la page d'un produit, c'est ce produit-là qu'il faut proposer (une seule "
+            "option, avec ses choix éventuels : taille, couleur) ; ne cherche pas autre chose."
+        )
+    if choice.lookup:
+        return (
+            f"Le site « {choice.name} » n'a pas d'adresse connue : le navigateur est ouvert sur une recherche "
+            f"Bing. Clique sur le résultat qui est le site officiel de {choice.name} (son nom dans l'adresse ; "
+            "pas une annonce « Sponsorisé », pas une place de marché comme Amazon ou Cdiscount, pas un "
+            "comparateur de prix, pas un article). Si aucun résultat n'est clairement le site officiel, ou si "
+            "ce site ne vend pas en ligne (site vitrine, « visitez nos magasins »), arrête-toi et explique-le "
+            "dans blocked_reason. Sinon, fais la recherche du produit sur ce site."
+        )
+    return ""

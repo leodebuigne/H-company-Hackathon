@@ -221,17 +221,35 @@ def _shop(**kw):
     return PIZZA.model_copy(update={**base, "details": {}, "text": kw.get("text", "abat-jour moderne")})
 
 
-def test_shopping_goes_to_amazon_by_default_or_to_the_shop_named(monkeypatch):
-    from orchestrator.agent_h.agent import start_url_for
+def test_shopping_uses_the_site_the_person_gives_and_never_a_default(monkeypatch):
+    from orchestrator.agent_h.agent import site_choice, start_url_for
 
     monkeypatch.delenv("PILOTE_SITE_BOUTIQUE", raising=False)
-    lamp = _shop()
-    assert site_for(lamp) == "https://www.amazon.fr"
-    assert start_url_for(lamp, site_for(lamp)) == "https://www.amazon.fr/s?k=abat-jour+style+moderne"
-    assert site_for(_shop(text="un livre chez la Fnac", object="livre")) == "https://www.fnac.com"
-    assert site_for(_shop(constraints=["sur Leroy-Merlin"])) == "https://www.leroymerlin.fr"
-    monkeypatch.setenv("PILOTE_SITE_BOUTIQUE", "https://www.darty.com")
-    assert site_for(lamp) == "https://www.darty.com"
+    with pytest.raises(AgentError):  # pas de site par défaut : la session le demande
+        site_choice(_shop())
+    zalando = site_choice(_shop(text="une veste chez Zalando", object="veste"))
+    assert zalando.url == "https://www.zalando.fr" and not zalando.lookup
+    by_address = site_choice(_shop(text="le canapé Jules sur maisonsdumonde.com", object="canapé Jules"))
+    assert by_address.url == "https://maisonsdumonde.com" and by_address.name == "Maisons du Monde"
+    link = "https://www.ikea.com/fr/fr/p/friheten-canape-convertible-angle-s49216342/"
+    by_link = site_choice(_shop(text=f"achète ça {link}", object=None))
+    assert by_link.product_link and start_url_for(_shop(object=None), by_link.url) == link
+    unknown = site_choice(_shop(constraints=["sur le site de Sézane"], object="chaussures"))
+    assert unknown.lookup and unknown.name == "Sézane" and "bing.com/search" in unknown.url
+    amazon = _shop(text="un abat-jour sur Amazon")
+    assert (
+        start_url_for(amazon, site_choice(amazon).url) == "https://www.amazon.fr/s?k=abat-jour+style+moderne"
+    )
+
+
+def test_the_agent_is_told_how_to_handle_an_unknown_site_or_a_product_link():
+    from orchestrator.agent_h.prompts import site_note
+    from orchestrator.agent_h.shops import SiteChoice
+
+    note = site_note(SiteChoice(url="https://www.bing.com/search?q=x", name="Sézane", lookup=True))
+    assert "site officiel de Sézane" in note and "Sponsorisé" in note and "ne vend pas en ligne" in note
+    assert "ce produit-là" in site_note(SiteChoice(url="https://x.fr/p/1", name="x.fr", product_link=True))
+    assert site_note(SiteChoice(url="https://www.zalando.fr", name="Zalando")) == ""
 
 
 def test_search_text_has_the_object_and_criteria_but_never_the_budget_or_shop():
@@ -972,85 +990,6 @@ def test_agent_instructions_have_the_card_rule():
     assert "request_card" in text and "fill_card_field" in text and "DÉCOCHÉE" in text
 
 
-# --- comparaison entre boutiques ------------------------------------------------------
-
-
-from orchestrator.contracts import Option  # noqa: E402
-
-
-class _ShopSearch:
-    """Sous-recherche simulée : une boutique, ses options (ou une panne)."""
-
-    calls: list[str] = []
-
-    def __init__(self, catalogue: dict[str, list[tuple[str, int]] | None]) -> None:
-        self.catalogue, self.site, self._search_note = catalogue, "", ""
-
-    async def start(self, intent, site_card=None, site=None):
-        self.site = site
-        _ShopSearch.calls.append(site)
-
-    async def search(self):
-        found = self.catalogue[self.site]
-        if found is None:
-            raise AgentError("site bloqué")
-        return [
-            Option(id=f"o{i + 1}", rank=i + 1, title=t, price_cents=p, currency="EUR", rating=None,
-                   description=None, conditions=None, details={}, url=None)
-            for i, (t, p) in enumerate(found)
-        ]  # fmt: skip
-
-    async def cancel(self):
-        pass
-
-
-def _sofa():
-    return PIZZA.model_copy(
-        update={"category": "boutique", "object": "canapé d'angle", "text": "un canapé d'angle",
-                "details": {}, "constraints": [], "budget_cents": 150000}
-    )  # fmt: skip
-
-
-async def test_without_a_named_shop_several_shops_are_compared_in_parallel(monkeypatch):
-    from orchestrator.agent_h.shops import CONFORAMA, IKEA, MAISONS_DU_MONDE
-
-    monkeypatch.delenv("PILOTE_SITE_BOUTIQUE", raising=False)
-    catalogue = {
-        MAISONS_DU_MONDE[1]: [("Canapé Alba", 89900), ("Canapé Dafne", 129900)],
-        CONFORAMA[1]: None,  # bloque les robots : ignoré
-        IKEA[1]: [("Canapé Monaco", 59900)],
-    }
-    _ShopSearch.calls = []
-    agent = ShoppingAgent(
-        client=_FakeClient(lambda: _FakeSession(ANSWERS, agent)),
-        memory=InMemorySiteMemory(),
-        record_metrics=False,
-        compare_factory=lambda: _ShopSearch(catalogue),
-    )  # type: ignore[arg-type]
-    said = []
-
-    async def progress(text):
-        said.append(text)
-
-    agent.on_progress = progress
-    await agent.start(_sofa())
-    options = await agent.search()
-    assert sorted(_ShopSearch.calls) == sorted(url for _, url in (MAISONS_DU_MONDE, CONFORAMA, IKEA))
-    assert [o.title for o in options] == [
-        "Canapé Alba – Maisons du Monde",
-        "Canapé Monaco – Ikea",  # la meilleure de chaque boutique d'abord
-        "Canapé Dafne – Maisons du Monde",
-    ]
-    assert [o.id for o in options] == ["o1", "o2", "o3"] and options[1].details["shop"] == "Ikea"
-    assert "Je compare 3 boutiques" in said[0]
-
-    await agent.choose("o2")  # achat chez Ikea, dans une nouvelle session
-    await agent._ensure_purchase_session("Étape : achat.")
-    assert agent._site == IKEA[1]
-    first = agent._client.started["messages"]
-    assert "choisi une option chez Ikea" in first and "Canapé Monaco" in first
-
-
 def test_product_details_do_not_make_the_answer_rejected():
     from orchestrator.agent_h.models import AgentAnswer, to_options
 
@@ -1065,14 +1004,3 @@ def test_product_details_do_not_make_the_answer_rejected():
     options = to_options(answer.options)
     assert options[0].details == {"color": "gris", "places": "3"}
     assert options[1].details == {"info": "Livré en 3 semaines"}
-
-
-def test_named_shop_or_fixed_shop_means_no_comparison(monkeypatch):
-    from orchestrator.agent_h.agent import comparison_wanted
-
-    monkeypatch.delenv("PILOTE_SITE_BOUTIQUE", raising=False)
-    assert comparison_wanted(_sofa())
-    assert not comparison_wanted(_sofa().model_copy(update={"text": "un canapé chez Ikea"}))
-    assert not comparison_wanted(PIZZA)  # repas : Uber Eats
-    monkeypatch.setenv("PILOTE_COMPARE", "0")
-    assert not comparison_wanted(_sofa())

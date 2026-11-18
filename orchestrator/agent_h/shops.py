@@ -1,18 +1,27 @@
-"""Boutiques reconnues et texte de recherche : ce que l'agent tape d'un coup dans la barre du site.
+"""Site d'achat choisi par la personne, et texte de recherche à taper d'un coup dans la barre du site.
 
-Recherche rapide (généralisée à tous les sites, sur le modèle de « Tout rechercher » de SNCF Connect) :
-l'objet et ses critères en une seule saisie, puis le budget avec le filtre de prix ou le tri du site.
-Le budget n'est jamais tapé : une barre de recherche prend « 3000 » pour un mot du produit.
+Pilote n'est pas un comparateur : la personne a fait sa recherche ailleurs (un assistant, un ami, une
+publicité) et demande d'acheter sur le site de son choix, n'importe lequel. Elle peut le donner :
+- par un lien vers le produit ou le site (tapé dans le champ de texte) : on l'ouvre tel quel ;
+- par son adresse (« sur maisonsdumonde.com ») ;
+- par son nom (« chez Ikea », « sur Vinted ») : adresse connue si c'est une boutique courante, sinon
+  l'agent part d'une recherche Bing et ouvre le site officiel ;
+- pas du tout : Pilote demande « Sur quel site ? » (session), sauf pour les trains et les repas.
+
+Recherche rapide : l'objet (nom exact ou référence si la personne le connaît) et ses critères en une
+saisie, puis le budget avec le filtre de prix du site. Le budget n'est jamais tapé.
 """
 
 from __future__ import annotations
 
 import re
+from dataclasses import dataclass
+from urllib.parse import quote_plus, urlparse
 
 from orchestrator.contracts import Intent
 
-# Boutiques reconnues quand la personne les nomme (« sur Amazon », « chez Fnac »…), toutes catégories.
-NAMED_SHOPS = {
+# Boutiques courantes : adresse directe, sans recherche du site officiel.
+KNOWN_SHOPS = {
     "amazon": "https://www.amazon.fr",
     "fnac": "https://www.fnac.com",
     "darty": "https://www.darty.com",
@@ -23,21 +32,119 @@ NAMED_SHOPS = {
     "decathlon": "https://www.decathlon.fr",
     "castorama": "https://www.castorama.fr",
     "maisons du monde": "https://www.maisonsdumonde.com/FR/fr",
+    "conforama": "https://www.conforama.fr",
     "la redoute": "https://www.laredoute.fr",
+    "zalando": "https://www.zalando.fr",
+    "vinted": "https://www.vinted.fr",
+    "leboncoin": "https://www.leboncoin.fr",
+    "carrefour": "https://www.carrefour.fr",
+    "sephora": "https://www.sephora.fr",
     "uber eats": "https://www.ubereats.com/fr",
     "sncf": "https://www.sncf-connect.com",
 }
 
+# Noms à dire quand le nom de la boutique ne suffit pas tel quel.
+DISPLAY = {
+    "sncf": "SNCF Connect",
+    "uber eats": "Uber Eats",
+    "maisons du monde": "Maisons du Monde",
+    "leroy merlin": "Leroy Merlin",
+    "la redoute": "La Redoute",
+}
 
-def named_shop(intent: Intent) -> str | None:
-    """Boutique nommée dans la demande (« un casque sur Amazon »), sinon None."""
-    said = " ".join([intent.text or "", *intent.constraints]).lower().replace("-", " ")
-    return next((url for name, url in NAMED_SHOPS.items() if re.search(rf"\b{name}\b", said)), None)
+
+def _display(name: str) -> str:
+    return DISPLAY.get(name, name.title())
+
+
+_URL = re.compile(r"https?://[^\s«»\"'<>]+", re.IGNORECASE)
+_DOMAIN = re.compile(
+    r"\b((?:[a-z0-9-]+\.)+(?:fr|com|net|org|eu|be|ch|io|co|shop|store|it|es|de|uk))\b", re.IGNORECASE
+)
+# « sur Vinted », « chez Bricomarché », « sur le site de Poltronesofà » ; pas « sur internet ».
+_NAMED = re.compile(r"\b(?:sur|chez)\s+(?:le\s+site\s+(?:de\s+|d'|du\s+)?)?(.+)", re.IGNORECASE)
+_NOT_A_SHOP = re.compile(
+    r"^(internet|le web|le net|un site|leur site|leur appli\w*|mon (?:compte|téléphone)|la table)\b",
+    re.IGNORECASE,
+)
+
+
+@dataclass(frozen=True)
+class SiteChoice:
+    url: str  # page d'arrivée de l'agent
+    name: str  # nom à dire et à afficher
+    lookup: bool = False  # True : recherche Bing du site officiel, à ouvrir par l'agent
+    product_link: bool = False  # True : lien direct vers le produit
+
+
+def _said(intent: Intent) -> list[str]:
+    site = intent.details.get("site") if intent.details else None
+    return [x for x in (site, *intent.constraints, intent.text) if x]
+
+
+def _clean_name(raw: str) -> str | None:
+    name = re.split(r"[,.;!?]|\s+(?:pour|avec|à|a|en|de moins|moins|qui|pas)\s+", raw.strip(), maxsplit=1)[0]
+    name = " ".join(name.split()[:4]).strip(" '\"«»")
+    if not name or _NOT_A_SHOP.match(name) or len(name) < 2:
+        return None
+    return name
+
+
+def resolve_site(intent: Intent) -> SiteChoice | None:
+    """Site d'achat donné par la personne, ou None si elle n'en a pas donné."""
+    texts = _said(intent)
+    for text in texts:  # 1. un lien : produit ou site
+        match = _URL.search(text)
+        if match:
+            url = match.group(0).rstrip(".,;)")
+            path = urlparse(url).path.strip("/")
+            return SiteChoice(url=url, name=site_name(url), product_link=len(path) > 2)
+    for text in texts:  # 2. une adresse
+        match = _DOMAIN.search(text)
+        if match:
+            domain = match.group(1).lower()
+            return SiteChoice(url=f"https://{domain}", name=site_name(domain))
+    for text in texts:  # 3. une boutique courante
+        plain = text.lower().replace("-", " ")
+        for name, url in KNOWN_SHOPS.items():
+            if re.search(rf"\b{name}\b", plain):
+                return SiteChoice(url=url, name=_display(name))
+    for text in (intent.details.get("site") if intent.details else None, *intent.constraints, intent.text):
+        if not text:  # 4. n'importe quel autre nom : on cherche son site officiel
+            continue
+        match = _NAMED.search(text)
+        raw = match.group(1) if match else (text if text is intent.details.get("site") else None)
+        name = _clean_name(raw) if raw else None
+        if name:
+            query = quote_plus(f"{name} site officiel achat en ligne")
+            return SiteChoice(url=f"https://www.bing.com/search?q={query}", name=name, lookup=True)
+    return None
+
+
+def site_name(url_or_domain: str) -> str:
+    """Nom lisible d'un site : « www.maisonsdumonde.com/FR/fr » -> « maisonsdumonde.com »."""
+    host = urlparse(url_or_domain).hostname if "://" in url_or_domain else url_or_domain.split("/")[0]
+    host = (host or url_or_domain).lower().removeprefix("www.")
+    for name, url in KNOWN_SHOPS.items():
+        if (urlparse(url).hostname or "").removeprefix("www.") == host:
+            return _display(name)
+    return host
+
+
+def mentions_site(text: str) -> bool:
+    """Le texte nomme-t-il un site (lien, adresse, boutique, « sur … ») ? À ne pas taper en recherche."""
+    plain = text.lower().replace("-", " ")
+    return bool(
+        _URL.search(text)
+        or _DOMAIN.search(text)
+        or any(re.search(rf"\b{name}\b", plain) for name in KNOWN_SHOPS)
+        or re.match(r"^\s*(sur|chez)\b", plain)
+    )
 
 
 def search_query(intent: Intent) -> str:
     """Texte à taper d'un coup dans la barre de recherche du site : l'objet et ses critères, sans le budget
-    ni la boutique : une barre de recherche ne comprend pas « 3000 € max », on passe par le filtre de prix."""
+    ni le site : une barre de recherche ne comprend pas « 3000 € max », on passe par le filtre de prix."""
     if intent.category == "train":
         d = intent.details
         when = intent.when
@@ -47,86 +154,15 @@ def search_query(intent: Intent) -> str:
         if when.after or when.before:
             parts.append((when.after or when.before or "").replace(":00", "h").replace(":", "h"))
         return " ".join(p for p in parts if p)
-    words = [intent.object or ""]
+    words = [] if not intent.object or mentions_site(intent.object) else [intent.object]
     for constraint in intent.constraints:
-        if named_shop_text(constraint) or re.search(r"\d", constraint):
-            continue  # « sur Amazon », « moins de 200 € » : pas dans la recherche
+        if mentions_site(constraint) or re.search(r"\d+\s*(€|euros?)\b|\bmoins de\b|\bmax", constraint, re.I):
+            continue  # « sur Vinted », « moins de 200 € » : pas dans la recherche
         words.append(constraint)
     return " ".join(w for w in words if w).strip()
-
-
-def named_shop_text(text: str) -> bool:
-    plain = text.lower().replace("-", " ")
-    return any(re.search(rf"\b{name}\b", plain) for name in NAMED_SHOPS)
 
 
 MONTHS_FR = [
     "janvier", "février", "mars", "avril", "mai", "juin",
     "juillet", "août", "septembre", "octobre", "novembre", "décembre",
 ]  # fmt: skip
-
-
-# --- comparaison entre boutiques (aucune boutique nommée) -----------------------------
-
-# Boutiques par type de produit, les plus spécialisées d'abord. Adresses vérifiées le 2026-11-18.
-MAISONS_DU_MONDE = ("Maisons du Monde", "https://www.maisonsdumonde.com/FR/fr")
-IKEA = ("Ikea", "https://www.ikea.com/fr/fr/")
-CONFORAMA = ("Conforama", "https://www.conforama.fr")
-LA_REDOUTE = ("La Redoute", "https://www.laredoute.fr")
-FNAC = ("Fnac", "https://www.fnac.com")
-DARTY = ("Darty", "https://www.darty.com")
-BOULANGER = ("Boulanger", "https://www.boulanger.com")
-CDISCOUNT = ("Cdiscount", "https://www.cdiscount.com")
-DECATHLON = ("Decathlon", "https://www.decathlon.fr")
-INTERSPORT = ("Intersport", "https://www.intersport.fr")
-LEROY_MERLIN = ("Leroy Merlin", "https://www.leroymerlin.fr")
-CASTORAMA = ("Castorama", "https://www.castorama.fr")
-MANOMANO = ("ManoMano", "https://www.manomano.fr")
-ZALANDO = ("Zalando", "https://www.zalando.fr")
-GALERIES_LAFAYETTE = ("Galeries Lafayette", "https://www.galerieslafayette.com")
-CULTURA = ("Cultura", "https://www.cultura.com")
-KING_JOUET = ("King Jouet", "https://www.king-jouet.com")
-SEPHORA = ("Sephora", "https://www.sephora.fr")
-NOCIBE = ("Nocibé", "https://www.nocibe.fr")
-
-CATALOG: list[tuple[str, list[tuple[str, str]]]] = [
-    # Poltronesofà n'est pas proposé : site vitrine sans prix ni vente en ligne (vu le 2026-11-18).
-    (r"canap|sofa|fauteuil|m[ée]ridienne|pouf", [MAISONS_DU_MONDE, CONFORAMA, IKEA]),
-    (r"\blit\b|matelas|sommier|armoire|commode|table|chaise|buffet|meuble|[ée]tag[èe]re|bureau|dressing",
-     [MAISONS_DU_MONDE, IKEA, CONFORAMA]),
-    (r"lampe|abat|luminaire|suspension|lampadaire|miroir|tapis|rideau|coussin|d[ée]co|vase|plaid",
-     [MAISONS_DU_MONDE, IKEA, LA_REDOUTE]),
-    (r"frigo|r[ée]frig[ée]rateur|lave|four|micro.?onde|aspirateur|cafeti[èe]re|machine [àa] caf[ée]|"
-     r"bouilloire|grille.?pain|plaque", [DARTY, BOULANGER, CDISCOUNT]),
-    (r"casque|[ée]couteur|t[ée]l[ée]|tv|ordinateur|\bpc\b|portable|smartphone|t[ée]l[ée]phone|tablette|"
-     r"console|enceinte|appareil photo|montre connect", [FNAC, DARTY, BOULANGER]),
-    (r"v[ée]lo|running|course|tente|ballon|raquette|sport|randonn|\bski\b|fitness|yoga|natation",
-     [DECATHLON, INTERSPORT, CDISCOUNT]),
-    (r"perceuse|visseuse|outil|peinture|parquet|carrelage|tondeuse|barbecue|jardin|robinet|[ée]chelle",
-     [LEROY_MERLIN, CASTORAMA, MANOMANO]),
-    (r"chaussure|basket|veste|manteau|robe|pantalon|jean|t.?shirt|pull|chemise|sac\b|v[êe]tement",
-     [ZALANDO, LA_REDOUTE, GALERIES_LAFAYETTE]),
-    (r"parfum|maquillage|cr[èe]me|soin|shampo|rouge [àa] l[èe]vres", [SEPHORA, NOCIBE]),
-    (r"livre|roman|\bbd\b|manga|jeu vid[ée]o", [FNAC, CULTURA]),
-    (r"jouet|lego|puzzle|poup[ée]e|peluche|jeu de soci[ée]t[ée]", [KING_JOUET, FNAC, CULTURA]),
-]  # fmt: skip
-GENERALISTS = [CDISCOUNT, LA_REDOUTE, FNAC]
-MAX_COMPARED = 3  # sessions H en même temps : 3 au plus avec l'offre gratuite
-
-
-def compare_sites(intent: Intent) -> list[tuple[str, str]]:
-    """Boutiques à comparer pour cet objet (nom, adresse), les plus adaptées d'abord."""
-    said = f"{intent.object or ''} {intent.text or ''}".lower()
-    for pattern, shops in CATALOG:
-        if re.search(pattern, said):
-            return shops[:MAX_COMPARED]
-    return GENERALISTS[:MAX_COMPARED]
-
-
-def shop_name(url: str) -> str:
-    """Nom lisible d'une boutique à partir de son adresse."""
-    known = {u: n for _, shops in CATALOG for n, u in shops} | {u: n for n, u in GENERALISTS}
-    if url in known:
-        return known[url]
-    host = re.sub(r"^https?://(www\.)?", "", url).split("/")[0]
-    return host

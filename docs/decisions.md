@@ -133,3 +133,11 @@ Base : `partie-5` (contrats et squelette), puis `partie-2` (IA), `partie-4` (int
 - Réponses de l'agent plus tolérantes : détails de produit libres (couleur, places…) acceptés au lieu de rejeter toute la boutique.
 - Mesuré : canapé d'angle gris, budget 1500 €, 6 options de 3 boutiques en 86 s. Achat après comparaison non testé en réel.
 
+## 2026-11-18 : acheter sur n'importe quel site, plus de comparaison
+
+- Décision : Pilote n'est pas un comparateur. La personne fait sa recherche ailleurs (un assistant, un ami) et demande d'acheter sur le site de son choix. La comparaison entre boutiques et Amazon par défaut sont retirés.
+- Le site est pris dans la demande (`shops.resolve_site`) : un lien (produit ou site, tapé dans le champ de texte : ouvert tel quel, l'agent propose ce produit-là), une adresse (« maisonsdumonde.com »), une boutique courante (Ikea, Zalando, Vinted…), ou n'importe quel autre nom après « sur » / « chez ». Pour un nom inconnu, l'agent part d'une recherche Bing et ouvre le site officiel (pas une annonce, une place de marché ni un comparateur) ; s'il ne vend pas en ligne, il s'arrête et le dit.
+- Sans site donné (hors train et repas, qui gardent SNCF Connect et Uber Eats), Pilote demande : « Sur quel site voulez-vous l'acheter ? ». `PILOTE_SITE_BOUTIQUE` impose un site si besoin.
+- La recherche rapide reste valable sur tous les sites (texte tapé d'un coup, budget par les filtres).
+- Mesuré : « un pull marinière sur le site de Petit Bateau » (site inconnu) : site officiel trouvé, 3 options en 69 s et 10 actions.
+

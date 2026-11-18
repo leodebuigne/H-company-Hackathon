@@ -35,6 +35,9 @@ class OptionDetails(BaseModel):
     via: str | None = Field(default=None, description="Train : direct ou correspondances")
     delivery: str | None = Field(default=None, description="Repas : délai ou heure de livraison")
     restaurant: str | None = Field(default=None, description="Repas : nom du restaurant")
+    shop: str | None = Field(default=None, description="Achat en boutique : nom du site ou du vendeur")
+    color: str | None = Field(default=None, description="Produit : couleur ou motif choisi")
+    size: str | None = Field(default=None, description="Produit : taille, pointure ou dimensions")
 
 
 class AgentOption(BaseModel):

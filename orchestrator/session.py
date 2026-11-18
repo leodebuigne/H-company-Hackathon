@@ -22,6 +22,7 @@ import datetime as dt
 import hmac
 import json
 import logging
+import os
 import re
 import unicodedata
 import uuid
@@ -34,7 +35,7 @@ from pydantic import BaseModel, TypeAdapter, ValidationError
 
 from orchestrator.agent_h.base import AgentError, NeedsHuman, PaymentDenied, UnapprovedPurchase
 from orchestrator.agent_h.card import NewCard, parse_cvc, parse_expiry, parse_number
-from orchestrator.agent_h.shops import shop_name
+from orchestrator.agent_h.shops import resolve_site, site_name
 from orchestrator.agent_h.site_memory import domain_of
 from orchestrator.ai.hf import QUESTIONS, SPEAK_MIME, AIError, complete_intent
 from orchestrator.ai.speech_text import euros
@@ -83,6 +84,10 @@ NEXT = "Que voulez-vous commander ?"
 WAITING: set[State] = {"listening", "proposing", "confirm_1", "confirm_2", "human_needed"}
 SITE_NAMES = {"www.sncf-connect.com": "SNCF Connect", "www.ubereats.com": "Uber Eats"}
 CATEGORY_SITES = {"train": "SNCF Connect", "repas": "Uber Eats"}
+SITE_QUESTION = (
+    "Sur quel site voulez-vous l'acheter ? Dites son nom, par exemple Ikea ou Maisons du Monde, "
+    "ou tapez l'adresse du produit."
+)
 CLIENT_MESSAGE: TypeAdapter[ClientMessage] = TypeAdapter(ClientMessage)
 SendFn = Callable[[dict[str, Any]], Awaitable[None]]
 
@@ -528,13 +533,25 @@ class Session:
                     "Dites-moi ce que vous voulez commander, par exemple un train pour Lille demain."
                 )
                 continue
+            if not intent.missing and self._needs_site(intent):
+                # Achat ailleurs que train ou repas : c'est la personne qui choisit le site.
+                intent = intent.model_copy(update={"missing": ["details.site"]})
             if intent.missing:
                 pending = intent
                 # Mêmes questions rédigées quelle que soit l'IA (la factice pose « details.origin »).
-                question = QUESTIONS.get(intent.missing[0]) or intent.question
+                question = SITE_QUESTION if intent.missing[0] == "details.site" else None
+                question = question or QUESTIONS.get(intent.missing[0]) or intent.question
                 await self._say(question or "Pouvez-vous préciser votre demande ?")
                 continue
             return intent
+
+    @staticmethod
+    def _needs_site(intent: Intent) -> bool:
+        """Faut-il demander le site ? Oui pour un achat sans site par défaut (ni train ni repas)."""
+        category = intent.category or ""
+        if category in ("train", "repas") or os.getenv(f"PILOTE_SITE_{category.upper()}", "").strip():
+            return False
+        return resolve_site(intent) is None
 
     async def _step(self, name: str, call: Awaitable[T]) -> T:
         """Une étape de l'agent H, avec délai maximum et erreurs traduites pour l'oral."""
@@ -866,7 +883,7 @@ class Session:
         agent_site = self._agent_site()
         site = (
             SITE_NAMES.get(domain_of(agent_site))
-            or (shop_name(agent_site) if agent_site else "")
+            or (site_name(agent_site) if agent_site else "")
             or CATEGORY_SITES.get(category or "", "ce site")
         )
         try:

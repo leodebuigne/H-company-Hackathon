@@ -507,3 +507,31 @@ async def test_saying_no_instead_of_the_card_number_buys_nothing():
         await h.text("non")
         await h.wait_said("Rien n'a été payé")
         assert "C'est acheté" not in h.said()
+
+
+# --- achat sur le site choisi par la personne -------------------------------------------
+
+
+def test_pilote_asks_for_the_site_only_when_needed(monkeypatch):
+    from orchestrator.session import Session, _intent
+
+    monkeypatch.delenv("PILOTE_SITE_BOUTIQUE", raising=False)
+    shop = _intent("new_request", "un aspirateur Dyson V15").model_copy(
+        update={"category": "boutique", "object": "aspirateur Dyson V15"}
+    )
+    assert Session._needs_site(shop)
+    assert not Session._needs_site(shop.model_copy(update={"text": "un aspirateur Dyson V15 chez Darty"}))
+    assert not Session._needs_site(shop.model_copy(update={"details": {"site": "Vinted"}}))
+    assert not Session._needs_site(shop.model_copy(update={"category": "train"}))
+
+
+def test_the_answer_to_the_site_question_fills_the_site():
+    from orchestrator.agent_h.shops import resolve_site
+    from orchestrator.session import _intent
+
+    pending = _intent("new_request", "un pull").model_copy(
+        update={"category": "boutique", "object": "pull", "missing": ["details.site"]}
+    )
+    merged = merge_answer(pending, _intent("other", "Petit Bateau"))
+    choice = resolve_site(merged)
+    assert choice is not None and choice.name == "Petit Bateau" and choice.lookup
