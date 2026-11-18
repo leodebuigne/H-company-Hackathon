@@ -36,6 +36,7 @@ import time
 import uuid
 from collections.abc import Awaitable, Callable
 from typing import Any
+from urllib.parse import quote, quote_plus
 
 from hai_agents import AsyncClient
 from hai_agents.tools import Tool, tool
@@ -64,13 +65,28 @@ from .models import (
 )
 from .narration import actions_in, describe_action
 from .path_memory import Briefing, PathMemory, briefing_text
+from .shops import named_shop, search_query
 from .site_memory import SiteMemory, domain_of, merge_card, site_memory_from_env, starter_card
 
 OK_STATUSES = {"idle", "completed"}
 
 # Site visé par catégorie d'achat (docs/sites.md). Le plan B remplace ces adresses par celles des
 # faux sites avec PILOTE_SITE_TRAIN et PILOTE_SITE_REPAS.
-DEFAULT_SITES = {"train": "https://www.sncf-connect.com", "repas": "https://www.ubereats.com/fr"}
+DEFAULT_SITES = {
+    "train": "https://www.sncf-connect.com",
+    "repas": "https://www.ubereats.com/fr",
+    "boutique": "https://www.amazon.fr",  # boutique générale par défaut ; PILOTE_SITE_BOUTIQUE pour changer
+}
+
+
+def start_url_for(intent: Intent, site: str) -> str:
+    """Page d'arrivée : directement les résultats quand l'adresse de recherche du site est sûre."""
+    query = search_query(intent)
+    if "amazon." in site and query:
+        return f"{site.rstrip('/')}/s?k={quote_plus(query)}"
+    if "ubereats.com" in site and intent.object:
+        return f"{site.rstrip('/')}/search?q={quote(intent.object)}"
+    return site
 
 
 def site_for(intent: Intent) -> str:
@@ -78,7 +94,7 @@ def site_for(intent: Intent) -> str:
     category = intent.category
     if category is None:
         raise AgentError("Catégorie d'achat inconnue : l'orchestrateur doit la demander d'abord.")
-    site = os.getenv(f"PILOTE_SITE_{category.upper()}") or DEFAULT_SITES.get(category)
+    site = named_shop(intent) or os.getenv(f"PILOTE_SITE_{category.upper()}") or DEFAULT_SITES.get(category)
     if site is None:
         raise AgentError(f"Aucun site configuré pour la catégorie « {category} ».")
     return site
@@ -129,6 +145,7 @@ class ShoppingAgent:
         self.order_id = ""  # UUID créé par checkout() ; recheck() le conserve
         self.agent_view_url: str | None = None
         self._site = ""
+        self._start_url = ""  # page d'arrivée : les résultats quand c'est possible (start_url_for)
         self._session: Any = None
         self._site_card: SiteCard | None = None
         self._real_client = False
@@ -358,7 +375,7 @@ class ShoppingAgent:
             mode["markdown"] = False
         environment: dict[str, Any] = {"kind": "web", "id": "browser", "host": "user_device", "mode": mode}
         if self._site:
-            environment["start_url"] = self._site
+            environment["start_url"] = self._start_url or self._site
         spec: dict[str, Any] = {
             "name": f"{agent['name']}-local",
             "description": agent.get("description") or "Agent de navigation de Pilote.",
@@ -382,7 +399,9 @@ class ShoppingAgent:
             return self._agent_name
         environment: dict[str, Any] = {"kind": "web", "id": "browser", "host": self._browser_host}
         if self._site:
-            environment["start_url"] = self._site  # le navigateur s'ouvre directement sur le site
+            environment["start_url"] = (
+                self._start_url or self._site
+            )  # le navigateur s'ouvre directement sur le site
         # Coffre-fort H : H saisit les identifiants du site à la place de l'agent, qui ne les voit jamais.
         # Uniquement sur un navigateur cloud (limite du SDK H).
         if self._vault_id:
@@ -545,11 +564,12 @@ class ShoppingAgent:
 
     async def start(self, intent: Intent, site_card: SiteCard | None = None) -> None:
         self._site = site_for(intent)
+        self._start_url = start_url_for(intent, self._site)
         self._real_client = self._real_client or self._client is None  # client simulé dans les tests
         if self._browser_host == "user_device" and self._real_client:
             # Sinon le SDK lance Chrome sans --force-device-scale-factor=1 : clics décalés sur Retina
-            await asyncio.to_thread(local_chrome.ensure, self._site)
-            await asyncio.to_thread(local_chrome.fresh_page, self._site)
+            await asyncio.to_thread(local_chrome.ensure, self._start_url)
+            await asyncio.to_thread(local_chrome.fresh_page, self._start_url)
         client = await self._ensure_client()
         self._intent = intent
         self.order_id = ""

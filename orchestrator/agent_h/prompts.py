@@ -6,10 +6,17 @@ import os
 
 from orchestrator.contracts import Intent, Option, SiteCard
 
+from .shops import search_query
+
 GENERIC_INSTRUCTIONS = """\
 Tu es l'agent de navigation de Pilote, un assistant qui fait des achats en ligne pour une personne aveugle. Elle ne voit pas l'écran : tout ce que tu rapportes doit être exact et vérifiable.
 
 Ta mission : trouver ce que l'utilisateur demande sur le site indiqué, puis exécuter ses choix étape par étape, uniquement quand on te le demande.
+
+Recherche rapide (tous les sites) :
+- Si la page n'affiche pas déjà les résultats, utilise la barre de recherche principale du site (en général en haut de la page, avec une loupe) : tape d'un coup le « texte de recherche » donné dans la demande, puis Entrée. Ne remplis pas un formulaire champ par champ quand une barre unique suffit.
+- Applique ensuite les critères avec les filtres du site, pas en retapant : le budget avec le filtre de prix (prix maximum, curseur ou cases de tranches de prix) ou, à défaut, le tri « Prix croissant » ; la note, la livraison, la taille avec les filtres correspondants.
+- Si la barre de recherche ne mène à rien d'utile (aucun résultat, mauvaise rubrique), essaie une fois avec moins de mots (l'objet seul), puis passe par les menus ou le formulaire du site.
 
 Règles de recherche :
 - Renvoie au plus {max_options} options, triées selon les contraintes de la demande (horaire, budget, préférence).
@@ -110,8 +117,17 @@ def intent_text(intent: Intent, site: str) -> str:
         parts.append(f"Heure : avant {when.before}")
     if when.asap:
         parts.append("Le plus vite possible")
+    query = search_query(intent)
+    if query:
+        parts.append(
+            f"Texte de recherche : « {query} » (à taper d'un coup dans la barre de recherche du site)"
+        )
     if intent.budget_cents is not None:
-        parts.append(f"Budget maximum : {_euros(intent.budget_cents)}")
+        parts.append(
+            f"Budget maximum : {_euros(intent.budget_cents)}, prix total par article. Applique-le avec le filtre "
+            "de prix du site (ou le tri « Prix croissant »), jamais dans la barre de recherche ; ne renvoie aucune "
+            "option au-dessus de ce budget."
+        )
     if intent.constraints:
         parts.append("Contraintes : " + " ; ".join(intent.constraints))
     return "\n".join(parts)

@@ -117,3 +117,10 @@ Base : `partie-5` (contrats et squelette), puis `partie-2` (IA), `partie-4` (int
 - Données personnelles : refus des textes avec e-mail, adresse, nombre de 2 chiffres ou plus (prix, date, heure, carte), montant ; les valeurs de la commande (villes, plat) sont remplacées par <ville de départ>, <ville d'arrivée>, <plat>.
 - Mesuré : 3 visites SNCF, 4 astuces apprises ; 2e visite 13 décisions au lieu de 18, astuces confirmées. Limite vue : les chemins du guide écrit à la main (ex. recherche rapide « Tout rechercher ») ne sont pas suivis par la mémoire, donc pas réessayés : la 1re visite a vu la recherche rapide échouer et la mémoire a appris à passer par le formulaire.
 
+## 2026-11-18 : recherche rapide généralisée, achats en boutique
+
+- La « recherche rapide » de SNCF Connect (tout taper d'un coup dans « Tout rechercher ») devient une règle de la consigne pour tous les sites : barre de recherche principale, texte de recherche tapé d'un coup, puis les critères avec les filtres du site. Le budget n'est jamais tapé (une barre prend « 3000 » pour un mot du produit) : filtre de prix ou tri « Prix croissant », et aucune option au-dessus du budget.
+- Pilote calcule le texte de recherche (`shops.search_query`) : l'objet et ses critères, sans budget ni nom de boutique ; pour un train « <départ> <arrivée> <jour> <mois> <heure> ».
+- Catégorie « boutique » : la boutique nommée par la personne (« sur Amazon », « chez Fnac », Leroy Merlin, Ikea, Darty…), sinon Amazon.fr (`PILOTE_SITE_BOUTIQUE` pour changer). Sur Amazon, l'agent arrive directement sur les résultats (`/s?k=`).
+- Mesuré : « abat-jour style moderne, budget 3000 € » sur Amazon, 3 options dans le budget en 33 s et 4 actions.
+

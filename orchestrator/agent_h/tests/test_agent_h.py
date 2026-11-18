@@ -205,8 +205,59 @@ def test_site_for_uses_category_and_env_override(monkeypatch):
 def test_site_for_refuses_unknown_category():
     with pytest.raises(AgentError):
         site_for(PIZZA.model_copy(update={"category": None}))
-    with pytest.raises(AgentError):
-        site_for(PIZZA.model_copy(update={"category": "boutique"}))
+
+
+# --- recherche rapide généralisée et boutiques -----------------------------------------
+
+
+def _shop(**kw):
+    base = {
+        "category": "boutique",
+        "object": "abat-jour style moderne",
+        "budget_cents": 300000,
+        "constraints": [],
+    }
+    base.update(kw)
+    return PIZZA.model_copy(update={**base, "details": {}, "text": kw.get("text", "abat-jour moderne")})
+
+
+def test_shopping_goes_to_amazon_by_default_or_to_the_shop_named(monkeypatch):
+    from orchestrator.agent_h.agent import start_url_for
+
+    monkeypatch.delenv("PILOTE_SITE_BOUTIQUE", raising=False)
+    lamp = _shop()
+    assert site_for(lamp) == "https://www.amazon.fr"
+    assert start_url_for(lamp, site_for(lamp)) == "https://www.amazon.fr/s?k=abat-jour+style+moderne"
+    assert site_for(_shop(text="un livre chez la Fnac", object="livre")) == "https://www.fnac.com"
+    assert site_for(_shop(constraints=["sur Leroy-Merlin"])) == "https://www.leroymerlin.fr"
+    monkeypatch.setenv("PILOTE_SITE_BOUTIQUE", "https://www.darty.com")
+    assert site_for(lamp) == "https://www.darty.com"
+
+
+def test_search_text_has_the_object_and_criteria_but_never_the_budget_or_shop():
+    from orchestrator.agent_h.shops import search_query
+
+    casque = _shop(
+        object="casque sans fil", constraints=["réduction de bruit", "sur amazon", "moins de 200 €"]
+    )
+    assert search_query(casque) == "casque sans fil réduction de bruit"
+    train = TRAIN.model_copy(
+        update={
+            "details": {"origin": "Paris", "destination": "Lille"},
+            "when": TRAIN.when.model_copy(update={"date": dt.date(2026, 11, 19), "after": "14:00"}),
+        }
+    )
+    assert search_query(train) == "Paris Lille 19 novembre 14h"
+
+
+def test_the_agent_is_told_to_search_in_one_go_and_filter_the_budget():
+    from orchestrator.agent_h.prompts import generic_instructions
+
+    rules = generic_instructions()
+    assert "Recherche rapide (tous les sites)" in rules and "filtre de prix" in rules
+    text = intent_text(_shop(), "https://www.amazon.fr")
+    assert "Texte de recherche : « abat-jour style moderne »" in text
+    assert "3000,00 €" in text and "jamais dans la barre de recherche" in text
 
 
 def test_intent_text_describes_the_contract_intent():
