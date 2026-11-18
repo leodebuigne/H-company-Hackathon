@@ -108,3 +108,12 @@ Base : `partie-5` (contrats et squelette), puis `partie-2` (IA), `partie-4` (int
 - L'agent clique dans chaque champ et appelle `fill_card_field` : Pilote tape la valeur dans le Chrome local (port 9222), l'agent H ne reçoit jamais les chiffres. Il coche ou décoche la case d'enregistrement du site selon la réponse (`card_saved_on_site`), ou ne paie pas si le site impose l'enregistrement alors que la personne a dit non.
 - Pilote ne garde jamais la carte : effacée à la fin de `buy()`, `pay()` et `cancel()` ; jamais dans la mémoire des sites ni ailleurs. Seul le site la garde, et seulement si la personne l'a demandé.
 - Limites : seulement avec le Chrome local ; dictés, les chiffres passent par la transcription Hugging Face et sont entendus autour ; ce que la page affiche ensuite reste visible sur les captures de l'agent. Non testé en paiement réel.
+
+## 2026-11-18 : mémoire des chemins, avec réessais espacés
+
+- `orchestrator/agent_h/path_memory.py`, fichier local `~/.pilote/memoire-sites.json` (droits 600), gardé d'une visite et d'un redémarrage à l'autre. Une astuce par chemin ou piège, avec réussites, échecs et échecs de suite.
+- Apprentissage : après une étape réussie (options trouvées, récapitulatif lu, paiement tenté), l'agent résume le chemin suivi en 1 à 3 astuces et les pièges évités (`new_tips`) ; pour chaque astuce de la mémoire essayée, il dit si elle a marché (`tips_feedback`).
+- Mise de côté après 2 échecs de suite. Réessai quand c'est dû, avec un écart qui double à chaque nouvel échec (3, 6, 12, 24 visites, au plus 50) : une panne passagère ne l'écarte pas pour toujours, un chemin mort ne coûte presque plus rien. Les astuces écartées sont toujours proposées « si tu es bloqué ». Une réussite les remet en service.
+- Données personnelles : refus des textes avec e-mail, adresse, nombre de 2 chiffres ou plus (prix, date, heure, carte), montant ; les valeurs de la commande (villes, plat) sont remplacées par <ville de départ>, <ville d'arrivée>, <plat>.
+- Mesuré : 3 visites SNCF, 4 astuces apprises ; 2e visite 13 décisions au lieu de 18, astuces confirmées. Limite vue : les chemins du guide écrit à la main (ex. recherche rapide « Tout rechercher ») ne sont pas suivis par la mémoire, donc pas réessayés : la 1re visite a vu la recherche rapide échouer et la mémoire a appris à passer par le formulaire.
+

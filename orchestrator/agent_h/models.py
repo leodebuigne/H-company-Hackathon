@@ -119,6 +119,17 @@ def summary_from_cents(value: object) -> object:
     return converted
 
 
+class TipFeedback(BaseModel):
+    id: str = Field(description="Identifiant [T…] d'une astuce de la mémoire du site que tu as essayée")
+    worked: bool = Field(description="true si elle a mené au résultat attendu, false sinon")
+
+
+class NewTip(BaseModel):
+    text: str = Field(description="Chemin ou piège, général et précis, avec <ville>, <date>, <plat>…")
+    kind: str = Field(default="étape", description="raccourci, étape ou piège")
+    phase: str = Field(default="recherche", description="recherche ou achat")
+
+
 class AgentAnswer(BaseModel):
     """Format unique de réponse de l'agent, quelle que soit la phase."""
 
@@ -145,6 +156,17 @@ class AgentAnswer(BaseModel):
         description="Carte dictée : true si l'enregistrement sur le site est coché, sinon false",
     )
     site_notes: SiteNotes | str | None = None
+    tips_feedback: list[TipFeedback] = Field(
+        default_factory=list, description="Pour chaque astuce [T…] de la mémoire essayée : a-t-elle marché ?"
+    )
+    new_tips: list[NewTip] = Field(
+        default_factory=list, description="Chemins plus rapides ou pièges découverts, absents de la mémoire"
+    )
+
+    @field_validator("tips_feedback", "new_tips", mode="before")
+    @classmethod
+    def _null_list(cls, value: object) -> object:
+        return [] if value is None else value
 
     @field_validator("order_summary", "site_notes", mode="before")
     @classmethod

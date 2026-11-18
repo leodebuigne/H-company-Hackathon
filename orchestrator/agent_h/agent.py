@@ -31,6 +31,7 @@ import asyncio
 import contextlib
 import dataclasses
 import os
+import re
 import time
 import uuid
 from collections.abc import Awaitable, Callable
@@ -62,6 +63,7 @@ from .models import (
     to_order_summary,
 )
 from .narration import actions_in, describe_action
+from .path_memory import Briefing, PathMemory, briefing_text
 from .site_memory import SiteMemory, domain_of, merge_card, site_memory_from_env, starter_card
 
 OK_STATUSES = {"idle", "completed"}
@@ -111,6 +113,9 @@ class ShoppingAgent:
         self._approval_callback = approval_callback
         self._need_human_callback = need_human_callback
         self._memory = memory or site_memory_from_env()
+        # Mémoire des chemins (fichier local) : ce qui marche, ce qui rate, réessais espacés.
+        self._paths: PathMemory | None = PathMemory.from_env()
+        self._briefing: Briefing | None = None
         self._timeout = step_timeout_s
         self._record = record_metrics
         self._max_total_eur = (
@@ -223,6 +228,45 @@ class ShoppingAgent:
         logging.getLogger(__name__).warning(
             "Saisie de carte impossible (%s) : %s", name, type(error).__name__
         )
+
+    def _learn(self, answer: AgentAnswer, phase: str) -> None:
+        """Bilan des chemins de cette étape dans la mémoire des sites. Une erreur ici ne bloque jamais l'achat."""
+        if self._paths is None or self._briefing is None:
+            return
+        searching = phase in ("search", "refine")
+        ok = (
+            (searching and bool(answer.options))
+            or (phase in ("checkout", "recheck") and answer.order_summary is not None)
+            or (phase in ("buy", "pay") and answer.payment_result is not None)
+        )
+        known = self._briefing.ids
+        feedback = [(f.id.strip("[] "), f.worked) for f in answer.tips_feedback if f.id.strip("[] ") in known]
+        learned = []
+        # Les valeurs de cette commande (villes, plat…) ne doivent pas rester dans la mémoire.
+        values: dict[str, str] = {}
+        if self._intent is not None:
+            names = {"origin": "<ville de départ>", "destination": "<ville d'arrivée>"}
+            for key, value in (self._intent.details or {}).items():
+                if value and len(str(value)) >= 3:
+                    values[str(value)] = names.get(key, f"<{key}>")
+            if self._intent.object and len(self._intent.object) >= 3:
+                values[self._intent.object] = "<plat>" if self._intent.category == "repas" else "<objet>"
+        for tip in answer.new_tips:
+            for value, placeholder in sorted(values.items(), key=lambda kv: -len(kv[0])):
+                tip.text = re.sub(re.escape(value), placeholder, tip.text, flags=re.IGNORECASE)
+            kind = (
+                "raccourci"
+                if "racc" in tip.kind.lower()
+                else "piège"
+                if "pi" in tip.kind.lower()
+                else "étape"
+            )
+            buying = any(w in tip.phase.lower() for w in ("ach", "pai", "panier"))
+            learned.append((tip.text, kind, "achat" if buying or not searching else "recherche"))
+        try:
+            self._paths.record(domain_of(self._site), feedback, learned, ok)  # type: ignore[arg-type]
+        except Exception:
+            pass
 
     def _forget_card(self) -> None:
         self._card, self._save_card_on_site = None, False
@@ -422,6 +466,7 @@ class ShoppingAgent:
                     else AgentAnswer.model_validate(result.answer)
                 )
                 self._last_answer = answer
+                self._learn(answer, phase)
                 if answer.payment_result is not None and not self._paying:
                     # Achat cliqué hors de pay() : on le signale au lieu de le prendre pour une erreur
                     await self._finish("achat hors étape paiement", answer.payment_result, answer)
@@ -476,7 +521,14 @@ class ShoppingAgent:
             spec["environments"][0].pop("start_url", None)
         self._session = await client.start_session(
             agent=spec,
-            messages=prompts.continue_message(self._intent, self._site, self._site_card, self._chosen, step),
+            messages=prompts.continue_message(
+                self._intent,
+                self._site,
+                self._site_card,
+                self._chosen,
+                step,
+                memory=briefing_text(self._briefing),
+            ),
             answer_schema=AgentAnswer,
             tools=self._tools(),
             idempotency_key=uuid.uuid4().hex,
@@ -508,6 +560,8 @@ class ShoppingAgent:
         if site_card is None:
             site_card = await self._memory.get(domain) or starter_card(domain)
         self._site_card = site_card
+        if self._paths is not None:
+            self._briefing = await asyncio.to_thread(self._paths.begin_visit, domain)
         await self._load_portal_agent(client)
         self._metrics = RunMetrics(site=domain, agent=self._agent_name or "inline", started=time.monotonic())
         self._session = await client.start_session(
@@ -518,6 +572,7 @@ class ShoppingAgent:
                 site_card,
                 with_instructions=bool(self._agent_name) and not self._mirror_portal_agent,
                 with_vault=self._vault_id is not None,
+                memory=briefing_text(self._briefing),
             ),
             answer_schema=AgentAnswer,
             tools=self._tools(),

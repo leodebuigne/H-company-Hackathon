@@ -118,12 +118,18 @@ def intent_text(intent: Intent, site: str) -> str:
 
 
 def search_message(
-    intent: Intent, site: str, card: SiteCard | None, with_instructions: bool, with_vault: bool = False
+    intent: Intent,
+    site: str,
+    card: SiteCard | None,
+    with_instructions: bool,
+    with_vault: bool = False,
+    memory: str = "",
 ) -> str:
     head = generic_instructions(with_vault) + "\n" if with_instructions else ""
     login = LOGIN_FIRST + "\n\n" if with_vault else ""
+    remembered = f"{memory}\n" if memory else ""
     return (
-        f"{head}{site_card_text(card)}\n\n{intent_text(intent, site)}\n\n{login}"
+        f"{head}{site_card_text(card)}\n\n{remembered}{intent_text(intent, site)}\n\n{login}"
         "Étape : recherche. Trouve les options et renvoie-les dans le champ options. "
         "Ne mets rien dans le panier pour l'instant."
     )
@@ -137,7 +143,7 @@ def option_text(option: Option) -> str:
 
 
 def continue_message(
-    intent: Intent, site: str, card: SiteCard | None, chosen: Option | None, step: str
+    intent: Intent, site: str, card: SiteCard | None, chosen: Option | None, step: str, memory: str = ""
 ) -> str:
     """Étape suivante dans une NOUVELLE session H (Chrome local) : tout le contexte est rappelé.
 
@@ -145,8 +151,9 @@ def continue_message(
     d'une session neuve, mais le Chrome dédié a gardé la page de l'étape précédente.
     """
     chosen_line = option_text(chosen) + "\n" if chosen else ""
+    remembered = f"{memory}\n" if memory else ""
     return (
-        f"{site_card_text(card)}\n\n{intent_text(intent, site)}\n\n"
+        f"{site_card_text(card)}\n\n{remembered}{intent_text(intent, site)}\n\n"
         "Contexte : tu reprends une commande en cours. Le navigateur est déjà ouvert sur la page où "
         "l'étape précédente s'est arrêtée (résultats de recherche, panier ou paiement). Ne relance pas la "
         "recherche et ne repars pas de l'accueil, sauf si la page affichée ne correspond plus à cette "
