@@ -81,3 +81,31 @@ async def test_browser_voice_setting_skips_hugging_face_synthesis(monkeypatch):
     monkeypatch.setenv("PILOTE_VOICE", "navigateur")
     ai = HFAI(chat_client=Boom(), speech_client=Boom())
     assert await ai.speak("Bonjour") is None
+
+
+def test_free_reservations_are_read_without_zero_euro_but_with_address_and_slots():
+    from orchestrator.ai.speech_text import options_summary
+    from orchestrator.contracts import Option
+
+    def opt(rank, title, details, rating=None):
+        return Option(
+            id=f"o{rank}",
+            rank=rank,
+            title=title,
+            price_cents=0,
+            currency="EUR",
+            rating=rating,
+            url="https://www.thefork.fr/x",
+            description=None,
+            details=details,
+            conditions=None,
+        )
+
+    text = options_summary(
+        [
+            opt(1, "Le Pompeï", {"address": "Presqu'île", "slots": "19 h 30, 20 h"}, 4.6),
+            opt(2, "Casamore", {}),
+        ]
+    )
+    assert "0 euro" not in text and "gratuite" in text
+    assert "Presqu'île" in text and "disponible à 19 h 30, 20 h" in text and "noté 4,6 sur 5" in text

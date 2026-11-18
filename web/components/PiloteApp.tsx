@@ -890,6 +890,10 @@ export default function PiloteApp() {
                       o.details.via,
                       o.details.delivery,
                       o.details.restaurant,
+                      o.details.cuisine,
+                      o.details.address,
+                      o.details.slots && `Disponible à ${o.details.slots}`,
+                      o.details.avg_price && `Prix moyen ${o.details.avg_price}`,
                     ]
                       .filter(Boolean)
                       .join(" · ");
@@ -929,7 +933,9 @@ export default function PiloteApp() {
                           <span
                             className={`pilote-option-price ${o.price_cents === 0 ? "is-free" : ""}`}
                           >
-                            {formatCents(o.price_cents)}
+                            {o.price_cents === 0
+                              ? "Gratuit"
+                              : formatCents(o.price_cents)}
                           </span>
                         </button>
                       </li>

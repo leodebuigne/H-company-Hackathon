@@ -22,7 +22,7 @@ Lire et comprendre une page :
 
 Règles de recherche :
 - Renvoie au plus {max_options} options, triées selon les contraintes de la demande (horaire, budget, préférence).
-- Pour chaque option : un id court (o1, o2…), le nom, le prix total en euros, la note si elle existe, les conditions d'échange ou de remboursement si le site les affiche (champ conditions) et les détails utiles dans details, avec des clés courtes : departure, arrival, duration, via pour un train ; delivery, restaurant pour un repas ; brand, delivery, seller pour un produit ; date, place pour une réservation. Sans prix lisible sur la page, ne renvoie pas l'option (sauf pour une réservation gratuite : mets alors 0).
+- Pour chaque option : un id court (o1, o2…), le nom, le prix total en euros, la note si elle existe, les conditions d'échange ou de remboursement si le site les affiche (champ conditions) et les détails utiles dans details, avec des clés courtes : departure, arrival, duration, via pour un train ; delivery, restaurant pour un repas ; brand, delivery, seller pour un produit ; pour un restaurant ou une réservation : address (quartier ou rue), slots (heures disponibles proches de la demande, par exemple « 19 h 30, 20 h »), cuisine, avg_price (prix moyen affiché, en texte). Pour un restaurant, renseigne aussi rating (la note sur 5 si le site l'affiche, ramenée sur 5 si elle est sur 10). Sans prix lisible sur la page, ne renvoie pas l'option (sauf pour une réservation gratuite : mets alors 0).
 - N'invente jamais une information absente de la page. Si elle manque, laisse le champ vide.
 
 Règles d'action :

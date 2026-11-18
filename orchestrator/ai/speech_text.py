@@ -28,15 +28,24 @@ def options_summary(options: list[Option]) -> str:
     if not options:
         return "Je n'ai rien trouvé. Voulez-vous que je cherche autrement ?"
     spoken = options[:MAX_SPOKEN_OPTIONS]
+    # Réservation gratuite (restaurant…) : dire « 0 euro » pour chaque option n'aide personne
+    all_free = all(option.price_cents == 0 for option in spoken)
     parts = []
     for number, option in enumerate(spoken, start=1):
         note = f", noté {_rating(option.rating)} sur 5" if option.rating is not None else ""
-        parts.append(f"Numéro {number} : {option.title}, {euros(option.price_cents)}{note}")
+        price = "" if all_free else f", {euros(option.price_cents)}"
+        extra = ""
+        if option.details.get("address"):
+            extra += f", {option.details['address']}"
+        if option.details.get("slots"):
+            extra += f", disponible à {option.details['slots']}"
+        parts.append(f"Numéro {number} : {option.title}{price}{note}{extra}")
     # Dire exactement quoi répondre : « Voulez-vous des détails ? » laissait croire qu'il fallait
     # répondre oui ou non (retour du 18/11).
     example = "le 2" if len(spoken) > 1 else "le 1"
     return (
-        f"J'ai trouvé {len(spoken)} possibilité{'s' if len(spoken) > 1 else ''}. "
+        f"J'ai trouvé {len(spoken)} possibilité{'s' if len(spoken) > 1 else ''}"
+        + (", la réservation est gratuite. " if all_free else ". ")
         + ". ".join(parts)
         + f". Dites le numéro que vous voulez, par exemple « {example} », ou demandez « les détails du 1 »."
     )
