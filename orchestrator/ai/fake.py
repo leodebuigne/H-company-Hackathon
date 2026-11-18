@@ -158,6 +158,10 @@ class FakeAI:
         if intent.object is None:
             intent.missing.append("object")
 
+    async def prepare_question(self, question: str, history: Any = None) -> dict[str, str]:
+        """Sans modèle : la question telle quelle."""
+        return {"action": "search", "question": question}
+
     async def reply(
         self, *, situation: str, fallback: str, facts: str = "", heard: str = "", history: Any = None
     ) -> str:

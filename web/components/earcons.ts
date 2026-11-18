@@ -76,8 +76,9 @@ const FS6 = 1479.98;
 const PATTERNS: Record<Earcon, () => void> = {
   // « je vous écoute » : deux notes qui s'élèvent, comme une respiration qui s'ouvre
   listening: () => {
-    bell(A5, 0, 0.7, 0.21);
-    bell(D6, 0.085, 0.9, 0.18);
+    // courte : elle doit être éteinte quand le micro s'ouvre
+    bell(A5, 0, 0.3, 0.21);
+    bell(D6, 0.085, 0.32, 0.18);
   },
   // « c'est envoyé, je réfléchis » : la même phrase qui redescend, plus discrète
   thinking: () => {

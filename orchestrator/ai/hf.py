@@ -390,6 +390,12 @@ class HFAI:
         self.usage["calls"] += 1
         return response.choices[0].message.content or ""
 
+    async def prepare_question(self, question: str, history: Any = None) -> dict[str, str]:
+        """Question complétée avec la conversation, ou précision à demander (voir conversation.py)."""
+        return await conversation.prepare_question(
+            self.chat_client, self.llm_model, question=question, history=list(history or [])
+        )
+
     async def reply(
         self, *, situation: str, fallback: str, facts: str = "", heard: str = "", history: Any = None
     ) -> str:

@@ -209,3 +209,10 @@ Retour : Pilote semblait réciter des phrases toutes faites. Ses phrases de conv
 - **Code** : Pilote demande le code à voix haute ; le champ à taper n'apparaît que si on choisit « Je préfère le taper au clavier ».
 - **« OK Pilote »** : pendant que Pilote parle, la reconnaissance vocale du navigateur guette « OK Pilote » ; il se tait aussitôt et écoute. Seule cette phrase compte pendant qu'il parle (sa propre voix ne la dit jamais).
 - **Écoute automatique** : une seule fois par phrase de Pilote, et seulement si elle attend une réponse (choix, oui / non, code, ou question finissant par « ? »). Plus d'écoute automatique après la fin d'une commande ni après une écoute restée sans parole : il faut dire « Bonjour Pilote » ou appuyer. Avant, une écoute sans parole relançait aussitôt une nouvelle écoute.
+
+## 2026-11-18 : questions mal comprises, mots inventés (v2 locale, membre 4)
+
+Retour du test : « Tu pourrais regarder combien de temps je mets pour aller Merci. » La destination n'a pas été entendue, Pilote a lancé une recherche web sur une question incomplète (20 s), a oublié le fil quand la personne a précisé, est passé au tutoiement, et a lu une « source » technique.
+- **Mots inventés par Whisper** : le son « je vous écoute » démarrait en même temps que le micro, et son écho était enregistré ; Whisper « transcrivait » la cloche. Le son est maintenant joué avant l'ouverture du micro (380 ms d'écart) et raccourci. L'écoute attend 2 s de silence (au lieu de 1,4 s) avant d'envoyer, pour laisser une petite pause (« pour aller… à Lyon »).
+- **Question préparée avant la recherche** (`conversation.prepare_question`, 0,5 à 1,3 s) : le modèle complète la question avec la conversation, ou demande la précision qui manque (« Pour aller où ? ») au lieu de lancer une recherche. La réponse suivante est reliée à la question en attente.
+- **Vouvoiement** imposé (réponses de Pilote et consigne de l'agent pour les questions). Une « source » qui décrit un échec (« demande incomplète ») n'est plus lue.

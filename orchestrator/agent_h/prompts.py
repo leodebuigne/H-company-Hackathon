@@ -215,7 +215,7 @@ def question_message(question: str, with_instructions: bool) -> str:
         f"{head}Étape : question. La personne demande : « {question} »\n"
         "Trouve la réponse sur le web. Commence par un moteur de recherche (https://duckduckgo.com), "
         "puis ouvre le site le plus fiable (le site officiel de préférence). Ne remplis aucun formulaire "
-        "d'achat, ne te connecte à rien, ne paie rien. Renvoie la réponse dans reply : 1 à 3 phrases "
+        "d'achat, ne te connecte à rien, ne paie rien. Renvoie la réponse dans reply, en vouvoyant la personne : 1 à 3 phrases "
         "courtes en français simple, à dire à voix haute, avec les chiffres utiles (horaires, prix). "
         "Mets le nom du site dans reply_source. Si tu ne trouves pas, dis-le simplement dans reply."
     )

@@ -47,7 +47,10 @@ type VoiceMode = "voice" | "screenreader";
 
 // Appui plus court que ça = « appuyer une fois puis parler » : Pilote écoute et s'arrête quand on se tait.
 const TAP_MS = 450;
-const HANDS_FREE = { silenceMs: 1400, noSpeechMs: 7000, maxMs: 30000 };
+// 2 s de silence avant d'envoyer : on laisse le temps d'une petite pause (« pour aller… à Lyon »).
+const HANDS_FREE = { silenceMs: 2000, noSpeechMs: 7000, maxMs: 30000 };
+// Pause entre le son « je vous écoute » et l'ouverture du micro
+const EARCON_GAP_MS = 380;
 
 // États où Pilote attend une réponse : il réécoute tout seul après avoir parlé (conversation mains libres).
 const AUTO_LISTEN_STATES: State[] = [
@@ -310,9 +313,11 @@ export default function PiloteApp() {
     setMicError(null);
     pressedAtRef.current = performance.now();
     try {
+      // Le son d'abord, le micro ensuite : sinon la cloche est enregistrée et Whisper invente des mots
+      playEarcon("listening");
+      await new Promise((r) => setTimeout(r, EARCON_GAP_MS));
       await recorderRef.current?.start();
       setRecording(true);
-      playEarcon("listening");
     } catch {
       setMicError(
         "Le micro n'est pas accessible. Autorisez-le dans le navigateur, ou utilisez le mode texte.",
@@ -347,6 +352,8 @@ export default function PiloteApp() {
       const rec = recorderRef.current;
       if (!rec || rec.isRecording || mutedRef.current) return;
       wakeRef.current?.stop();
+      playEarcon("listening"); // avant le micro : la cloche ne doit pas être enregistrée
+      await new Promise((r) => setTimeout(r, EARCON_GAP_MS));
       try {
         await rec.start();
       } catch {
@@ -356,7 +363,6 @@ export default function PiloteApp() {
       handsFreeRef.current = true;
       setHandsFree(true);
       setRecording(true);
-      playEarcon("listening");
       rec.watchSilence({
         ...HANDS_FREE,
         onStop: (reason) => void finishTalking(reason),

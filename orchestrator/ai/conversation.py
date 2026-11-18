@@ -12,6 +12,7 @@ pas est refusée ; au moindre doute, délai ou erreur, Pilote dit la phrase écr
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import re
 from typing import Any
@@ -38,6 +39,7 @@ restaurant, une date ou un résultat.
 - Garde le sens de la phrase de référence et la même demande finale (question posée, choix \
 attendu).
 - Écris toujours les nombres, heures et prix en chiffres (14 h 44, 49 euros), jamais en lettres.
+- Vouvoie toujours la personne.
 - Tu es une IA : ne prétends pas être humain.
 Réponds uniquement avec la phrase à dire."""
 
@@ -117,3 +119,53 @@ async def reply(
         log.info("réponse IA écartée (faits non vérifiés)")
         return fallback
     return text
+
+
+QUESTION_SYSTEM = """\
+Tu prépares une recherche sur le web pour Pilote, un assistant vocal. On te donne la conversation \
+récente et la dernière phrase de la personne (transcrite depuis la voix : elle peut contenir des \
+mots mal entendus).
+
+1. Complète la question avec la conversation : si la personne répond à une précision demandée \
+(« Lyon » après « Pour aller où ? »), fusionne-la avec la question d'avant.
+2. Si une information indispensable manque encore (un lieu, une date, un nom), ne devine jamais : \
+demande-la en une phrase courte, au vouvoiement, qui finit par un point d'interrogation.
+3. Sinon, écris la question complète et autonome, comme on la taperait dans un moteur de recherche.
+
+Réponds uniquement en JSON : {"action": "search", "question": "..."} ou {"action": "ask", "say": "..."}."""
+
+
+async def prepare_question(
+    chat_client: Any,
+    model: str,
+    *,
+    question: str,
+    history: list[dict[str, str]] | None = None,
+    timeout_s: float = 5.0,
+) -> dict[str, str]:
+    """Question prête pour la recherche, ou précision à demander. Échec : la question telle quelle."""
+    turns = (history or [])[-8:]
+    context = "\n".join(
+        f"{'Personne' if t.get('role') == 'user' else 'Pilote'} : {t.get('text', '')}" for t in turns
+    )
+    user = (
+        f"Conversation récente :\n{context or '(début)'}\n\nDernière phrase de la personne : « {question} »"
+    )
+    try:
+        response = await asyncio.wait_for(
+            chat_client.chat.completions.create(
+                model=model,
+                messages=[{"role": "system", "content": QUESTION_SYSTEM}, {"role": "user", "content": user}],
+                temperature=0,
+                max_tokens=160,
+                response_format={"type": "json_object"},
+            ),
+            timeout_s,
+        )
+        data = json.loads(response.choices[0].message.content or "{}")
+    except Exception as error:
+        log.info("préparation de la question indisponible (%s)", type(error).__name__)
+        return {"action": "search", "question": question}
+    if data.get("action") == "ask" and str(data.get("say", "")).strip():
+        return {"action": "ask", "say": _clean(str(data["say"]))}
+    return {"action": "search", "question": _clean(str(data.get("question") or question))}

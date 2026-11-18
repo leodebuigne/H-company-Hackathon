@@ -30,6 +30,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import os
+import re
 import time
 import uuid
 from collections.abc import Awaitable, Callable
@@ -558,6 +559,9 @@ class ShoppingAgent:
         if not reply:
             raise AgentError("L'agent n'a pas trouvé de réponse.")
         source = " ".join((answer.reply_source or "").split())
+        # Une « source » qui décrit un échec (« demande incomplète ») n'est pas une source : on ne la dit pas
+        if source and re.search(r"incompl|manquant|aucun|inconnu|erreur|demande", source, re.IGNORECASE):
+            source = None
         return f"{reply} (Source : {source}.)" if source else reply
 
     async def search(self) -> list[Option]:

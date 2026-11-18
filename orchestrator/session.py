@@ -340,6 +340,8 @@ class Session:
         self._resume_state: State = "listening"
         self._agent: ShoppingAgent | None = None
         self._intent: Intent | None = None
+        # Question en attente d'une précision (« Pour aller où ? ») : la réponse suivante la complète
+        self._pending_question: str | None = None
         self._summary: OrderSummary | None = None
         self._armed_hash: str | None = None
         self._direct_limit: int | None = None  # achat direct : prix maximal accepté (centimes)
@@ -653,18 +655,35 @@ class Session:
 
     async def _answer_question(self, intent: Intent) -> None:
         """Demande libre : l'agent cherche la réponse sur le web, Pilote la dit. Rien n'est acheté."""
+        # Avant de chercher (20 s ou plus) : question complétée avec la conversation, ou précision demandée
+        question = intent.text
+        prepare = getattr(self.ai, "prepare_question", None)
+        if prepare is not None:
+            try:
+                plan = await prepare(intent.text, self.history)
+            except Exception:
+                plan = {"action": "search", "question": intent.text}
+            if plan.get("action") == "ask":
+                self._pending_question = intent.text
+                self._journal("question_precision")
+                self._intent = None
+                await self._set_state("listening")
+                await self._say(plan["say"])
+                return
+            question = plan.get("question") or intent.text
         await self._set_state("searching")
         self._agent = self.agent_factory(self.approve_payment, self.need_human)
         if hasattr(self._agent, "on_progress"):
             self._agent.on_progress = self._progress  # type: ignore[attr-defined]
         if hasattr(self._agent, "on_stuck"):
             self._agent.on_stuck = self._stuck  # type: ignore[attr-defined]
+        self._pending_question = None
         await self._talk(
             "Je cherche la réponse sur le web, cela peut prendre une minute.",
             "La personne pose une question : dis que tu cherches la réponse sur le web, en une phrase.",
             heard=intent.text,
         )
-        reply = await self._step("search", self._agent.ask(intent.text))
+        reply = await self._step("search", self._agent.ask(question))
         self._journal("question_answered")
         await self._end_order("done", reply)
 
@@ -672,6 +691,12 @@ class Session:
         pending: Intent | None = None
         while True:
             answer = await self._ask("listening")
+            if self._pending_question:
+                # Réponse à « Pour aller où ? » : on complète la question d'avant
+                previous, self._pending_question = self._pending_question, None
+                return answer.model_copy(
+                    update={"kind": "question", "text": f"{previous} (précision : {answer.text})"}
+                )
             if answer.kind == "question":
                 return answer
             if answer.kind == "new_request" and (

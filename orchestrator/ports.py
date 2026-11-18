@@ -99,6 +99,10 @@ class AI(Protocol):
 
     async def parse_intent(self, text: str, today: dt.date, history: list[HistoryTurn]) -> Intent: ...
 
+    async def prepare_question(self, question: str, history: Any = None) -> dict[str, str]:
+        """{"action": "search", "question": ...} ou {"action": "ask", "say": ...} (précision à demander)."""
+        ...
+
     async def reply(
         self, *, situation: str, fallback: str, facts: str = "", heard: str = "", history: Any = None
     ) -> str:

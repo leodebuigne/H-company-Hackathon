@@ -538,3 +538,23 @@ async def test_lost_contact_after_payment_approval_never_says_nothing_was_bought
         await h.text("472")
         await h.wait_said("Je ne sais pas si l'achat est passé")
         assert UNSURE in h.said() and "Rien n'a été acheté" not in h.said()
+
+
+async def test_incomplete_question_asks_for_the_missing_detail_then_merges_the_answer():
+    async with Harness() as h:
+        asked: list[str] = []
+
+        async def prepare(question, history=None):
+            asked.append(question)
+            if "précision" not in question:
+                return {"action": "ask", "say": "Pour aller où, et depuis quelle ville ?"}
+            return {"action": "search", "question": "temps de trajet Paris Lyon en train"}
+
+        h.session.ai.prepare_question = prepare  # type: ignore[method-assign]
+        await h.text("Combien de temps je mets pour aller ?")
+        await h.wait_said("Pour aller où")
+        assert "searching" not in h.states(), "pas de recherche web sur une question incomplète"
+        await h.wait("listening")
+        await h.text("De Paris à Lyon")
+        await h.wait_said("Je cherche la réponse")
+        assert any("précision : De Paris à Lyon" in q for q in asked)
