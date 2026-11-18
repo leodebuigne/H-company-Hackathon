@@ -27,6 +27,7 @@ const TINTS = [
 
 export default function Orb({ mode, level = 0, size = 320 }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const grainRef = useRef<HTMLCanvasElement>(null); // grain net, au-dessus de la masse floue
   const modeRef = useRef(mode);
   const levelRef = useRef(level);
   useEffect(() => {
@@ -37,12 +38,17 @@ export default function Orb({ mode, level = 0, size = 320 }: Props) {
   useEffect(() => {
     const canvas = canvasRef.current;
     const ctx = canvas?.getContext("2d");
-    if (!canvas || !ctx) return;
+    const grainCanvas = grainRef.current;
+    const g = grainCanvas?.getContext("2d");
+    if (!canvas || !ctx || !grainCanvas || !g) return;
     const reduce = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false;
     const dpr = Math.min(window.devicePixelRatio || 1, 2);
-    canvas.width = size * dpr;
-    canvas.height = size * dpr;
+    for (const cv of [canvas, grainCanvas]) {
+      cv.width = size * dpr;
+      cv.height = size * dpr;
+    }
     ctx.scale(dpr, dpr);
+    g.scale(dpr, dpr);
 
     let raf = 0;
     let energy = 0; // intensité lissée
@@ -149,16 +155,44 @@ export default function Orb({ mode, level = 0, size = 320 }: Props) {
       ctx.fillRect(0, 0, size, size);
       ctx.restore();
 
-      // Liseré irisé du bord
-      blobPath(amp);
-      const edge = ctx.createLinearGradient(c - R, c - R, c + R, c + R);
-      edge.addColorStop(0, "rgba(0, 205, 255, 0.7)");
-      edge.addColorStop(0.5, "rgba(255, 120, 220, 0.6)");
-      edge.addColorStop(1, "rgba(120, 90, 255, 0.7)");
-      ctx.strokeStyle = edge;
-      ctx.lineWidth = 1.4;
-      ctx.stroke();
       ctx.restore();
+
+      // Grain : points fins, plus serrés vers le bord, qui débordent un peu et s'effacent : pas de contour net
+      g.clearRect(0, 0, size, size);
+      const grains = 1600 + Math.round(energy * 900);
+      for (let i = 0; i < grains; i++) {
+        const a = Math.random() * Math.PI * 2;
+        const edge = radius(a, amp) * swell;
+        const u = Math.random();
+        const r = edge * (1 - 0.5 * u * u) + (Math.random() - 0.35) * R * 0.16;
+        const outside = Math.max(0, r - edge) / (R * 0.12);
+        const alpha = (0.18 + Math.random() * 0.45) * (1 - Math.min(1, outside)) * (0.35 + 0.65 * (1 - u));
+        if (alpha <= 0.02) continue;
+        // couleur de la tache la plus proche sur le bord
+        let best = TINTS[0];
+        let bestGap = 9;
+        for (const tint of TINTS) {
+          const ta = (((tint.angle + flow * tint.speed * 3) % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2);
+          const gap = Math.abs(Math.atan2(Math.sin(a - ta), Math.cos(a - ta)));
+          if (gap < bestGap) {
+            bestGap = gap;
+            best = tint;
+          }
+        }
+        g.fillStyle = `rgba(${best.color}, ${alpha})`;
+        g.fillRect(c + Math.cos(a) * r, c + Math.sin(a) * r, 1.2, 1.2);
+      }
+      // Seul détail net : un tout petit point de lumière au centre
+      const cx = c + Math.cos(flow * 0.6) * R * 0.12;
+      const cy = c + Math.sin(flow * 0.5) * R * 0.1;
+      const core = g.createRadialGradient(cx, cy, 0, cx, cy, 7 + energy * 4);
+      core.addColorStop(0, "rgba(255, 255, 255, 1)");
+      core.addColorStop(0.4, "rgba(200, 245, 255, 0.9)");
+      core.addColorStop(1, "rgba(200, 245, 255, 0)");
+      g.fillStyle = core;
+      g.beginPath();
+      g.arc(cx, cy, 7 + energy * 4, 0, Math.PI * 2);
+      g.fill();
 
       if (!reduce) raf = requestAnimationFrame(draw);
     };
@@ -166,5 +200,10 @@ export default function Orb({ mode, level = 0, size = 320 }: Props) {
     return () => cancelAnimationFrame(raf);
   }, [size]);
 
-  return <canvas ref={canvasRef} className="pilote-orb-canvas" style={{ width: size, height: size }} aria-hidden="true" />;
+  return (
+    <span className="pilote-orb" style={{ width: size, height: size }} aria-hidden="true">
+      <canvas ref={canvasRef} className="pilote-orb-canvas" style={{ width: size, height: size }} />
+      <canvas ref={grainRef} className="pilote-orb-grain" style={{ width: size, height: size }} />
+    </span>
+  );
 }
