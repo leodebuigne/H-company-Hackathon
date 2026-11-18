@@ -277,6 +277,10 @@ class ShoppingAgent:
         if self._agent_name:
             return self._agent_name
         environment: dict[str, Any] = {"kind": "web", "id": "browser", "host": self._browser_host}
+        # Texte de la page en plus de la capture : l'agent lit prix, libellés et boutons exacts, sur
+        # n'importe quel site. Plus de jetons ; PILOTE_H_PAGE_TEXT=0 le coupe.
+        if os.getenv("PILOTE_H_PAGE_TEXT", "").strip() != "0":
+            environment["mode"] = {"type": "visual", "markdown": True}
         if self._site:
             environment["start_url"] = self._site  # le navigateur s'ouvre directement sur le site
         # Coffre-fort H : H saisit les identifiants du site à la place de l'agent, qui ne les voit jamais.
