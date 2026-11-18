@@ -95,17 +95,6 @@ function MicIcon() {
   );
 }
 
-function SpeakingBars({ active }: { active: boolean }) {
-  return (
-    <span className={`pilote-bars ${active ? "is-active" : ""}`} aria-hidden="true">
-      <i />
-      <i />
-      <i />
-      <i />
-    </span>
-  );
-}
-
 export default function PiloteApp() {
   const [started, setStarted] = useState(false);
   const [recording, setRecording] = useState(false);
@@ -406,17 +395,16 @@ export default function PiloteApp() {
   const recentLog = log.slice(-8);
   const tone =
     state === "done" ? "is-done" : state === "cancelled" ? "is-cancelled" : state === "human_needed" ? "is-alert" : "";
-  const statusIcon = state === "done" ? "✓" : state === "cancelled" ? "✕" : state === "human_needed" ? "!" : null;
+  const listening = recording || handsFree;
+  const haloClass = listening ? "is-listening" : speaking ? "is-speaking" : busy ? "is-busy" : started ? "" : "is-idle";
 
   return (
     <main className="pilote">
       <header className="pilote-header">
-        <h1>
-          <span className="pilote-logo" aria-hidden="true">
-            P
-          </span>
-          Pilote
-        </h1>
+        <div className="pilote-brand">
+          <h1>Pilote</h1>
+          <p>Votre assistant vocal pour acheter en ligne</p>
+        </div>
         <p className={`pilote-connection ${connected ? "is-on" : "is-off"}`}>
           <span className="pilote-dot" aria-hidden="true" />
           {connected ? "Connecté" : "Connexion…"}
@@ -435,35 +423,81 @@ export default function PiloteApp() {
             className={i < currentStep || state === "done" ? "is-past" : i === currentStep ? "is-current" : ""}
             aria-current={i === currentStep ? "step" : undefined}
           >
-            <span className="pilote-step-dot" aria-hidden="true">
-              {i < currentStep || state === "done" ? "✓" : i + 1}
-            </span>
+            <span className="pilote-step-dot" aria-hidden="true" />
             <span className="pilote-step-label">{step.label}</span>
           </li>
         ))}
       </ol>
 
-      <section className={`pilote-status ${tone}`} aria-label="Où en est la commande">
-        <div className="pilote-status-top">
-          {statusIcon && (
-            <span className="pilote-status-icon" aria-hidden="true">
-              {statusIcon}
-            </span>
-          )}
-          <p className="pilote-state">{STATE_LABELS[state]}</p>
-          {busy && (
-            <p className="pilote-elapsed" aria-hidden="true">
-              <span className="pilote-spinner" />
-              {elapsed >= 3 ? `${elapsed} s` : ""}
-            </p>
-          )}
-          <SpeakingBars active={speaking} />
-        </div>
-        <p className="pilote-lastsay">{lastSay || "Appuyez sur le bouton, puis dites ce que vous voulez acheter."}</p>
-        {lastSay && started && (
-          <button type="button" className="pilote-link" onClick={repeat}>
-            Répéter
+      <section className={`pilote-hero ${tone}`} aria-label="Où en est la commande">
+        <div className={`pilote-halo ${haloClass}`} style={{ "--level": micLevel.toFixed(2) } as CSSProperties}>
+          <span className="pilote-halo-ring" aria-hidden="true" />
+          <span className="pilote-halo-glow" aria-hidden="true" />
+          <button
+            type="button"
+            className={`pilote-talk ${listening ? "is-recording" : ""}`}
+            aria-pressed={started ? listening : undefined}
+            aria-label={talkLabel}
+            aria-describedby="pilote-help"
+            onClick={() => {
+              if (!started) start();
+            }}
+            onPointerDown={(e) => {
+              if (!started) return;
+              e.preventDefault();
+              // Le doigt ou la souris peut glisser hors du bouton sans couper l'enregistrement
+              e.currentTarget.setPointerCapture(e.pointerId);
+              void startTalking();
+            }}
+            onPointerUp={() => void stopTalking()}
+            onPointerCancel={() => void stopTalking()}
+            onKeyDown={(e) => {
+              // La barre d'espace est gérée globalement ; on évite le double déclenchement du bouton
+              if (e.code === "Space") e.preventDefault();
+            }}
+            autoFocus
+          >
+            {listening ? <span className="pilote-rec-dot" aria-hidden="true" /> : <MicIcon />}
           </button>
+        </div>
+        <p className="pilote-state">
+          {STATE_LABELS[state]}
+          {busy && elapsed >= 3 && <span className="pilote-elapsed"> · {elapsed} s</span>}
+        </p>
+        <p className="pilote-talk-label" aria-hidden="true">
+          {talkLabel}
+        </p>
+        <p id="pilote-help" className="pilote-help">
+          <kbd>Espace</kbd> pour parler · <kbd>Échap</kbd> pour annuler
+          {lastSay && started && (
+            <>
+              {" · "}
+              <button type="button" className="pilote-link" onClick={repeat}>
+                Répéter
+              </button>
+            </>
+          )}
+        </p>
+      </section>
+
+      <section className="pilote-thread" aria-label="Conversation">
+        {recentLog.length === 0 && (
+          <p className="pilote-bubble is-pilote">
+            {lastSay || "Bonjour, je suis Pilote. Dites-moi ce que vous voulez acheter, ou posez-moi une question."}
+          </p>
+        )}
+        {recentLog.map((entry) => (
+          <p key={entry.id} className={`pilote-bubble is-${entry.who}`}>
+            <span className="sr-only">{entry.who === "user" ? "Vous : " : entry.who === "pilote" ? "Pilote : " : "Système : "}</span>
+            {entry.text}
+          </p>
+        ))}
+        {busy && (
+          <p className="pilote-bubble is-pilote is-typing" aria-hidden="true">
+            <i />
+            <i />
+            <i />
+          </p>
         )}
       </section>
 
@@ -516,7 +550,7 @@ export default function PiloteApp() {
       {showOptions && (
         <section className="pilote-card" aria-label="Options proposées">
           <h2>
-            Options <span className="pilote-muted">Cliquez, ou dites « la première »</span>
+            Options <span className="pilote-muted">Touchez, ou dites « la première »</span>
           </h2>
           <ol className="pilote-options">
             {options.slice(0, 3).map((o, i) => {
@@ -576,42 +610,6 @@ export default function PiloteApp() {
         </section>
       )}
 
-      <div className="pilote-mic">
-        <button
-          type="button"
-          className={`pilote-talk ${recording || handsFree ? "is-recording" : ""} ${speaking ? "is-speaking" : ""} ${started ? "" : "is-idle"}`}
-          style={{ "--level": micLevel.toFixed(2) } as CSSProperties}
-          aria-pressed={started ? recording || handsFree : undefined}
-          aria-label={talkLabel}
-          aria-describedby="pilote-help"
-          onClick={() => {
-            if (!started) start();
-          }}
-          onPointerDown={(e) => {
-            if (!started) return;
-            e.preventDefault();
-            // Le doigt ou la souris peut glisser hors du bouton sans couper l'enregistrement
-            e.currentTarget.setPointerCapture(e.pointerId);
-            void startTalking();
-          }}
-          onPointerUp={() => void stopTalking()}
-          onPointerCancel={() => void stopTalking()}
-          onKeyDown={(e) => {
-            // La barre d'espace est gérée globalement ; on évite le double déclenchement du bouton
-            if (e.code === "Space") e.preventDefault();
-          }}
-          autoFocus
-        >
-          {recording || handsFree ? <span className="pilote-rec-dot" aria-hidden="true" /> : <MicIcon />}
-        </button>
-        <p className="pilote-talk-label" aria-hidden="true">
-          {talkLabel}
-        </p>
-        <p id="pilote-help" className="pilote-help">
-          <kbd>Espace</kbd> pour parler · <kbd>Échap</kbd> pour annuler
-        </p>
-      </div>
-
       <form className="pilote-text" onSubmit={submitText} aria-label="Écrire au lieu de parler">
         <label htmlFor="pilote-text-input" className="sr-only">
           Écrire au lieu de parler
@@ -620,11 +618,13 @@ export default function PiloteApp() {
           id="pilote-text-input"
           value={textInput}
           onChange={(e) => setTextInput(e.target.value)}
-          placeholder="Ou écrivez : un train pour Nantes demain matin"
+          placeholder="Écrire à Pilote…"
           autoComplete="off"
         />
-        <button type="submit" aria-label="Envoyer">
-          Envoyer
+        <button type="submit" aria-label="Envoyer" disabled={!textInput.trim()}>
+          <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" focusable="false">
+            <path d="M12 19V5M6 11l6-6 6 6" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
         </button>
       </form>
 
@@ -632,20 +632,6 @@ export default function PiloteApp() {
         <p className="pilote-alert" role="alert">
           {micError}
         </p>
-      )}
-
-      {recentLog.length > 0 && (
-        <details className="pilote-panel">
-          <summary>Conversation</summary>
-          <ul className="pilote-log">
-            {recentLog.map((entry) => (
-              <li key={entry.id} className={`is-${entry.who}`}>
-                <strong>{entry.who === "user" ? "Vous" : entry.who === "pilote" ? "Pilote" : "Système"}</strong>
-                {entry.text}
-              </li>
-            ))}
-          </ul>
-        </details>
       )}
 
       <details className="pilote-panel">
