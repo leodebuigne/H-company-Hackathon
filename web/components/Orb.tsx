@@ -1,11 +1,12 @@
 "use client";
 
-/* Orbe de Pilote : une sphère de verre traversée de voiles de lumière bleue et violette, comme une
-   conscience qui respire.
-   - repos : les voiles flottent lentement ;
-   - écoute : ils suivent le niveau du micro ;
-   - réflexion (l'agent travaille) : ils tournent ;
-   - parole : ils ondulent au rythme d'une voix (syllabes simulées, la lecture audio n'expose pas son niveau).
+/* Orbe de Pilote : une seule bulle irisée (rose, cyan, bleu, violet) au cœur blanc, comme une
+   conscience. Toute la masse se déforme ensemble :
+   - repos : elle respire à peine ;
+   - écoute : elle se déforme fortement avec le niveau du micro ;
+   - réflexion (l'agent travaille) : ses couleurs tournent ;
+   - parole : elle pulse et se tord au rythme d'une voix (syllabes simulées, la lecture audio n'expose
+     pas son niveau).
    Dessin sur canvas, sans dépendance. Respecte « réduire les animations ». */
 
 import { useEffect, useRef } from "react";
@@ -14,13 +15,15 @@ export type OrbMode = "idle" | "listening" | "thinking" | "speaking";
 
 type Props = { mode: OrbMode; level?: number; size?: number };
 
-// Voiles : chacun est une forme souple qui dérive dans la sphère, avec sa couleur et sa phase.
-const VEILS = [
-  { from: "rgba(0, 190, 255, 0.50)", to: "rgba(120, 220, 255, 0.06)", seed: 0.0, scale: 0.8, offset: 0.16, stretch: 0.62 },
-  { from: "rgba(135, 105, 255, 0.45)", to: "rgba(90, 160, 255, 0.06)", seed: 2.1, scale: 0.6, offset: 0.2, stretch: 0.9 },
-  { from: "rgba(40, 130, 255, 0.42)", to: "rgba(160, 230, 255, 0.05)", seed: 4.3, scale: 0.7, offset: 0.22, stretch: 0.55 },
-  { from: "rgba(90, 225, 255, 0.50)", to: "rgba(170, 140, 255, 0.10)", seed: 6.0, scale: 0.42, offset: 0.14, stretch: 1.0 },
-]
+// Taches de couleur qui glissent le long du bord de la bulle.
+const TINTS = [
+  { color: "255, 110, 210", angle: 3.6, speed: 0.11, reach: 0.75 }, // rose
+  { color: "0, 205, 255", angle: 0.4, speed: -0.09, reach: 0.6 }, // cyan
+  { color: "40, 80, 255", angle: 1.9, speed: 0.07, reach: 0.5 }, // bleu profond
+  { color: "160, 90, 255", angle: 5.2, speed: -0.13, reach: 0.55 }, // violet
+  { color: "255, 150, 230", angle: 2.6, speed: 0.15, reach: 0.45 }, // rose clair
+  { color: "80, 220, 255", angle: 4.4, speed: 0.1, reach: 0.4 }, // cyan clair
+];
 
 export default function Orb({ mode, level = 0, size = 320 }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -45,32 +48,31 @@ export default function Orb({ mode, level = 0, size = 320 }: Props) {
     let energy = 0; // intensité lissée
     let voice = 0; // enveloppe de « syllabes » quand Pilote parle
     let nextSyllable = 0;
-    let flow = 0; // temps propre des voiles : il accélère quand Pilote parle ou réfléchit
+    let flow = 0; // temps propre : il accélère quand Pilote parle, écoute ou réfléchit
     let last = performance.now();
     const c = size / 2;
-    const R = size * 0.36;
+    const R = size * 0.33;
 
-    // Contour d'un voile : cercle déformé par plusieurs sinus, décentré, qui tourne lentement.
-    const veil = (seed: number, scale: number, offset: number, stretch: number, amp: number) => {
-      const cx = c + Math.cos(flow * 0.5 + seed) * R * offset;
-      const cy = c + Math.sin(flow * 0.43 + seed * 1.3) * R * offset;
-      const r0 = R * scale;
-      const steps = 64;
+    // Rayon de la bulle selon l'angle : toute la masse se déforme d'un seul tenant.
+    const radius = (a: number, amp: number) =>
+      R *
+      (1 +
+        Math.sin(a * 2 + flow * 1.1) * 0.5 * amp +
+        Math.sin(a * 3 - flow * 0.8 + 1.3) * 0.35 * amp +
+        Math.sin(a * 5 + flow * 1.7 + 2.1) * 0.15 * amp);
+
+    const blobPath = (amp: number, scale = 1) => {
+      const steps = 96;
       ctx.beginPath();
       for (let i = 0; i <= steps; i++) {
         const a = (i / steps) * Math.PI * 2;
-        const d =
-          Math.sin(a * 2 + flow * 0.9 + seed) * 0.22 +
-          Math.sin(a * 3 - flow * 0.7 + seed * 1.7) * 0.14 * amp +
-          Math.sin(a * 5 + flow * 1.3 + seed * 2.3) * 0.06 * amp;
-        const r = r0 * (1 + d);
-        const x = cx + Math.cos(a + flow * 0.15) * r;
-        const y = cy + Math.sin(a + flow * 0.15) * r * stretch;
+        const r = radius(a, amp) * scale;
+        const x = c + Math.cos(a) * r;
+        const y = c + Math.sin(a) * r;
         if (i === 0) ctx.moveTo(x, y);
         else ctx.lineTo(x, y);
       }
       ctx.closePath();
-      return { cx, cy, r0 };
     };
 
     const draw = (now: number) => {
@@ -81,92 +83,82 @@ export default function Orb({ mode, level = 0, size = 320 }: Props) {
 
       if (m === "speaking") {
         if (t > nextSyllable) {
-          voice = 0.55 + Math.random() * 0.45;
-          nextSyllable = t + 0.12 + Math.random() * 0.16;
+          voice = 0.6 + Math.random() * 0.6;
+          nextSyllable = t + 0.11 + Math.random() * 0.15;
         }
-        voice *= 0.9;
+        voice *= 0.88;
       } else {
         voice *= 0.85;
       }
       const target =
         m === "listening"
-          ? 0.3 + Math.min(1, levelRef.current) * 1.2
+          ? 0.3 + Math.min(1, levelRef.current) * 1.6
           : m === "speaking"
-            ? 0.45 + voice
+            ? 0.5 + voice
             : m === "thinking"
-              ? 0.55
-              : 0.15;
-      energy += (target - energy) * 0.1;
-      flow += dt * (0.35 + energy * 1.6);
-      const breath = 1 + Math.sin(t * 1.4) * 0.012 + energy * 0.015;
+              ? 0.45
+              : 0.12;
+      energy += (target - energy) * 0.14;
+      flow += dt * (0.4 + energy * 2.2);
+      const amp = 0.04 + energy * 0.14; // déformation de la masse : forte quand on parle
+      const swell = 1 + Math.sin(t * 1.3) * 0.015 + energy * 0.05;
 
       ctx.clearRect(0, 0, size, size);
-      const r = R * breath;
-
-      // Lueur douce autour de la sphère
-      const aura = ctx.createRadialGradient(c, c, r * 0.9, c, c, r * 1.35);
-      aura.addColorStop(0, `rgba(90, 200, 255, ${0.14 + energy * 0.14})`);
-      aura.addColorStop(1, "rgba(90, 200, 255, 0)");
-      ctx.fillStyle = aura;
-      ctx.beginPath();
-      ctx.arc(c, c, r * 1.35, 0, Math.PI * 2);
-      ctx.fill();
-
-      // Intérieur de la sphère (verre clair)
       ctx.save();
-      ctx.beginPath();
-      ctx.arc(c, c, r, 0, Math.PI * 2);
-      ctx.clip();
-      const body = ctx.createRadialGradient(c - r * 0.2, c - r * 0.25, r * 0.1, c, c, r);
-      body.addColorStop(0, "rgba(255, 255, 255, 1)");
-      body.addColorStop(0.75, "rgba(246, 250, 255, 1)");
-      body.addColorStop(1, "rgba(225, 240, 255, 1)");
-      ctx.fillStyle = body;
-      ctx.fillRect(c - r, c - r, r * 2, r * 2);
+      ctx.translate(c, c);
+      ctx.scale(swell, swell);
+      ctx.translate(-c, -c);
 
-      // Voiles de lumière : remplissage translucide et liseré clair, comme de la soie
-      const amp = 0.6 + energy * 0.9;
-      for (const v of VEILS) {
-        const shape = veil(v.seed, v.scale, v.offset, v.stretch, amp);
-        const fill = ctx.createLinearGradient(
-          shape.cx - shape.r0,
-          shape.cy - shape.r0,
-          shape.cx + shape.r0,
-          shape.cy + shape.r0,
-        );
-        fill.addColorStop(0, v.from);
-        fill.addColorStop(1, v.to);
-        ctx.fillStyle = fill;
-        ctx.shadowColor = "rgba(90, 150, 255, 0.35)";
-        ctx.shadowBlur = 18;
-        ctx.fill();
-        ctx.shadowBlur = 0;
-        ctx.strokeStyle = `rgba(255, 255, 255, ${0.55 + energy * 0.2})`;
-        ctx.lineWidth = 1.2;
-        ctx.stroke();
+      // Halo extérieur très doux (rose et cyan)
+      blobPath(amp);
+      ctx.shadowColor = `rgba(255, 140, 230, ${0.35 + energy * 0.2})`;
+      ctx.shadowBlur = 40 + energy * 30;
+      ctx.fillStyle = "rgba(255, 255, 255, 1)";
+      ctx.fill();
+      ctx.shadowBlur = 0;
+
+      // Intérieur de la bulle
+      ctx.save();
+      blobPath(amp);
+      ctx.clip();
+      ctx.fillStyle = "#ffffff";
+      ctx.fillRect(0, 0, size, size);
+
+      // Taches de couleur qui glissent le long du bord
+      for (const tint of TINTS) {
+        const a = tint.angle + flow * tint.speed * 3;
+        const r = radius(a, amp) * 0.78;
+        const x = c + Math.cos(a) * r;
+        const y = c + Math.sin(a) * r;
+        const spot = ctx.createRadialGradient(x, y, 0, x, y, R * tint.reach);
+        spot.addColorStop(0, `rgba(${tint.color}, 0.85)`);
+        spot.addColorStop(0.5, `rgba(${tint.color}, 0.35)`);
+        spot.addColorStop(1, `rgba(${tint.color}, 0)`);
+        ctx.fillStyle = spot;
+        ctx.fillRect(0, 0, size, size);
       }
 
-      // Bord du verre : lumière bleue qui s'intensifie vers l'extérieur
-      const rim = ctx.createRadialGradient(c, c, r * 0.72, c, c, r);
-      rim.addColorStop(0, "rgba(80, 200, 255, 0)");
-      rim.addColorStop(1, `rgba(60, 190, 255, ${0.28 + energy * 0.15})`);
-      ctx.fillStyle = rim;
-      ctx.fillRect(c - r, c - r, r * 2, r * 2);
-
-      // Reflet en haut à gauche
-      const shine = ctx.createRadialGradient(c - r * 0.38, c - r * 0.45, 0, c - r * 0.38, c - r * 0.45, r * 0.45);
-      shine.addColorStop(0, "rgba(255, 255, 255, 0.85)");
-      shine.addColorStop(1, "rgba(255, 255, 255, 0)");
-      ctx.fillStyle = shine;
-      ctx.fillRect(c - r, c - r, r * 2, r * 2);
+      // Cœur blanc lumineux, légèrement décentré et mouvant
+      const hx = c + Math.cos(flow * 0.6) * R * 0.12;
+      const hy = c + Math.sin(flow * 0.5) * R * 0.1;
+      const heart = ctx.createRadialGradient(hx, hy, 0, hx, hy, R * 0.75);
+      heart.addColorStop(0, "rgba(255, 255, 255, 1)");
+      heart.addColorStop(0.55, "rgba(255, 255, 255, 0.85)");
+      heart.addColorStop(1, "rgba(255, 255, 255, 0)");
+      ctx.fillStyle = heart;
+      ctx.fillRect(0, 0, size, size);
       ctx.restore();
 
-      // Contour fin du verre
-      ctx.beginPath();
-      ctx.arc(c, c, r, 0, Math.PI * 2);
-      ctx.strokeStyle = "rgba(90, 200, 255, 0.5)";
-      ctx.lineWidth = 1.5;
+      // Liseré irisé du bord
+      blobPath(amp);
+      const edge = ctx.createLinearGradient(c - R, c - R, c + R, c + R);
+      edge.addColorStop(0, "rgba(0, 205, 255, 0.7)");
+      edge.addColorStop(0.5, "rgba(255, 120, 220, 0.6)");
+      edge.addColorStop(1, "rgba(120, 90, 255, 0.7)");
+      ctx.strokeStyle = edge;
+      ctx.lineWidth = 1.4;
       ctx.stroke();
+      ctx.restore();
 
       if (!reduce) raf = requestAnimationFrame(draw);
     };
