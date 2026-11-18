@@ -94,8 +94,33 @@ STARTER_CARDS: dict[str, dict[str, list[str]]] = {
 }
 
 
+# Variante « recherche rapide » : tout le trajet tapé d'un coup dans « Tout rechercher »
+# (5 actions au lieu de 12 à 17 : 47 s au lieu de 88 s, mesuré le 2026-11-18). Par défaut ;
+# PILOTE_SNCF_QUICK_SEARCH=0 revient au formulaire Trains.
+QUICK_SEARCH_SNCF: dict[str, list[str]] = {
+    "steps": [
+        "Part de la page d'accueil https://www.sncf-connect.com, attends qu'elle soit chargée.",
+        "Reste sur l'onglet « Tout rechercher ». Clique dans le champ « Entrez une destination, un trajet… » et "
+        "tape d'un coup le trajet, la date et l'heure, par exemple « Paris Nantes 19 novembre 8h ».",
+        "Si une liste de suggestions apparaît, choisis la ligne qui correspond au trajet ; sinon appuie sur "
+        "Entrée ou clique sur « Rechercher ».",
+        "Sur la page de résultats, vérifie les gares, la date et l'heure ; corrige seulement ce qui ne va pas.",
+    ],
+    "useful_buttons": ["Tout rechercher", "Rechercher", "Choisir ce tarif", "Passer l'étape"],
+    "pitfalls": [
+        "Le grand bandeau « Ouverture des ventes » sous le champ est une publicité : ne clique jamais dessus. "
+        "S'il t'emmène sur une page /bons-plans/, retourne sur https://www.sncf-connect.com.",
+        "Si la recherche rapide ne mène pas aux trains, utilise l'onglet « Trains » et son formulaire.",
+        "Sur le panier, « Valider et payer » est le bouton final, même pour un billet à 0 € : ne clique dessus "
+        "qu'à l'étape « achat » ou « paiement », après approbation.",
+    ],
+}
+
+
 def starter_card(domain: str) -> SiteCard | None:
     seed = STARTER_CARDS.get(domain)
+    if domain == "www.sncf-connect.com" and os.getenv("PILOTE_SNCF_QUICK_SEARCH", "").strip() != "0":
+        seed = QUICK_SEARCH_SNCF
     if seed is None:
         return None
     return SiteCard(

@@ -635,9 +635,10 @@ def test_login_session_uses_vault_and_default_profile():
     }
 
 
-def test_sncf_has_a_starter_card_with_the_promo_pitfall():
+def test_sncf_has_a_starter_card_with_the_promo_pitfall(monkeypatch):
     from orchestrator.agent_h.site_memory import starter_card
 
+    monkeypatch.setenv("PILOTE_SNCF_QUICK_SEARCH", "0")  # formulaire Trains (repli)
     card = starter_card("www.sncf-connect.com")
     assert card is not None and any("Ouverture des ventes" in p for p in card.pitfalls)
     assert any("Trains" in s for s in card.steps)
@@ -857,3 +858,12 @@ async def test_payment_tool_accepts_the_contract_cents_format_sent_by_the_agent(
     )  # type: ignore[arg-type]
     agent.order_id, agent._paying, agent._site = ORDER_ID, True, "https://www.sncf-connect.com"
     assert await agent._decide_payment(sent) == "approved" and totals == [0]
+
+
+def test_sncf_quick_search_is_the_default(monkeypatch):
+    from orchestrator.agent_h.site_memory import starter_card
+
+    monkeypatch.delenv("PILOTE_SNCF_QUICK_SEARCH", raising=False)
+    card = starter_card("www.sncf-connect.com")
+    assert card is not None and any("Tout rechercher" in step for step in card.steps)
+    assert any("Valider et payer" in pitfall for pitfall in card.pitfalls)  # garde-fou toujours là

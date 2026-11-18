@@ -237,7 +237,11 @@ class ShoppingAgent:
         self._portal = {"agent": agent, "mode": mode}
 
     def _mirrored_spec(self) -> dict[str, Any]:
-        agent, mode = self._portal["agent"], self._portal["mode"]
+        agent, mode = self._portal["agent"], dict(self._portal["mode"])
+        # Texte de la page en plus de la capture : très lourd sur SNCF Connect (≈ 350 000 tokens par
+        # commande), donc plus lent. PILOTE_H_PAGE_TEXT=0 le coupe.
+        if os.getenv("PILOTE_H_PAGE_TEXT", "").strip() == "0":
+            mode["markdown"] = False
         environment: dict[str, Any] = {"kind": "web", "id": "browser", "host": "user_device", "mode": mode}
         if self._site:
             environment["start_url"] = self._site
