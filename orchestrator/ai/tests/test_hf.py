@@ -246,6 +246,26 @@ async def test_speak_returns_none_on_error_so_the_browser_voice_takes_over():
     assert await make_ai(speech=StubSpeech(error=RuntimeError("402"))).speak("Bonjour") is None
 
 
+async def test_speak_retries_a_failed_chunk_before_giving_up():
+    class FlakySpeech(StubSpeech):
+        async def text_to_speech(self, text, **kwargs):
+            self.tts_calls.append(text)
+            if len(self.tts_calls) == 1:
+                raise RuntimeError("503")
+            return wav(100)
+
+    speech = FlakySpeech()
+    audio = await make_ai(speech=speech).speak("Bonjour")
+    assert audio is not None and audio[:4] == b"RIFF"
+    assert len(speech.tts_calls) == 2
+
+
+@pytest.mark.parametrize("invented", ["Sous-titres réalisés par Amara.org", "Merci d'avoir regardé !"])
+async def test_transcribe_rejects_whisper_silence_hallucinations(invented):
+    with pytest.raises(AIError):
+        await make_ai(speech=StubSpeech(text=invented)).transcribe(b"audio", "audio/webm")
+
+
 # --- vision ------------------------------------------------------------------
 
 

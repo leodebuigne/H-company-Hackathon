@@ -565,3 +565,242 @@ async def test_real_agent_without_callback_never_clicks_pay():
     with pytest.raises(PaymentDenied):
         await agent.pay()
     assert holder["session"].pay_decision == "denied"
+
+
+def test_inline_agent_opens_on_the_site_with_low_reasoning(monkeypatch):
+    monkeypatch.delenv("PILOTE_H_REASONING_EFFORT", raising=False)
+    monkeypatch.delenv("PILOTE_MAX_OPTIONS", raising=False)
+    agent = ShoppingAgent(agent="", browser_host="cloud", record_metrics=False)
+    agent._site = "https://www.sncf-connect.com"
+    spec = agent._agent_spec()
+    assert spec["environments"][0]["start_url"] == "https://www.sncf-connect.com"
+    assert spec["reasoning_effort"] == "low"
+    assert "au plus 3 options" in spec["instructions"]
+
+
+def test_reasoning_effort_and_option_count_come_from_the_environment(monkeypatch):
+    monkeypatch.setenv("PILOTE_H_REASONING_EFFORT", "default")
+    monkeypatch.setenv("PILOTE_MAX_OPTIONS", "50")
+    spec = ShoppingAgent(agent="", browser_host="cloud", record_metrics=False)._agent_spec()
+    assert "reasoning_effort" not in spec
+    assert "start_url" not in spec["environments"][0]
+    assert "au plus 8 options" in spec["instructions"]
+
+
+def test_vault_is_bound_to_the_cloud_browser_only(monkeypatch):
+    monkeypatch.setenv("PILOTE_H_VAULT_ID", "vault-123")
+    cloud = ShoppingAgent(agent="", browser_host="cloud", record_metrics=False)._agent_spec()
+    local = ShoppingAgent(agent="", browser_host="user_device", record_metrics=False)._agent_spec()
+    assert cloud["environments"][0]["vault_id"] == "vault-123"
+    assert "vault_id" not in local["environments"][0]
+    assert "coffre-fort" in cloud["instructions"] and "page de connexion" not in cloud["instructions"]
+    assert "coffre-fort" not in local["instructions"] and "page de connexion" in local["instructions"]
+
+
+def test_with_a_vault_the_agent_logs_in_before_searching():
+    from orchestrator.agent_h.prompts import search_message
+
+    with_vault = search_message(TRAIN, "https://www.sncf-connect.com", None, True, with_vault=True)
+    without = search_message(TRAIN, "https://www.sncf-connect.com", None, True)
+    assert "Avant toute recherche, connecte-toi" in with_vault
+    assert "price_eur = 0" in with_vault
+    assert "déjà connecté" not in with_vault and "coffre-fort (il remplit" in with_vault
+    assert "connecte-toi" not in without and "déjà connecté" in without
+
+
+def test_a_free_ticket_is_kept_not_dropped_as_unpriced():
+    options = to_options([AgentOption(id="o1", title="TGV MAX 10:00", price_eur=0)])
+    assert len(options) == 1 and options[0].price_cents == 0
+
+
+def test_default_profile_is_used_on_cloud_when_enabled(monkeypatch):
+    monkeypatch.setenv("PILOTE_H_DEFAULT_PROFILE", "1")
+    cloud = ShoppingAgent(agent="", browser_host="cloud", record_metrics=False)._agent_spec()
+    local = ShoppingAgent(agent="", browser_host="user_device", record_metrics=False)._agent_spec()
+    assert cloud["environments"][0]["use_default_browser_profile"] is True
+    assert "use_default_browser_profile" not in local["environments"][0]
+
+
+def test_login_session_uses_vault_and_default_profile():
+    from orchestrator.agent_h.login_session import agent_spec
+
+    env = agent_spec("https://www.sncf-connect.com", "vault-1")["environments"][0]
+    assert env == {
+        "kind": "web",
+        "id": "browser",
+        "host": "cloud",
+        "start_url": "https://www.sncf-connect.com",
+        "use_default_browser_profile": True,
+        "vault_id": "vault-1",
+    }
+
+
+def test_sncf_has_a_starter_card_with_the_promo_pitfall():
+    from orchestrator.agent_h.site_memory import starter_card
+
+    card = starter_card("www.sncf-connect.com")
+    assert card is not None and any("Ouverture des ventes" in p for p in card.pitfalls)
+    assert any("Trains" in s for s in card.steps)
+    assert starter_card("www.ubereats.com") is None
+
+
+def test_agent_answer_with_null_options_means_nothing_found():
+    from orchestrator.agent_h.models import AgentAnswer
+
+    assert AgentAnswer.model_validate({"options": None}).options == []
+
+
+async def test_local_chrome_starts_a_fresh_session_per_step_with_full_context(monkeypatch):
+    from orchestrator.agent_h import local_chrome
+
+    monkeypatch.setenv("PILOTE_H_IDLE_TIMEOUT_S", "0")  # ancien comportement, gardé en secours
+    monkeypatch.setattr(local_chrome, "ensure", lambda *a, **k: True)
+    monkeypatch.setattr(local_chrome, "fresh_page", lambda *a, **k: None)
+    monkeypatch.setattr(local_chrome, "ensure_page", lambda *a, **k: None)
+    answers = list(ANSWERS)
+    sessions: list[_FakeSession] = []
+    starts: list[dict] = []
+
+    class Recording(_FakeClient):
+        async def start_session(self, **kwargs):
+            starts.append(kwargs)
+            return await super().start_session(**kwargs)
+
+    def make_session():
+        sessions.append(_FakeSession([answers.pop(0)], agent))
+        return sessions[-1]
+
+    agent = ShoppingAgent(
+        client=Recording(make_session),
+        browser_host="user_device",
+        agent="",
+        memory=InMemorySiteMemory(),
+        record_metrics=False,
+    )  # type: ignore[arg-type]
+    agent._real_client = True  # comme en vrai : pas de client simulé
+    await agent.start(PIZZA)
+    options = await agent.search()
+    await agent.choose(options[0].id)
+    await agent.checkout()
+
+    assert len(starts) == 2 and sessions[0].sent == []  # pas de message à une session terminée
+    follow_up = starts[1]["messages"]
+    assert "Pizza A" in follow_up and "tu reprends une commande en cours" in follow_up
+    assert "Étape : panier" in follow_up
+    assert "start_url" not in starts[1]["agent"]["environments"][0]  # on reste sur la page actuelle
+
+
+async def test_portal_agent_is_mirrored_onto_the_local_chrome(monkeypatch):
+    from orchestrator.agent_h import local_chrome
+
+    monkeypatch.setattr(local_chrome, "ensure", lambda *a, **k: True)
+    monkeypatch.setattr(local_chrome, "fresh_page", lambda *a, **k: None)
+    monkeypatch.delenv("PILOTE_H_REASONING_EFFORT", raising=False)
+
+    class _Dump:
+        def __init__(self, data):
+            self.data = data
+
+        def model_dump(self, mode="json"):
+            return self.data
+
+    class _Agents:
+        async def get_agent(self, name):
+            return _Dump(
+                {
+                    "name": name,
+                    "description": "Agent du portail",
+                    "environments": ["chrome"],
+                    "instructions": "CONSIGNES DU PORTAIL",
+                    "skills": ["h/visual-browser", "h/answering"],
+                    "model": None,
+                    "reasoning_effort": "medium",
+                }
+            )
+
+    class _Envs:
+        async def get_environment(self, env_id):
+            return _Dump({"host": "cloud", "mode": {"type": "visual", "markdown": True, "width": None}})
+
+    client = _FakeClient(lambda: _FakeSession(list(ANSWERS), agent))
+    client.agents, client.environments = _Agents(), _Envs()
+    agent = ShoppingAgent(
+        client=client,
+        agent="pilote-shopper",
+        browser_host="user_device",
+        memory=InMemorySiteMemory(),
+        record_metrics=False,
+    )  # type: ignore[arg-type]
+    await agent.start(TRAIN)
+
+    spec = client.started["agent"]
+    env = spec["environments"][0]
+    assert spec["instructions"] == "CONSIGNES DU PORTAIL" and spec["skills"] == [
+        "h/visual-browser",
+        "h/answering",
+    ]
+    assert spec["reasoning_effort"] == "medium" and "model" not in spec
+    assert env["host"] == "user_device" and env["mode"] == {"type": "visual", "markdown": True}
+    assert "vault_id" not in env
+    assert "CONSIGNES DU PORTAIL" not in client.started["messages"]  # pas de doublon dans le message
+
+
+async def test_payment_reported_outside_pay_step_raises_unapproved_purchase(monkeypatch):
+    from orchestrator.agent_h.base import UnapprovedPurchase
+
+    answers = [ANSWERS[0], {"payment_result": "accepted", "payment_message": "Paiement de 0 € effectué !"}]
+
+    class ClickedWithoutAsking(_FakeSession):  # comme le vrai agent le 2026-11-18 : pas d'appel à l'outil
+        async def wait_for_completion(self, from_index: int, timeout_seconds: float):
+            return _Result(self.answers.pop(0), from_index + 1)
+
+    agent = ShoppingAgent(
+        client=_FakeClient(lambda: ClickedWithoutAsking(answers, agent)),
+        memory=InMemorySiteMemory(),
+        record_metrics=False,
+    )  # type: ignore[arg-type]
+    await agent.start(PIZZA)
+    await agent.choose((await agent.search())[0].id)
+    with pytest.raises(UnapprovedPurchase) as bought:
+        await agent.checkout()
+    assert bought.value.result == "accepted" and "0 €" in (bought.value.site_message or "")
+
+
+def test_fast_model_gets_reasoning_disabled(monkeypatch):
+    monkeypatch.setenv("PILOTE_H_MODEL", "holo4-35b-a3b")
+    monkeypatch.setenv("PILOTE_H_REASONING_EFFORT", "medium")
+    spec = ShoppingAgent(agent="", browser_host="cloud", record_metrics=False)._agent_spec()
+    assert spec["model"] == "holo4-35b-a3b" and spec["reasoning_effort"] == "disabled"
+
+
+async def test_session_stays_open_between_steps_so_the_agent_keeps_its_memory(monkeypatch):
+    from orchestrator.agent_h import local_chrome
+
+    monkeypatch.setattr(local_chrome, "ensure", lambda *a, **k: True)
+    monkeypatch.setattr(local_chrome, "fresh_page", lambda *a, **k: None)
+    monkeypatch.delenv("PILOTE_H_IDLE_TIMEOUT_S", raising=False)
+    starts: list[dict] = []
+    sessions: list[_FakeSession] = []
+
+    class Recording(_FakeClient):
+        async def start_session(self, **kwargs):
+            starts.append(kwargs)
+            return await super().start_session(**kwargs)
+
+    def make_session():
+        sessions.append(_FakeSession(list(ANSWERS), agent))
+        return sessions[-1]
+
+    agent = ShoppingAgent(
+        client=Recording(make_session),
+        browser_host="user_device",
+        agent="",
+        memory=InMemorySiteMemory(),
+        record_metrics=False,
+    )  # type: ignore[arg-type]
+    agent._real_client = True
+    await agent.start(PIZZA)
+    await agent.choose((await agent.search())[0].id)
+    await agent.checkout()
+    assert len(starts) == 1 and starts[0]["idle_timeout_s"] == 900  # une seule session, gardée ouverte
+    assert len(sessions[0].sent) == 1 and "Étape : panier" in sessions[0].sent[0]

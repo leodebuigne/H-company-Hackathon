@@ -88,3 +88,14 @@ async def test_http_approvals_errors_become_approvals_error(response):
     client = httpx.AsyncClient(transport=httpx.MockTransport(lambda r: response))
     with pytest.raises(ApprovalsError):
         await HttpApprovals("https://x", "s", client).get(REQUEST.order_id)
+
+
+def test_purchase_code_must_be_three_digits():
+    import pytest as _pytest
+
+    from orchestrator.config import Settings
+
+    assert Settings.from_env({"PILOTE_PURCHASE_CODE": " 472 "}).purchase_code == "472"
+    assert Settings.from_env({}).purchase_code is None
+    with _pytest.raises(ValueError):
+        Settings.from_env({"PILOTE_PURCHASE_CODE": "12a"})

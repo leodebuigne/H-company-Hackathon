@@ -19,6 +19,7 @@ import asyncio
 import base64
 import contextlib
 import datetime as dt
+import hmac
 import json
 import logging
 import re
@@ -31,7 +32,7 @@ from zoneinfo import ZoneInfo
 
 from pydantic import BaseModel, TypeAdapter, ValidationError
 
-from orchestrator.agent_h.base import AgentError, NeedsHuman, PaymentDenied
+from orchestrator.agent_h.base import AgentError, NeedsHuman, PaymentDenied, UnapprovedPurchase
 from orchestrator.ai.hf import QUESTIONS, SPEAK_MIME, AIError, complete_intent
 from orchestrator.ai.speech_text import euros
 from orchestrator.approvals import ApprovalsError
@@ -89,6 +90,57 @@ class Abort(Exception):
         super().__init__(message)
         self.message = message
         self.code = code
+
+
+CODE_ATTEMPTS = 3
+_DIGIT_WORDS = {
+    "zero": "0",
+    "un": "1",
+    "une": "1",
+    "deux": "2",
+    "trois": "3",
+    "quatre": "4",
+    "cinq": "5",
+    "six": "6",
+    "sept": "7",
+    "huit": "8",
+    "neuf": "9",
+}
+
+
+def spoken_digits(text: str) -> str:
+    """« 1 2 3 », « 123 », « un deux trois » -> « 123 ». Les autres mots sont ignorés."""
+    digits = []
+    for word in re.findall(r"[a-z]+|\d", _plain(text)):
+        if word.isdigit():
+            digits.append(word)
+        elif word in _DIGIT_WORDS:
+            digits.append(_DIGIT_WORDS[word])
+    return "".join(digits)
+
+
+# Commentaire en direct : seulement pendant que l'agent travaille seul, une phrase toutes les 6 s au plus.
+PROGRESS_STATES = ("searching", "cart", "paying")
+PROGRESS_GAP_S = 6.0
+
+
+class Purchased(Exception):
+    """L'achat a eu lieu sur le site hors du déroulé prévu : on le dit, on ne prétend jamais le contraire."""
+
+    def __init__(self, message: str) -> None:
+        super().__init__(message)
+        self.message = message
+
+
+_EMAIL = re.compile(r"\S+@\S+")
+
+
+def site_message_for_speech(message: str | None) -> str:
+    """Première phrase du message du site, sans adresse e-mail (donnée personnelle, inutile à l'oral)."""
+    if not message:
+        return ""
+    first = re.split(r"(?<=[.!?])\s", message.strip(), maxsplit=1)[0]
+    return _EMAIL.sub("", first).strip()
 
 
 def _plain(text: str) -> str:
@@ -180,6 +232,9 @@ class Session:
         self._intent: Intent | None = None
         self._summary: OrderSummary | None = None
         self._armed_hash: str | None = None
+        self._direct_limit: int | None = None  # achat direct : prix maximal accepté (centimes)
+        self._last_progress = 0.0
+        self._secret_mode = False  # pendant la demande du code secret
         self._payment_refusal: str | None = None
         self._flow: asyncio.Task[None] | None = None
         self._reader: asyncio.Task[None] | None = None
@@ -262,6 +317,16 @@ class Session:
             return ServerSay(text=text, audio=None, mime=None)
         return ServerSay(text=text, audio=base64.b64encode(audio).decode("ascii"), mime=SPEAK_MIME)
 
+    async def _progress(self, text: str) -> None:
+        """Phrase courte pendant que l'agent travaille, hors historique (réservé à la compréhension)."""
+        if self.state not in PROGRESS_STATES:
+            return
+        now = asyncio.get_running_loop().time()
+        if now - self._last_progress < PROGRESS_GAP_S:
+            return
+        self._last_progress = now
+        await self._emit(await self._say_message(text))
+
     async def _say(self, text: str) -> None:
         self.history.append({"role": "pilote", "text": text})
         await self._emit(ServerTranscript(role="pilote", text=text))
@@ -331,6 +396,15 @@ class Session:
         else:
             assert isinstance(message, ClientText)
             text = message.text
+        if self._secret_mode:
+            # Code secret : ni modèle de langage, ni historique, ni affichage. Comparé puis oublié.
+            await self._emit(ServerTranscript(role="user", text="•••"))
+            plain = _plain(text)
+            if "annul" in plain:
+                return _intent("cancel", "annule")
+            if re.match(r"^(non|stop)\b", plain):
+                return _intent("deny", "non")
+            return _intent("other", text)
         await self._emit(ServerTranscript(role="user", text=text))
         try:
             intent = await self.ai.parse_intent(text, self.today(), list(self.history))
@@ -404,6 +478,8 @@ class Session:
                 if abort.code:
                     await self._error(abort.code, abort.message)
                 await self._end_order("cancelled", abort.message)
+            except Purchased as purchased:
+                await self._end_order("done", purchased.message)
             except Exception:
                 log.exception("Erreur inattendue dans la commande")
                 await self._error("internal", "Erreur inattendue de l'orchestrateur.")
@@ -416,6 +492,9 @@ class Session:
         self._intent = intent
         options = await self._search(intent)
         option = await self._propose(options)
+        if self.settings.direct_buy:
+            await self._buy_direct(option)
+            return
         summary = await self._checkout(option)
         statement = await self.ai.confirm_statement(summary)
         first = self._relatives()[0].first_name
@@ -462,6 +541,16 @@ class Session:
             ) from error
         except PaymentDenied:
             raise
+        except UnapprovedPurchase as bought:
+            self._journal("payment", result=bought.result, unapproved=True)
+            site = site_message_for_speech(bought.site_message)
+            outcomes = {
+                "accepted": "Attention : l'achat a été validé sur le site, sans attendre votre accord.",
+                "refused": "Attention : le site a tenté un paiement, refusé. Rien n'a été débité.",
+            }
+            said = outcomes.get(bought.result, "Attention : un paiement a peut-être été lancé sur le site.")
+            check = "Vérifiez la commande sur le site, et annulez-la si besoin."
+            raise Purchased(f"{said} {site + ' ' if site else ''}{check}") from bought
         except NeedsHuman as error:
             raise Abort(
                 f"Je suis bloqué sur le site : {error}. Rien n'a été acheté.", "agent_failed"
@@ -482,6 +571,8 @@ class Session:
     async def _search(self, intent: Intent) -> list[Option]:
         await self._set_state("searching")
         self._agent = self.agent_factory(self.approve_payment, self.need_human)
+        if hasattr(self._agent, "on_progress"):  # commentaire en direct de ce que fait l'agent
+            self._agent.on_progress = self._progress
         await self._say("Je cherche sur le site, cela peut prendre une minute.")
         await self._step("start", self._agent.start(intent, None))
         options = await self._step("search", self._agent.search())
@@ -622,6 +713,65 @@ class Session:
                 "price_changed",
             )
 
+    async def _check_code(self, option: Option) -> None:
+        """Demande le code secret à 3 chiffres. Trois essais, puis rien n'est acheté."""
+        assert self.settings.purchase_code is not None
+        await self._say(
+            f"Pour acheter {option.title}, {euros(option.price_cents)}, dites votre code à 3 chiffres."
+        )
+        attempts = CODE_ATTEMPTS
+        self._secret_mode = True
+        try:
+            while True:
+                answer = await self._ask("confirm_1", self.settings.confirm_timeout_s)
+                if answer.kind == "deny":
+                    raise Abort("D'accord, je n'achète rien.")
+                if answer.kind == "confirm":  # touche Entrée ou bouton Oui : il faut le code, pas un oui
+                    await self._say("Il me faut votre code à 3 chiffres.")
+                    continue
+                if hmac.compare_digest(spoken_digits(answer.text), self.settings.purchase_code):
+                    self._journal("purchase_code", result="ok")
+                    return
+                attempts -= 1
+                self._journal("purchase_code", result="wrong")
+                if attempts == 0:
+                    raise Abort("Code incorrect trois fois. Je n'achète rien.")
+                await self._say(
+                    f"Ce n'est pas le bon code. Encore {attempts} essai{'s' if attempts > 1 else ''}."
+                )
+        finally:
+            self._secret_mode = False
+
+    async def _buy_direct(self, option: Option) -> None:
+        """Achat direct : le choix vaut ordre d'achat. Le résultat est toujours dit à l'oral."""
+        assert self._agent is not None
+        if self.settings.purchase_code:
+            await self._check_code(option)  # le code vaut confirmation, même pour un billet gratuit
+        elif option.price_cents > 0:  # sans code : un billet gratuit s'achète sans question
+            question = f"J'achète bien {option.title}, {euros(option.price_cents)} ?"
+            if not await self._yes_no("confirm_1", question):
+                raise Abort("D'accord, je n'achète rien.")
+        self._direct_limit, self._payment_refusal = option.price_cents, None
+        await self._set_state("paying")
+        await self._say(f"J'achète {option.title}, {euros(option.price_cents)}.")
+        try:
+            await self._step("choose", self._agent.choose(option.id))
+            result = await self._step("buy", self._agent.buy())
+        except PaymentDenied as error:
+            reason = self._payment_refusal or "le site n'a pas permis l'achat"
+            raise Abort(f"Je n'ai pas acheté : {reason}. Rien n'a été débité.") from error
+        finally:
+            self._direct_limit = None
+        self._journal("payment", result=result, direct=True)
+        site = site_message_for_speech(getattr(self._agent, "last_payment_message", None))
+        messages = {
+            "accepted": f"C'est acheté : {option.title}, {euros(option.price_cents)}.",
+            "refused": "La banque a refusé le paiement. Rien n'a été débité.",
+            "unknown": "Je ne sais pas si l'achat est passé. Vérifiez sur le site avant de recommencer.",
+        }
+        said = messages.get(result, messages["unknown"])
+        await self._end_order("done", f"{said} {site}".strip() if result == "accepted" and site else said)
+
     async def _pay(self, summary: OrderSummary) -> None:
         assert self._agent is not None
         self._armed_hash, self._payment_refusal = summary.hash, None
@@ -648,6 +798,15 @@ class Session:
 
     async def approve_payment(self, summary: OrderSummary) -> ApprovalDecision:
         """Outil request_payment_approval. Dernier verrou avant le clic qui engage de l'argent."""
+        if self._direct_limit is not None and self.state == "paying":
+            # Achat direct : l'ordre vaut accord, mais jamais plus cher que l'option choisie
+            approved = summary.total_cents <= self._direct_limit
+            if not approved:
+                self._payment_refusal = (
+                    f"le panier affichait {euros(summary.total_cents)} au lieu de {euros(self._direct_limit)}"
+                )
+            self._journal("payment_approval", decision="approved" if approved else "denied", direct=True)
+            return "approved" if approved else "denied"
         approved = (
             self.state == "paying"
             and self._armed_hash is not None

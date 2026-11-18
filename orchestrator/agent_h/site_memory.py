@@ -68,6 +68,49 @@ def merge_card(
     )
 
 
+# Fiches de départ, écrites à la main après observation du site (2026-11-18), utilisées tant que la
+# mémoire n'a rien appris sur le domaine. Sans elles, l'agent tournait en rond sur SNCF Connect.
+STARTER_CARDS: dict[str, dict[str, list[str]]] = {
+    "www.sncf-connect.com": {
+        "steps": [
+            "Part de la page d'accueil https://www.sncf-connect.com, attends qu'elle soit chargée.",
+            "Clique sur l'onglet « Trains », dans la barre d'onglets sous le grand titre (à droite de "
+            "« Tout rechercher »). Le formulaire Départ / Arrivée / Aller / Voyageurs apparaît.",
+            "Clique sur « Départ », tape la ville, choisis la gare dans la liste de suggestions.",
+            "Fais de même pour « Arrivée ».",
+            "Clique sur « Aller » pour choisir la date et l'heure de départ, puis valide.",
+            "Clique sur la loupe ronde à droite du formulaire pour lancer la recherche.",
+        ],
+        "useful_buttons": ["Trains", "Départ", "Arrivée", "Aller", "Loupe (rechercher)"],
+        "pitfalls": [
+            "Le grand bandeau « Ouverture des ventes » sous le formulaire est une publicité : ne clique "
+            "jamais dessus. S'il t'emmène sur une page /bons-plans/, retourne sur https://www.sncf-connect.com.",
+            "Les adresses /trains et /train/france ne sont pas des pages de recherche : repars de l'accueil.",
+            "Ne tape pas le trajet dans le champ « Tout rechercher » : utilise l'onglet « Trains ».",
+            "Sur le panier, « Valider et payer » est le bouton final, même pour un billet à 0 € : ne clique "
+            "dessus qu'à l'étape « achat » ou « paiement », après approbation.",
+        ],
+    },
+}
+
+
+def starter_card(domain: str) -> SiteCard | None:
+    seed = STARTER_CARDS.get(domain)
+    if seed is None:
+        return None
+    return SiteCard(
+        domain=domain,
+        steps=seed["steps"],
+        useful_buttons=seed["useful_buttons"],
+        pitfalls=seed["pitfalls"],
+        runs=0,
+        successful_runs=0,
+        avg_duration_s=None,
+        avg_steps=None,
+        updated_at=dt.datetime(2026, 11, 18, tzinfo=dt.UTC),
+    )
+
+
 class SiteMemory(Protocol):
     async def get(self, domain: str) -> SiteCard | None: ...
     async def put(self, card: SiteCard) -> None: ...

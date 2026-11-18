@@ -12,7 +12,7 @@ from __future__ import annotations
 import datetime as dt
 from decimal import ROUND_HALF_UP, Decimal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from orchestrator.contracts import Fee, Option, OrderItem, OrderSummary, summary_hash
 from orchestrator.ports import PaymentResult
@@ -81,6 +81,13 @@ class AgentAnswer(BaseModel):
     """Format unique de réponse de l'agent, quelle que soit la phase."""
 
     options: list[AgentOption] = Field(default_factory=list, description="Options trouvées, 8 au maximum")
+
+    @field_validator("options", mode="before")
+    @classmethod
+    def _no_options(cls, value: object) -> object:
+        # L'agent répond parfois options = null quand il n'a rien trouvé : c'est une liste vide
+        return [] if value is None else value
+
     order_summary: AgentOrderSummary | None = Field(
         default=None, description="Récapitulatif exact de la page de paiement"
     )

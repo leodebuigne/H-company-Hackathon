@@ -24,7 +24,7 @@ from typing import Any
 
 from pydantic import ValidationError
 
-from orchestrator.ai.speech_text import options_summary, order_statement
+from orchestrator.ai.speech_text import for_speech, options_summary, order_statement
 from orchestrator.contracts import Intent, Option, OrderSummary
 from orchestrator.ports import HistoryTurn
 
@@ -37,12 +37,24 @@ DEFAULT_VLM_MODEL = "Qwen/Qwen3-VL-30B-A3B-Instruct"
 DEFAULT_TTS_MODEL = "hexgrad/Kokoro-82M"
 DEFAULT_TTS_VOICE = "ff_siwis"
 
-DEFAULT_SPEAK_TIMEOUT_S = 2.5
+DEFAULT_SPEAK_TIMEOUT_S = 6.0
+SPEAK_ATTEMPTS = 3  # Hugging Face renvoie parfois 503 : on réessaie avant la voix du navigateur
 SPEAK_CHUNK_CHARS = 60
 SPEAK_MIME = "audio/wav"
 LLM_TIMEOUT_S = 15.0
 ASR_TIMEOUT_S = 15.0
 HISTORY_TURNS = 6
+
+# Phrases que Whisper invente sur du silence ou du bruit (sous-titres de vidéos) : ce n'est pas l'utilisateur.
+ASR_HALLUCINATIONS = (
+    "sous-titres réalisés par",
+    "sous-titrage",
+    "amara.org",
+    "merci d'avoir regardé",
+    "abonnez-vous",
+)
+# Pas de « prompt » de vocabulaire : mesuré le 2026-11-18, il vidait « La deuxième » et changeait
+# « Non, annule » en « Nantes ».
 
 WEEKDAYS = ["lundi", "mardi", "mercredi", "jeudi", "vendredi", "samedi", "dimanche"]
 
@@ -294,14 +306,17 @@ class HFAI:
         try:
             result = await asyncio.wait_for(
                 self.speech_client.automatic_speech_recognition(
-                    audio, model=self.asr_model, extra_body={"language": "fr"}
+                    audio,
+                    model=self.asr_model,
+                    extra_body={"language": "fr"},
                 ),
                 ASR_TIMEOUT_S,
             )
         except Exception as error:
             raise AIError("transcription_failed", f"transcription impossible : {error}") from error
         text = (result.text or "").strip()
-        if not text:
+        lowered = text.lower()
+        if not text or any(marker in lowered for marker in ASR_HALLUCINATIONS):
             raise AIError("transcription_failed", "aucune parole détectée")
         return text
 
@@ -398,11 +413,18 @@ class HFAI:
         """
 
         async def one(chunk: str) -> bytes:
-            return await self.speech_client.text_to_speech(
-                chunk, model=self.tts_model, extra_body={"voice": self.tts_voice, "lang_code": "f"}
-            )
+            for attempt in range(SPEAK_ATTEMPTS):
+                try:
+                    return await self.speech_client.text_to_speech(
+                        chunk, model=self.tts_model, extra_body={"voice": self.tts_voice, "lang_code": "f"}
+                    )
+                except Exception:
+                    if attempt == SPEAK_ATTEMPTS - 1:
+                        raise
+                    await asyncio.sleep(0.3 * (attempt + 1))
+            raise AssertionError("inaccessible")
 
-        chunks = split_for_speech(text)
+        chunks = split_for_speech(for_speech(text))
         if not chunks:
             return None
         try:

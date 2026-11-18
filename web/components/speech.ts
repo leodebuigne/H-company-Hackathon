@@ -1,19 +1,39 @@
 // Lecture à voix haute des messages « say », dans l'ordre, une phrase à la fois.
 // Si l'orchestrateur fournit l'audio (synthèse Hugging Face), on le joue ; sinon on utilise
-// la voix française du navigateur (speechSynthesis).
+// la meilleure voix française du navigateur (speechSynthesis).
 
-const PREFERRED_VOICES = ["Amélie", "Thomas", "Audrey", "Google français", "Microsoft Denise", "Marie"];
+// Voix de secours, de la plus naturelle à la plus robotique. Les voix « Premium » / « Enhanced »
+// de macOS et les voix « Natural » / « Online » d'Edge sont bien meilleures que les voix de base.
+const QUALITY_HINTS = ["premium", "enhanced", "améliorée", "natural", "neural", "online", "google"];
+const PREFERRED_NAMES = ["Audrey", "Amélie", "Thomas", "Denise", "Henri", "Marie", "Google français"];
 
 let frenchVoice: SpeechSynthesisVoice | null = null;
+let chosenVoiceName: string | null = null;
+
+function frenchVoices(): SpeechSynthesisVoice[] {
+  if (typeof window === "undefined" || !("speechSynthesis" in window)) return [];
+  return window.speechSynthesis.getVoices().filter((v) => v.lang.toLowerCase().startsWith("fr"));
+}
+
+function score(v: SpeechSynthesisVoice): number {
+  const name = v.name.toLowerCase();
+  let s = 0;
+  const q = QUALITY_HINTS.findIndex((hint) => name.includes(hint));
+  if (q >= 0) s += 100 - q * 5;
+  const p = PREFERRED_NAMES.findIndex((n) => v.name.includes(n));
+  if (p >= 0) s += 40 - p * 3;
+  if (v.lang === "fr-FR") s += 10;
+  if (v.localService) s += 2; // pas de coupure réseau
+  return s;
+}
 
 function pickFrenchVoice(): SpeechSynthesisVoice | null {
-  if (typeof window === "undefined" || !("speechSynthesis" in window)) return null;
-  const voices = window.speechSynthesis.getVoices().filter((v) => v.lang.toLowerCase().startsWith("fr"));
-  for (const name of PREFERRED_VOICES) {
-    const v = voices.find((voice) => voice.name.includes(name));
-    if (v) return v;
+  const voices = frenchVoices();
+  if (chosenVoiceName) {
+    const chosen = voices.find((v) => v.name === chosenVoiceName);
+    if (chosen) return chosen;
   }
-  return voices.find((v) => v.lang === "fr-FR") ?? voices[0] ?? null;
+  return [...voices].sort((a, b) => score(b) - score(a))[0] ?? null;
 }
 
 if (typeof window !== "undefined" && "speechSynthesis" in window) {
@@ -27,12 +47,61 @@ export function hasFrenchVoice() {
   return frenchVoice !== null;
 }
 
+/** Voix françaises du navigateur, la meilleure en premier (pour le menu des réglages). */
+export function listFrenchVoices(): string[] {
+  return [...frenchVoices()].sort((a, b) => score(b) - score(a)).map((v) => v.name);
+}
+
+/** null = choix automatique de la meilleure voix. */
+export function setBrowserVoice(name: string | null) {
+  chosenVoiceName = name;
+  frenchVoice = pickFrenchVoice();
+}
+
+const hours = (h: string, m: string) => {
+  const n = Number(h);
+  const unit = n <= 1 ? "heure" : "heures";
+  return m === "00" ? `${n} ${unit}` : `${n} ${unit} ${m}`;
+};
+
+// « h » seul est épelé par les voix de synthèse (« 14, H44 ») : on écrit « heures » en toutes lettres.
+const ORDINAL_OPTIONS = ["Première", "Deuxième", "Troisième", "Quatrième", "Cinquième", "Sixième", "Septième", "Huitième"];
+
+const SPOKEN_REPLACEMENTS: [RegExp, string | ((...m: string[]) => string)][] = [
+  // « 1, TGV… » est mal lu : on dit « Première option : TGV… »
+  [/(^|[:.]\s*)([1-8]),\s+/g, (_, before, n) => `${before}${ORDINAL_OPTIONS[Number(n) - 1]} option : `],
+  [/\binoui\b/gi, "Inoui"],
+  [/\s*(→|->|⟶)\s*/g, " vers "],
+  [/\s+[·•|—–]\s+/g, ", "],
+  [/\b1(?:re|ère)\b/g, "première"],
+  [/\b2(?:de|nde)\b/g, "seconde"],
+  [/\b(\d{1,2})\s*[:h]\s*(\d{2})\b/g, (_, h, m) => hours(h, m)],
+  [/\b(\d{1,2})\s*h\b/g, (_, h) => hours(h, "00")],
+  [/(\d+),00\s*(?:€|EUR\b)/g, "$1 euros"],
+  [/(\d+),(\d{2})\s*(?:€|EUR\b)/g, "$1 euros $2"],
+  [/(\d+)\s*(?:€|EUR\b)/g, "$1 euros"],
+  [/\b(\d+)\s*min\b/g, "$1 minutes"],
+  [/\s{2,}/g, " "],
+];
+
+/** Même règle que orchestrator/ai/speech_text.py : « 14:44 → 15:48 » se dit « 14 heures 44 vers 15 heures 48 ». */
+export function forSpeech(text: string): string {
+  return SPOKEN_REPLACEMENTS.reduce(
+    (t, [pattern, replacement]) =>
+      typeof replacement === "string" ? t.replace(pattern, replacement) : t.replace(pattern, replacement),
+    text
+  ).trim();
+}
+
 type Item = { text: string; audio?: string | null; mime?: string | null };
 
 export class Speaker {
   private queue: Item[] = [];
   private current: HTMLAudioElement | null = null;
   private busy = false;
+  // Chaque stop() ouvre une nouvelle génération : une phrase coupée ne relance jamais la file,
+  // sinon deux lectures pouvaient se superposer après une interruption.
+  private generation = 0;
   rate = 1;
   onChange: (speaking: boolean) => void = () => {};
 
@@ -42,11 +111,12 @@ export class Speaker {
 
   enqueue(text: string, audio?: string | null, mime?: string | null) {
     this.queue.push({ text, audio, mime });
-    if (!this.busy) void this.next();
+    if (!this.busy) void this.next(this.generation);
   }
 
   /** Coupe la parole immédiatement (l'utilisateur parle ou annule). */
   stop() {
+    this.generation += 1;
     this.queue = [];
     if (this.current) {
       this.current.pause();
@@ -57,11 +127,13 @@ export class Speaker {
   }
 
   private setBusy(v: boolean) {
+    if (this.busy === v) return;
     this.busy = v;
     this.onChange(v);
   }
 
-  private async next() {
+  private async next(generation: number) {
+    if (generation !== this.generation) return;
     const item = this.queue.shift();
     if (!item) return this.setBusy(false);
     this.setBusy(true);
@@ -71,16 +143,18 @@ export class Speaker {
     } catch {
       // un son bloqué ou une voix absente ne doit pas bloquer la file
     }
-    if (this.busy) void this.next();
+    void this.next(generation);
   }
 
   private playAudio(base64: string, mime?: string | null): Promise<void> {
     return new Promise((resolve) => {
       const src = base64.startsWith("data:") ? base64 : `data:${mime ?? "audio/mpeg"};base64,${base64}`;
       const audio = new Audio(src);
+      audio.playbackRate = this.rate; // la hauteur de la voix est conservée par le navigateur
       this.current = audio;
       audio.onended = () => resolve();
       audio.onerror = () => resolve();
+      audio.onpause = () => resolve();
       audio.play().catch(() => resolve());
     });
   }
@@ -88,7 +162,7 @@ export class Speaker {
   private speakWithBrowser(text: string): Promise<void> {
     return new Promise((resolve) => {
       if (!("speechSynthesis" in window)) return resolve();
-      const u = new SpeechSynthesisUtterance(text);
+      const u = new SpeechSynthesisUtterance(forSpeech(text));
       u.lang = "fr-FR";
       if (frenchVoice) u.voice = frenchVoice;
       u.rate = this.rate;

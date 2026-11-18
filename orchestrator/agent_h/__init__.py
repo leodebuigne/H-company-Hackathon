@@ -20,7 +20,7 @@ from typing import Any
 from orchestrator.contracts import Intent, Option, OrderItem, OrderSummary, SiteCard, summary_hash
 from orchestrator.ports import AgentFactory, ApprovalCallback, NeedHumanCallback
 
-from .base import AgentError, NeedsHuman, PaymentDenied, ShoppingAgentProtocol
+from .base import AgentError, NeedsHuman, PaymentDenied, ShoppingAgentProtocol, UnapprovedPurchase
 from .fake import FakeShoppingAgent
 from .models import AgentAnswer
 
@@ -64,6 +64,7 @@ __all__ = [
     "OrderItem",
     "OrderSummary",
     "PaymentDenied",
+    "UnapprovedPurchase",
     "ShoppingAgentProtocol",
     "SiteCard",
     "make_agent",

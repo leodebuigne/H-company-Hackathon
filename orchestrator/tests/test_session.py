@@ -290,3 +290,142 @@ def test_relatives_for_fake_and_real():
         .first_name
         == "Hugo"
     )
+
+
+async def test_a_purchase_clicked_during_checkout_is_announced_not_hidden():
+    from orchestrator.agent_h.base import UnapprovedPurchase
+
+    async with Harness() as h:
+        await h.text("Un train de Paris pour Lille demain après 14 h")
+        await h.wait("proposing")
+
+        async def bought_on_the_site():
+            raise UnapprovedPurchase(
+                "accepted",
+                "Votre paiement de 0 € a bien été effectué ! Un e-mail vous a été envoyé à a@b.fr.",
+            )
+
+        h.agents[-1].checkout = bought_on_the_site  # type: ignore[method-assign]
+        await h.text("La deuxième")
+        await h.wait_said("l'achat a été validé sur le site")
+        said = h.said()
+        assert "Votre paiement de 0 € a bien été effectué !" in said
+        assert "a@b.fr" not in said  # pas d'e-mail lu à l'oral
+        assert "Rien n'a été acheté" not in said
+        assert "done" in h.states()
+
+
+def test_site_message_for_speech_keeps_first_sentence_without_email():
+    from orchestrator.session import site_message_for_speech
+
+    assert (
+        site_message_for_speech("Paiement effectué ! Mail envoyé à x@y.fr avec les détails.")
+        == "Paiement effectué !"
+    )
+    assert site_message_for_speech(None) == ""
+
+
+async def test_direct_buy_asks_once_for_a_paid_ticket_then_says_it():
+    async with Harness(direct_buy=True) as h:
+        await h.text("Un train de Paris pour Lille demain après 14 h")
+        await h.wait("proposing")
+        await h.text("La deuxième")
+        await h.wait("confirm_1")
+        assert "J'achète bien" in h.said()
+        await h.confirm(True)
+        await h.wait_said("C'est acheté")
+        said = h.said()
+        assert "J'achète" in said and "Votre commande est confirmée." in said
+        assert "awaiting_relative" not in h.states() and "confirm_2" not in h.states()  # ni proche ni 2e oui
+        assert "done" in h.states()
+
+
+async def test_direct_buy_refuses_a_cart_more_expensive_than_the_choice():
+    async with Harness(direct_buy=True, agent={"price_change_on_recheck": True}) as h:
+        await h.text("Un train de Paris pour Lille demain après 14 h")
+        await h.wait("proposing")
+        await h.text("La deuxième")
+        await h.wait("confirm_1")
+        await h.confirm(True)
+        await h.wait_said("Je n'ai pas acheté")
+        assert "au lieu de" in h.said() and "C'est acheté" not in h.said()
+
+
+async def test_direct_buy_saying_no_buys_nothing():
+    async with Harness(direct_buy=True) as h:
+        await h.text("Un train de Paris pour Lille demain après 14 h")
+        await h.wait("proposing")
+        await h.text("La deuxième")
+        await h.wait("confirm_1")
+        await h.confirm(False)
+        await h.wait_said("je n'achète rien")
+        assert h.paid == 0 and "C'est acheté" not in h.said()
+
+
+async def test_progress_is_spoken_while_searching_but_throttled_and_kept_out_of_history():
+    async with Harness() as h:
+        session = h.session
+        await session._set_state("searching")
+        await session._progress("J'ouvre SNCF Connect.")
+        await session._progress("J'ouvre la recherche de trains.")  # trop tôt : pas dit
+        said = [m["text"] for m in h.of("say")]
+        assert said.count("J'ouvre SNCF Connect.") == 1 and "J'ouvre la recherche de trains." not in said
+        assert all(turn["text"] != "J'ouvre SNCF Connect." for turn in session.history)
+        await session._set_state("listening")
+        session._last_progress = 0.0
+        await session._progress("Je parcours les résultats.")  # hors recherche : silence
+        assert "Je parcours les résultats." not in [m["text"] for m in h.of("say")]
+
+
+async def _to_code_prompt(h: Harness) -> None:
+    await h.text("Un train de Paris pour Lille demain après 14 h")
+    await h.wait("proposing")
+    await h.text("La deuxième")
+    await h.wait("confirm_1")
+    assert "dites votre code à 3 chiffres" in h.said()
+
+
+async def test_right_code_buys_and_the_code_is_never_shown_nor_kept():
+    async with Harness(direct_buy=True, purchase_code="472") as h:
+        parsed: list[str] = []
+        original = h.session.ai.parse_intent
+
+        async def spy(text, today, history):
+            parsed.append(text)
+            return await original(text, today, history)
+
+        h.session.ai.parse_intent = spy  # type: ignore[method-assign]
+        await _to_code_prompt(h)
+        await h.text("quatre 7 deux")
+        await h.wait_said("C'est acheté")
+        typed = [m["text"] for m in h.of("transcript") if m["role"] == "user"]
+        assert "•••" in typed and not any("47" in t or "quatre" in t for t in typed)
+        assert not any("quatre" in t for t in parsed)  # jamais envoyé au modèle de langage
+        assert not any("quatre" in turn["text"] for turn in h.session.history)
+
+
+async def test_wrong_code_three_times_buys_nothing():
+    async with Harness(direct_buy=True, purchase_code="472") as h:
+        await _to_code_prompt(h)
+        await h.text("111")
+        await h.wait_said("Encore 2 essais.")
+        await h.text("111")
+        await h.wait_said("Encore 1 essai.")
+        await h.text("111")
+        await h.wait_said("Code incorrect trois fois")
+        assert "C'est acheté" not in h.said()
+
+
+async def test_saying_no_at_the_code_prompt_buys_nothing():
+    async with Harness(direct_buy=True, purchase_code="472") as h:
+        await _to_code_prompt(h)
+        await h.text("non")
+        await h.wait_said("je n'achète rien")
+        assert "C'est acheté" not in h.said()
+
+
+def test_spoken_digits_reads_words_and_figures():
+    from orchestrator.session import spoken_digits
+
+    assert spoken_digits("Un, deux, trois.") == "123"
+    assert spoken_digits("1 2 3") == "123" and spoken_digits("mon code est 908") == "908"

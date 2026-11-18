@@ -39,3 +39,15 @@ class NeedsHuman(AgentError):
 
 class PaymentDenied(AgentError):
     """L'agent n'a pas eu l'autorisation de payer : rien n'a été cliqué."""
+
+
+class UnapprovedPurchase(AgentError):
+    """L'agent a validé un achat sur le site en dehors de l'étape paiement, sans l'approbation de Pilote.
+
+    Ça ne doit jamais arriver ; si ça arrive, l'utilisateur doit l'entendre (l'achat est peut-être réel).
+    """
+
+    def __init__(self, result: str, site_message: str | None) -> None:
+        super().__init__(f"achat validé hors étape paiement ({result})")
+        self.result = result
+        self.site_message = site_message
