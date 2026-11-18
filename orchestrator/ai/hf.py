@@ -318,6 +318,9 @@ class HFAI:
         self.tts_voice = _env("PILOTE_TTS_VOICE", DEFAULT_TTS_VOICE)
         self.tts_provider = _env("PILOTE_TTS_PROVIDER", DEFAULT_TTS_PROVIDER)
         self.speak_timeout = float(_env("PILOTE_TTS_TIMEOUT_S", str(DEFAULT_SPEAK_TIMEOUT_S)))
+        # PILOTE_VOICE=navigateur : pas de synthèse Hugging Face, la page parle avec la voix de
+        # l'ordinateur (voix Premium du Mac), sans attente réseau.
+        self.browser_voice = _env("PILOTE_VOICE", "huggingface").strip().lower() == "navigateur"
         self.usage = {"prompt_tokens": 0, "completion_tokens": 0, "calls": 0}
         self._chat = chat_client
         self._speech = speech_client
@@ -482,6 +485,8 @@ class HFAI:
 
         Le texte est découpé en phrases synthétisées en parallèle, puis recollées.
         """
+        if self.browser_voice:
+            return None
 
         async def one(chunk: str) -> bytes:
             for attempt in range(SPEAK_ATTEMPTS):

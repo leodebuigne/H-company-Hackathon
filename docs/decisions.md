@@ -185,3 +185,7 @@ Test à la voix sur SNCF : code bon, paiement autorisé, l'agent clique, puis un
 
 - **Questions** : `PILOTE_H_QUESTION_AGENT=pilote-shopper` fait répondre aux questions par l'agent du portail tel quel (navigateur cloud H, sous-agents de lecture). Les commandes restent sur le Chrome local. Mesuré : « à quelle heure ferme la gare de Lille Flandres ? », réponse sourcée en 23 s. L'agent n'a pas délégué à ses sous-agents sur cette question.
 - **Interface** : fond blanc, halo bleu lumineux autour du micro (respire au repos, tourne pendant le travail de l'agent, suit le niveau du micro), conversation toujours visible en bulles bleues (personne) et grises (Pilote), indicateur « en train d'écrire », police système (SF Pro sur Mac). L'écran du jury suit le même style.
+
+## 2026-11-18 : voix de l'ordinateur en voix principale (v2 locale, membre 4)
+
+`PILOTE_VOICE=navigateur` : l'orchestrateur ne demande plus de synthèse à Hugging Face (Kokoro mettait de 1 à plus de 20 s ce soir-là), la page parle tout de suite avec la meilleure voix française de l'ordinateur (voix Premium ou Améliorée en priorité). Aucune autre voix française de Hugging Face Inference Providers ne parle correctement français (essais Chatterbox, Chatterbox Turbo, Sesame CSM retranscrits par Whisper). Kokoro reste disponible (`PILOTE_VOICE` vide).

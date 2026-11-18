@@ -69,3 +69,15 @@ def test_readable_progress_drops_technical_or_english(line):
     from orchestrator.ai.speech_text import readable_progress
 
     assert readable_progress(line) is None
+
+
+async def test_browser_voice_setting_skips_hugging_face_synthesis(monkeypatch):
+    from orchestrator.ai.hf import HFAI
+
+    class Boom:
+        async def text_to_speech(self, *a, **k):
+            raise AssertionError("la synthèse Hugging Face ne doit pas être appelée")
+
+    monkeypatch.setenv("PILOTE_VOICE", "navigateur")
+    ai = HFAI(chat_client=Boom(), speech_client=Boom())
+    assert await ai.speak("Bonjour") is None
