@@ -7,6 +7,8 @@ import asyncio
 import datetime as dt
 from typing import Any
 
+import pytest
+
 from orchestrator.agent_h.fake import FakeShoppingAgent
 from orchestrator.ai.fake import FakeAI
 from orchestrator.config import Settings
@@ -418,3 +420,67 @@ async def test_a_question_is_answered_without_buying_anything():
         await h.wait_said("ferme à 20 heures")
         assert h.paid == 0 and "cart" not in h.states()
         await h.wait("listening")
+
+
+def test_same_order_ignores_wording_but_not_price():
+    from orchestrator.contracts import OrderSummary
+    from orchestrator.session import same_order
+
+    from .test_contracts import VALID, _load
+
+    base = OrderSummary.model_validate(_load(next(p for p in VALID if p.name == "order-summary-train.json")))
+    reworded = base.model_copy(
+        update={
+            "items": [i.model_copy(update={"name": i.name + " (direct)"}) for i in base.items],
+            "hash": "0" * 64,
+        }
+    )
+    assert same_order(base, reworded), "un libellé différent n'est pas un changement de prix"
+    assert not same_order(base, base.model_copy(update={"total_cents": base.total_cents + 1}))
+    more = base.model_copy(update={"items": [i.model_copy(update={"quantity": 2}) for i in base.items]})
+    assert not same_order(base, more)
+
+
+@pytest.mark.parametrize(
+    ("state", "text", "kind", "index"),
+    [
+        ("proposing", "La deuxième", "choose", 2),
+        ("proposing", "le 3", "choose", 3),
+        ("proposing", "je prends le premier s'il vous plaît", "choose", 1),
+        ("proposing", "les détails du 2", "details", 2),
+        ("confirm_1", "Oui, d'accord.", "confirm", None),
+        ("confirm_2", "Non merci", "deny", None),
+        ("searching", "Annule", "cancel", None),
+    ],
+)
+def test_quick_intent_understands_short_answers(state, text, kind, index):
+    from orchestrator.session import quick_intent
+
+    intent = quick_intent(state, text)
+    assert intent is not None and intent.kind == kind and intent.choice_index == index
+
+
+@pytest.mark.parametrize(
+    ("state", "text"),
+    [
+        ("proposing", "plutôt un train plus tôt"),  # pas un numéro : le modèle s'en charge
+        ("proposing", "le 1 ou le 2, je ne sais pas"),  # deux numéros : ambigu
+        ("confirm_1", "c'est combien déjà ?"),
+        ("listening", "un train pour Lille"),
+    ],
+)
+def test_quick_intent_leaves_the_rest_to_the_model(state, text):
+    from orchestrator.session import quick_intent
+
+    assert quick_intent(state, text) is None
+
+
+async def test_repeating_the_same_request_does_not_search_again():
+    async with Harness() as h:
+        await h.text("Un train de Paris pour Lille demain après 14 h")
+        await h.wait("proposing")
+        searches = len(h.agents)
+        await h.text("Un train de Paris pour Lille demain après 14 h")
+        await _until(lambda: h.said().count("J'ai trouvé") == 2, 5)
+        assert len(h.agents) == searches, "pas de nouvelle recherche pour la même demande"
+        await h.session.receive({"type": "cancel"})

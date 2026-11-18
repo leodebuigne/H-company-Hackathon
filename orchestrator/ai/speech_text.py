@@ -27,11 +27,19 @@ def options_summary(options: list[Option]) -> str:
     """3 options au maximum : numéro, nom, prix, note. Se termine en proposant les détails."""
     if not options:
         return "Je n'ai rien trouvé. Voulez-vous que je cherche autrement ?"
+    spoken = options[:MAX_SPOKEN_OPTIONS]
     parts = []
-    for number, option in enumerate(options[:MAX_SPOKEN_OPTIONS], start=1):
+    for number, option in enumerate(spoken, start=1):
         note = f", noté {_rating(option.rating)} sur 5" if option.rating is not None else ""
-        parts.append(f"{number}, {option.title}, {euros(option.price_cents)}{note}")
-    return "J'ai trouvé : " + ". ".join(parts) + ". Voulez-vous des détails sur l'une d'elles ?"
+        parts.append(f"Numéro {number} : {option.title}, {euros(option.price_cents)}{note}")
+    # Dire exactement quoi répondre : « Voulez-vous des détails ? » laissait croire qu'il fallait
+    # répondre oui ou non (retour du 18/11).
+    example = "le 2" if len(spoken) > 1 else "le 1"
+    return (
+        f"J'ai trouvé {len(spoken)} possibilité{'s' if len(spoken) > 1 else ''}. "
+        + ". ".join(parts)
+        + f". Dites le numéro que vous voulez, par exemple « {example} », ou demandez « les détails du 1 »."
+    )
 
 
 def order_statement(summary: OrderSummary) -> str:

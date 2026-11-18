@@ -158,9 +158,28 @@ export default function PiloteApp() {
   };
 
   // Une phrase à dire : à voix haute (mode voix) ou via la région ARIA live (mode lecteur d'écran)
+  // Une seule page Pilote parle à la fois : la dernière démarrée prévient les autres, qui se taisent.
+  // Et une page cachée (onglet en arrière-plan) ne parle pas. Évite la voix en double (18/11).
+  const mutedRef = useRef(false);
+  const channelRef = useRef<BroadcastChannel | null>(null);
+  useEffect(() => {
+    if (typeof BroadcastChannel === "undefined") return;
+    const channel = new BroadcastChannel("pilote-voix");
+    channel.onmessage = (event) => {
+      if (event.data === "je-parle") {
+        mutedRef.current = true;
+        speakerRef.current?.stop();
+      }
+    };
+    channelRef.current = channel;
+    return () => channel.close();
+  }, []);
+
   const tell = useCallback((text: string, audio?: string | null, mime?: string | null) => {
-    if (voiceModeRef.current === "voice") speakerRef.current?.enqueue(text, audio, mime);
-    else setAnnounce((prev) => (prev === text ? `${text} ` : text)); // force la relecture d'un texte identique
+    if (voiceModeRef.current === "voice") {
+      if (mutedRef.current || document.visibilityState !== "visible") return;
+      speakerRef.current?.enqueue(text, audio, mime);
+    } else setAnnounce((prev) => (prev === text ? `${text} ` : text)); // force la relecture d'un texte identique
   }, []);
 
   const onMessage = useCallback(
@@ -197,6 +216,8 @@ export default function PiloteApp() {
     if (startedRef.current) return;
     unlockAudio(); // le navigateur n'autorise le son qu'après un geste de l'utilisateur
     startedRef.current = true;
+    mutedRef.current = false;
+    channelRef.current?.postMessage("je-parle"); // les autres pages Pilote se taisent
     setStarted(true);
     const greeting = lastSay && lastSay.includes("assistant automatique") ? lastSay : `${AI_DISCLOSURE} ${lastSay}`;
     tell(greeting.trim());
@@ -228,6 +249,11 @@ export default function PiloteApp() {
     // En écoute continue, un nouvel appui envoie tout de suite
     if (handsFreeRef.current) return void finishTalking("tap");
     if (recorderRef.current?.isRecording) return;
+    if (mutedRef.current) {
+      // On reparle depuis cette page : c'est elle qui reprend la voix
+      mutedRef.current = false;
+      channelRef.current?.postMessage("je-parle");
+    }
     speakerRef.current?.stop(); // l'utilisateur peut couper la parole à Pilote
     setMicError(null);
     pressedAtRef.current = performance.now();

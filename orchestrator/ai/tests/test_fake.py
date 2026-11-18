@@ -74,8 +74,8 @@ async def test_summarize_options_announces_three_at_most():
     option = Option.model_validate(_load("option-train.json"))
     options = [option.model_copy(update={"rank": r, "id": f"opt-{r}"}) for r in range(1, 6)]
     text = await FakeAI().summarize_options(options)
-    assert "4," not in text
-    assert text.endswith("l'une d'elles ?")
+    assert "Numéro 4" not in text and "Numéro 3" in text
+    assert text.endswith("« les détails du 1 ».")
     assert len(text.split()) <= 60
 
 

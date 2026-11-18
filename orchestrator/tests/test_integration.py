@@ -45,7 +45,7 @@ async def run_order(ai: AI, sentence: str) -> tuple[list[str], str]:
 
 async def test_fake_ai_to_agent_meal():
     (options, statement), _ = await run_order(FakeAI(), "Une pizza margherita grande taille avant 20 h")
-    assert options.startswith("J'ai trouvé : 1, Pizza margherita") and options.endswith("l'une d'elles ?")
+    assert "Numéro 1 : Pizza margherita" in options and options.endswith("« les détails du 1 ».")
     assert (
         statement.startswith("J'ai mis dans le panier 1 Pizza margherita") and "total 14 euros" in statement
     )

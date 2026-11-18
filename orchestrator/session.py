@@ -10,7 +10,8 @@ listening → understanding → searching → proposing → cart → confirm_1 �
 Règle de sécurité : l'agent n'appelle pay() qu'après le premier oui, la relecture de la page
 (même hash) et le deuxième oui. Pendant pay(), l'outil H
 request_payment_approval passe par approve_payment(), qui ne répond "approved" que si l'état est
-`paying` et si la page montre toujours le récapitulatif validé. Tout le reste répond "denied".
+`paying` et si la page montre toujours la commande validée (même total, mêmes quantités : voir
+same_order). Tout le reste répond "denied".
 """
 
 from __future__ import annotations
@@ -77,6 +78,80 @@ NEXT = "Que puis-je faire d'autre pour vous ?"
 WAITING: set[State] = {"listening", "proposing", "confirm_1", "confirm_2", "human_needed"}
 CLIENT_MESSAGE: TypeAdapter[ClientMessage] = TypeAdapter(ClientMessage)
 SendFn = Callable[[dict[str, Any]], Awaitable[None]]
+
+
+_ORDINALS = {
+    1: ("premier", "premiere", "1", "1er", "1ere"),
+    2: ("deuxieme", "second", "seconde", "2", "deux", "2e", "2eme"),
+    3: ("troisieme", "3", "trois", "3e", "3eme"),
+    4: ("quatrieme", "4", "quatre", "4e", "4eme"),
+    5: ("cinquieme", "5", "cinq", "5e", "5eme"),
+    6: ("sixieme", "6", "six", "6e", "6eme"),
+    7: ("septieme", "7", "sept", "7e", "7eme"),
+    8: ("huitieme", "8", "huit", "8e", "8eme"),
+}
+_YES_WORDS = (
+    "oui", "ouais", "ok", "okay", "d accord", "daccord", "vas y", "allez y", "c est bon", "c est ca",
+    "je confirme", "confirme", "exactement", "tout a fait", "bien sur", "paie", "payez", "achete", "valide",
+)  # fmt: skip
+_NO_WORDS = (
+    "non", "nan", "pas du tout", "surtout pas", "n achete pas", "ne paie pas", "pas celle", "pas celui",
+    "attends", "attendez",
+)  # fmt: skip
+_YES = re.compile(r"^(" + "|".join(_YES_WORDS) + r")\b")
+_NO = re.compile(r"^(" + "|".join(_NO_WORDS) + r")\b")
+
+
+def _words(text: str) -> list[str]:
+    return re.sub(r"[^a-z0-9]+", " ", _plain(text).replace("'", " ")).split()
+
+
+def quick_intent(state: State, text: str) -> Intent | None:
+    """Réponses courtes comprises sans le modèle de langage, selon ce que Pilote attend.
+
+    Le modèle confondait parfois « la deuxième » avec une nouvelle demande, et Pilote relançait la
+    recherche (retour du 18/11). Ici : « annule » partout ; « oui », « non » aux confirmations ;
+    « le 2 », « la deuxième », « détails du 3 » quand Pilote propose des options. Sinon None.
+    """
+    words = _words(text)
+    if not words:
+        return None
+    joined = " ".join(words)
+    if words[0] in ("annule", "annuler", "annulez", "stop") or joined.startswith("laisse tomber"):
+        return _intent("cancel", text)
+    if state in ("confirm_1", "confirm_2", "human_needed"):
+        if _YES.match(joined):
+            return _intent("confirm", text)
+        if _NO.match(joined):
+            return _intent("deny", text)
+        return None
+    if state == "proposing" and len(words) <= 8:
+        numbers = [n for n, forms in _ORDINALS.items() if any(w in forms for w in words)]
+        if len(numbers) == 1:
+            wants_details = any(w.startswith(("detail", "decri", "precis", "info")) for w in words)
+            chosen = _intent("details" if wants_details else "choose", text)
+            return chosen.model_copy(update={"choice_index": numbers[0]})
+    return None
+
+
+def same_request(a: Intent, b: Intent | None) -> bool:
+    """La même demande, redite : même catégorie, mêmes précisions, même jour (s'ils sont dits)."""
+    if b is None or a.category != b.category:
+        return False
+    same_details = all(b.details.get(k, "").lower() == v.lower() for k, v in a.details.items())
+    return same_details and a.when.date in (None, b.when.date)
+
+
+def same_order(a: OrderSummary, b: OrderSummary) -> bool:
+    """Même commande pour la personne : même total au centime, mêmes quantités d'articles.
+
+    L'empreinte (hash) dépend aussi des libellés, que l'agent ne recopie jamais deux fois à
+    l'identique (« Billet train Paris → Lille » puis « Billet Paris → Lille ») : comparer les hash
+    annulait des commandes dont rien n'avait changé (retour du 18/11). Le prix, lui, ne bouge pas.
+    """
+    return a.total_cents == b.total_cents and sorted(i.quantity for i in a.items) == sorted(
+        i.quantity for i in b.items
+    )
 
 
 class Abort(Exception):
@@ -400,10 +475,14 @@ class Session:
                 return _intent("deny", "non")
             return _intent("other", text)
         await self._emit(ServerTranscript(role="user", text=text))
-        try:
-            intent = await self.ai.parse_intent(text, self.today(), list(self.history))
-        except AIError:
-            return None
+        quick = quick_intent(self._resume_state, text) if self._waiting else None
+        if quick is not None:
+            intent = quick
+        else:
+            try:
+                intent = await self.ai.parse_intent(text, self.today(), list(self.history))
+            except AIError:
+                return None
         self.history.append({"role": "user", "text": text})
         await self._emit(ServerIntent(intent=intent))
         return intent
@@ -610,6 +689,9 @@ class Session:
                 return options[0]
             elif answer.kind in ("choose", "details", "confirm"):
                 await self._say(f"Dites le numéro de l'option, entre 1 et {len(options)}.")
+            elif answer.kind == "new_request" and same_request(answer, self._intent):
+                # Même demande redite : on ne relance pas la recherche, on relit les options.
+                await self._say(await self.ai.summarize_options(options))
             elif answer.kind in ("refine", "new_request"):
                 await self._set_state("searching")
                 options = (await self._step("refine", self._agent.refine(answer.text)))[:8]
@@ -650,7 +732,7 @@ class Session:
         await self._set_state("recheck")
         current = await self._step("recheck", self._agent.recheck())
         await self._emit(ServerSummary(summary=current))
-        if current.hash != approved.hash or current.order_id != approved.order_id:
+        if current.order_id != approved.order_id or not same_order(current, approved):
             self._journal("price_changed", before=approved.total_cents, after=current.total_cents)
             raise Abort(
                 f"La page a changé depuis votre accord : le total est de {euros(current.total_cents)} "
@@ -791,7 +873,7 @@ class Session:
             and self._armed_hash is not None
             and self._summary is not None
             and summary.order_id == self._summary.order_id
-            and summary.hash == self._armed_hash
+            and same_order(summary, self._summary)
         )
         if not approved and self.state == "paying" and self._summary is not None:
             self._payment_refusal = (
