@@ -55,31 +55,37 @@ export default function Orb({ mode, level = 0, size = 320 }: Props) {
     const c = size / 2;
     const R0 = size * 0.4;
 
-    // Un voile : ruban qui traverse la sphère, plié par des ondes, plus large au milieu.
+    // Un voile : ruban qui s'enroule autour de la sphère (grand cercle vu en perspective = ellipse),
+    // sur une partie du tour seulement, plus large au milieu et qui se retourne comme de la soie.
     const ribbon = (v: (typeof VEILS)[number], R: number, amp: number) => {
-      const dir = v.angle + Math.sin(flow * 0.25 + v.seed) * 0.35;
-      const ux = Math.cos(dir);
-      const uy = Math.sin(dir);
-      const nx = -uy;
-      const ny = ux;
-      const ox = c + nx * v.shift * R;
-      const oy = c + ny * v.shift * R;
+      const rot = v.angle + flow * 0.08 * (v.seed % 2 > 1 ? 1 : -1);
+      const tilt = 0.35 + 0.9 * (0.5 + 0.5 * Math.sin(flow * 0.2 + v.seed)); // inclinaison du tour
+      const ux = Math.cos(rot);
+      const uy = Math.sin(rot);
+      const start = (VEILS.indexOf(v) / VEILS.length) * Math.PI * 2 + flow * 0.15;
+      const span = Math.PI * (1.1 + v.width); // longueur du voile sur le tour
       const steps = 72;
       const top: [number, number][] = [];
       const bottom: [number, number][] = [];
       for (let i = 0; i <= steps; i++) {
-        const s = i / steps; // 0 → 1 le long du ruban
-        const along = (s - 0.5) * 2.0 * R;
-        const fold =
-          Math.sin(s * 4 + flow * 1.1 + v.seed) * 0.3 * amp + Math.sin(s * 7.5 - flow * 1.6 + v.seed * 2) * 0.09 * amp;
-        const twist = Math.sin(s * 3.2 + flow * 0.8 + v.seed * 1.3); // la soie se retourne
-        const half = v.width * R * (0.25 + 0.75 * Math.sin(Math.PI * s)) * (0.35 + 0.65 * Math.abs(twist));
-        const mx = ox + ux * along + nx * fold * R;
-        const my = oy + uy * along + ny * fold * R;
-        top.push([mx + nx * half, my + ny * half]);
-        bottom.push([mx - nx * half, my - ny * half]);
+        const s = i / steps;
+        const th = start + s * span;
+        const ripple = 1 + Math.sin(th * 3 + flow * 1.3 + v.seed) * 0.035 * amp; // le voile ondule
+        const ex = Math.cos(th) * R * 0.9 * ripple;
+        const ey = Math.sin(th) * R * 0.9 * Math.cos(tilt) * ripple;
+        const x = c + ex * ux - ey * uy;
+        const y = c + ex * uy + ey * ux;
+        // largeur : nulle aux extrémités, la soie se retourne par endroits
+        const twist = Math.sin(th * 1.5 + flow * 0.9 + v.seed * 1.3);
+        const half = v.width * R * 1.05 * Math.sin(Math.PI * s) * (0.3 + 0.7 * Math.abs(twist));
+        // direction vers l'extérieur de l'ellipse
+        const len = Math.hypot(x - c, y - c) || 1;
+        const nx = (x - c) / len;
+        const ny = (y - c) / len;
+        top.push([x + nx * half, y + ny * half]);
+        bottom.push([x - nx * half, y - ny * half]);
       }
-      return { top, bottom, ux, uy, ox, oy };
+      return { top, bottom, ux, uy, ox: c, oy: c };
     };
 
     const trace = (pts: [number, number][], move = true) => {
@@ -163,50 +169,50 @@ export default function Orb({ mode, level = 0, size = 320 }: Props) {
         p[0] + (q[0] - p[0]) * f,
         p[1] + (q[1] - p[1]) * f,
       ];
+      // Fumée : chaque volute est faite de filaments flous et translucides qui s'écartent et se tordent,
+      // sans bord net ; un filament plus clair au cœur donne la lumière.
       for (const v of VEILS) {
-        const { top, bottom, ux, uy, ox, oy } = ribbon(v, R, amp);
-        // voile
-        ctx.beginPath();
-        trace(top);
-        trace([...bottom].reverse(), false);
-        ctx.closePath();
-        const fill = ctx.createLinearGradient(ox - ux * R, oy - uy * R, ox + ux * R, oy + uy * R);
-        fill.addColorStop(0, `rgba(${v.color}, 0.02)`);
-        fill.addColorStop(0.5, `rgba(${v.color}, ${0.2 + energy * 0.06})`);
-        fill.addColorStop(1, `rgba(${v.color}, 0.04)`);
-        ctx.fillStyle = fill;
-        ctx.fill();
-        // fibres : fines lignes entre les deux bords, plus visibles près des bords (effet soie)
-        const fibers = 9;
-        for (let k = 1; k < fibers; k++) {
-          const f = k / fibers;
+        const { top, bottom } = ribbon(v, R, amp);
+        const strands = 12;
+        for (let k = 0; k <= strands; k++) {
+          const f = k / strands;
+          const core = 1 - Math.abs(f - 0.5) * 2; // 1 au milieu de la volute, 0 sur ses bords
+          const pts = top.map((p, i) => {
+            const q = lerp(p, bottom[i], f);
+            const sN = i / (top.length - 1);
+            const curl = Math.sin(sN * 9 + flow * 1.4 + v.seed + k * 0.7) * R * 0.025 * (0.5 + amp * 0.5);
+            const dx = p[0] - bottom[i][0];
+            const dy = p[1] - bottom[i][1];
+            const len = Math.hypot(dx, dy) || 1;
+            return [q[0] + (dx / len) * curl, q[1] + (dy / len) * curl] as [number, number];
+          });
           ctx.beginPath();
-          trace(top.map((p, i) => lerp(p, bottom[i], f)));
-          ctx.strokeStyle = `rgba(${v.color}, ${0.06 + 0.16 * Math.abs(f - 0.5) * 2})`;
-          ctx.lineWidth = 0.5;
+          trace(pts);
+          // la volute apparaît et s'efface à ses deux bouts
+          const a0 = pts[0];
+          const a1 = pts[pts.length - 1];
+          const fade = ctx.createLinearGradient(a0[0], a0[1], a1[0], a1[1]);
+          const alpha = (0.07 + 0.2 * core) * (1 + energy * 0.4);
+          fade.addColorStop(0, `rgba(${v.color}, 0)`);
+          fade.addColorStop(0.5, `rgba(${v.color}, ${alpha})`);
+          fade.addColorStop(1, `rgba(${v.color}, 0)`);
+          // corde trop courte (arc presque fermé) : couleur uniforme plutôt qu'un dégradé écrasé
+          ctx.strokeStyle = Math.hypot(a1[0] - a0[0], a1[1] - a0[1]) > R * 0.4 ? fade : `rgba(${v.color}, ${alpha * 0.7})`;
+          ctx.lineCap = "round";
+          ctx.lineWidth = 2 + core * 6;
+          ctx.shadowColor = `rgba(${v.color}, 0.5)`;
+          ctx.shadowBlur = 22;
           ctx.stroke();
         }
-        // pli brillant au milieu du ruban
+        // filament de lumière au cœur de la volute
         ctx.beginPath();
-        trace(top.map((p, i) => lerp(p, bottom[i], 0.35)));
-        ctx.strokeStyle = "rgba(255, 255, 255, 0.28)";
-        ctx.lineWidth = 5;
+        trace(top.map((p, i) => lerp(p, bottom[i], 0.45)));
+        ctx.strokeStyle = `rgba(255, 255, 255, ${0.22 + energy * 0.15})`;
+        ctx.lineWidth = 1;
         ctx.shadowColor = "rgba(255, 255, 255, 0.9)";
-        ctx.shadowBlur = 8;
-        ctx.stroke();
-        // liseré blanc lumineux et bord coloré
-        ctx.beginPath();
-        trace(top);
-        ctx.strokeStyle = "rgba(255, 255, 255, 0.95)";
-        ctx.lineWidth = 0.9;
-        ctx.shadowBlur = 6;
+        ctx.shadowBlur = 10;
         ctx.stroke();
         ctx.shadowBlur = 0;
-        ctx.beginPath();
-        trace(bottom);
-        ctx.strokeStyle = `rgba(${v.color}, 0.55)`;
-        ctx.lineWidth = 0.6;
-        ctx.stroke();
       }
 
       // Bord du verre : anneau bleu lumineux à l'intérieur de la sphère

@@ -116,7 +116,7 @@ body {
 .pilote-talk:focus-visible { outline: none; }
 .pilote-talk:focus-visible .pilote-orb { filter: drop-shadow(0 0 22px rgba(79, 227, 255, 0.55)); }
 .pilote-orb { position: relative; display: block; }
-.pilote-orb-canvas { display: block; }
+.pilote-orb-canvas { display: block; filter: blur(0.6px); }
 .pilote-orb-hint {
   position: absolute; inset: 0; display: grid; place-items: center; font-size: 0.95rem; font-weight: 500;
   color: var(--muted); letter-spacing: -0.01em;
