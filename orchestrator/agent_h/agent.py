@@ -65,7 +65,7 @@ from .models import (
 )
 from .narration import actions_in, describe_action
 from .path_memory import Briefing, PathMemory, briefing_text
-from .shops import named_shop, search_query
+from .shops import MAX_COMPARED, compare_sites, named_shop, search_query, shop_name
 from .site_memory import SiteMemory, domain_of, merge_card, site_memory_from_env, starter_card
 
 OK_STATUSES = {"idle", "completed"}
@@ -100,6 +100,21 @@ def site_for(intent: Intent) -> str:
     return site
 
 
+def comparison_wanted(intent: Intent) -> bool:
+    """Achat en boutique sans boutique imposée : on compare plusieurs boutiques adaptées au produit.
+    PILOTE_COMPARE=0 ou PILOTE_SITE_BOUTIQUE (boutique fixe) reviennent à une seule boutique."""
+    return (
+        intent.category == "boutique"
+        and named_shop(intent) is None
+        and not os.getenv("PILOTE_SITE_BOUTIQUE", "").strip()
+        and os.getenv("PILOTE_COMPARE", "1").strip() != "0"
+    )
+
+
+COMPARE_TIMEOUT_S = 240  # au-delà, une boutique trop lente ne retarde pas les autres
+PER_SHOP = 2  # options gardées par boutique
+
+
 def _fit_effort(spec: dict[str, Any]) -> dict[str, Any]:
     """Seul holo4-27b a des niveaux de réflexion ; les autres modèles n'acceptent que « disabled » (doc H)."""
     model = spec.get("model")
@@ -122,8 +137,14 @@ class ShoppingAgent:
         record_metrics: bool = True,
         max_total_eur: float | None = None,
         auto_approve: bool | None = None,
+        compare_factory: Callable[[], Any] | None = None,
     ) -> None:
         self._client = client
+        # Comparaison entre boutiques : une sous-recherche par boutique, en parallèle (navigateurs H cloud :
+        # pas besoin d'être connecté pour chercher). L'achat se fait ensuite dans le Chrome local.
+        self._compare_factory = compare_factory
+        self._compare: list[tuple[str, str]] = []
+        self._option_sites: dict[str, str] = {}
         self._agent_name = agent if agent is not None else os.getenv("PILOTE_H_AGENT") or None
         self._browser_host = browser_host or os.getenv("PILOTE_BROWSER_HOST") or "user_device"
         self._approval_callback = approval_callback
@@ -504,6 +525,8 @@ class ShoppingAgent:
         raise AgentError(f"Étape {phase} : aucune réponse de l'agent")
 
     async def _send(self, text: str, phase: str) -> AgentAnswer:
+        if await self._ensure_purchase_session(text):
+            return await self._wait(phase)
         if self._session is None:
             raise AgentError("Session non démarrée : appelle start() d'abord.")
         if self._fresh_session_per_step:
@@ -562,8 +585,15 @@ class ShoppingAgent:
 
     # --- interface publique ----------------------------------------------------------
 
-    async def start(self, intent: Intent, site_card: SiteCard | None = None) -> None:
-        self._site = site_for(intent)
+    async def start(self, intent: Intent, site_card: SiteCard | None = None, site: str | None = None) -> None:
+        self._compare, self._option_sites = [], {}
+        if site is None and comparison_wanted(intent):
+            self._compare = compare_sites(intent)[:MAX_COMPARED]
+            self._intent, self.order_id, self._chosen, self._session = intent, "", None, None
+            self._tool_cache.clear()
+            self._paying, self.agent_view_url = False, None
+            return  # pas de session tout de suite : search() lance une recherche par boutique
+        self._site = site or site_for(intent)
         self._start_url = start_url_for(intent, self._site)
         self._real_client = self._real_client or self._client is None  # client simulé dans les tests
         if self._browser_host == "user_device" and self._real_client:
@@ -593,6 +623,7 @@ class ShoppingAgent:
                 with_instructions=bool(self._agent_name) and not self._mirror_portal_agent,
                 with_vault=self._vault_id is not None,
                 memory=briefing_text(self._briefing),
+                note=self._search_note,
             ),
             answer_schema=AgentAnswer,
             tools=self._tools(),
@@ -607,10 +638,104 @@ class ShoppingAgent:
         except Exception:
             self.agent_view_url = None
 
+    _search_note = ""  # consigne de plus pour la recherche (sous-recherche d'une comparaison)
+
     async def search(self) -> list[Option]:
+        if self._compare:
+            self._options = await self._compare_search()
+            return self._options
         answer = await self._wait("search")
         self._options = to_options(answer.options)
         return self._options
+
+    def _new_shop_agent(self) -> Any:
+        if self._compare_factory is not None:
+            return self._compare_factory()
+        sub = ShoppingAgent(browser_host="cloud", memory=self._memory, record_metrics=False)
+        sub._paths = self._paths  # une seule mémoire : pas d'écritures concurrentes du fichier
+        return sub
+
+    async def _compare_search(self) -> list[Option]:
+        """Une recherche par boutique, en même temps ; options mêlées (la meilleure de chaque boutique
+        d'abord), chacune marquée du nom de sa boutique. Une boutique bloquée ou lente est ignorée."""
+        assert self._intent is not None
+        if self.on_progress is not None:
+            names = ", ".join(name for name, _ in self._compare)
+            await self.on_progress(f"Je compare {len(self._compare)} boutiques : {names}.")
+
+        async def one(name: str, url: str) -> list[Option]:
+            sub = self._new_shop_agent()
+            sub._search_note = (
+                f"Comparaison entre boutiques : tu cherches seulement sur {name}. Renvoie au plus "
+                f"{PER_SHOP} options, les plus proches de la demande et dans le budget."
+            )
+            try:
+                await sub.start(self._intent, None, site=url)
+                return (await asyncio.wait_for(sub.search(), COMPARE_TIMEOUT_S))[:PER_SHOP]
+            except Exception:
+                return []  # boutique qui bloque les robots, trop lente ou sans résultat
+            finally:
+                with contextlib.suppress(Exception):
+                    await sub.cancel()
+
+        found = await asyncio.gather(*(one(name, url) for name, url in self._compare))
+        merged: list[Option] = []
+        for rank in range(PER_SHOP):
+            for (name, url), options in zip(self._compare, found, strict=True):
+                if rank < len(options):
+                    option = options[rank]
+                    oid = f"o{len(merged) + 1}"
+                    self._option_sites[oid] = url
+                    merged.append(
+                        option.model_copy(
+                            update={
+                                "id": oid,
+                                "rank": len(merged) + 1,
+                                "title": f"{option.title} – {name}",
+                                "details": {**option.details, "shop": name},
+                            }
+                        )
+                    )
+        return merged
+
+    async def _ensure_purchase_session(self, step: str) -> bool:
+        """Comparaison : la session d'achat démarre sur la boutique choisie, dans le Chrome local.
+        Renvoie True si elle vient d'être créée avec `step` comme premier message."""
+        if not self._compare or self._session is not None or self._chosen is None:
+            return False
+        site = self._option_sites.get(self._chosen.id, "")
+        self._compare = []  # désormais, une seule boutique : celle de l'option choisie
+        self._site, self._start_url = site, site
+        client = await self._ensure_client()
+        if self._browser_host == "user_device" and self._real_client:
+            await asyncio.to_thread(local_chrome.ensure, site)
+            await asyncio.to_thread(local_chrome.fresh_page, site)
+        domain = domain_of(site)
+        self._site_card = await self._memory.get(domain) or starter_card(domain)
+        if self._paths is not None:
+            self._briefing = await asyncio.to_thread(self._paths.begin_visit, domain)
+        self._metrics = RunMetrics(site=domain, agent=self._agent_name or "inline", started=time.monotonic())
+        self._session = await client.start_session(
+            agent=self._agent_spec(),
+            messages=prompts.purchase_message(
+                self._intent,
+                site,
+                shop_name(site),
+                self._site_card,
+                self._chosen,
+                step,
+                memory=briefing_text(self._briefing),
+            ),
+            answer_schema=AgentAnswer,
+            tools=self._tools(),
+            idempotency_key=uuid.uuid4().hex,
+            timezone="Europe/Paris",
+            **({"idle_timeout_s": self._idle_timeout_s} if self._idle_timeout_s else {}),
+        )
+        self._cursor = 0
+        with contextlib.suppress(Exception):
+            self.agent_view_url = getattr(await self._session.get(), "agent_view_url", None)
+        return True
 
     async def refine(self, message: str) -> list[Option]:
         answer = await self._send(prompts.refine_message(message), "refine")

@@ -34,6 +34,7 @@ from pydantic import BaseModel, TypeAdapter, ValidationError
 
 from orchestrator.agent_h.base import AgentError, NeedsHuman, PaymentDenied, UnapprovedPurchase
 from orchestrator.agent_h.card import NewCard, parse_cvc, parse_expiry, parse_number
+from orchestrator.agent_h.shops import shop_name
 from orchestrator.agent_h.site_memory import domain_of
 from orchestrator.ai.hf import QUESTIONS, SPEAK_MIME, AIError, complete_intent
 from orchestrator.ai.speech_text import euros
@@ -862,7 +863,12 @@ class Session:
         """
         previous = self.state
         category = self._intent.category if self._intent else None
-        site = SITE_NAMES.get(domain_of(self._agent_site())) or CATEGORY_SITES.get(category or "", "ce site")
+        agent_site = self._agent_site()
+        site = (
+            SITE_NAMES.get(domain_of(agent_site))
+            or (shop_name(agent_site) if agent_site else "")
+            or CATEGORY_SITES.get(category or "", "ce site")
+        )
         try:
             if kind == "holder":
                 return await self._secret_answer(

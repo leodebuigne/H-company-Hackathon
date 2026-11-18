@@ -124,3 +124,12 @@ Base : `partie-5` (contrats et squelette), puis `partie-2` (IA), `partie-4` (int
 - Catégorie « boutique » : la boutique nommée par la personne (« sur Amazon », « chez Fnac », Leroy Merlin, Ikea, Darty…), sinon Amazon.fr (`PILOTE_SITE_BOUTIQUE` pour changer). Sur Amazon, l'agent arrive directement sur les résultats (`/s?k=`).
 - Mesuré : « abat-jour style moderne, budget 3000 € » sur Amazon, 3 options dans le budget en 33 s et 4 actions.
 
+## 2026-11-18 : comparaison entre boutiques
+
+- Achat en boutique sans boutique nommée (et sans `PILOTE_SITE_BOUTIQUE`) : Pilote compare jusqu'à 3 boutiques adaptées au type de produit (`shops.CATALOG` : canapé → Maisons du Monde, Conforama, Ikea ; casque → Fnac, Darty, Boulanger ; vélo → Decathlon… ; sinon Cdiscount, La Redoute, Fnac). Amazon ou Fnac seulement s'ils sont nommés ou adaptés.
+- Les recherches tournent en parallèle, une session H par boutique, en navigateur cloud (pas besoin d'être connecté pour chercher) ; au plus 3 à la fois (offre gratuite H), 2 options par boutique, mêlées (la meilleure de chaque boutique d'abord), titre suivi du nom de la boutique. Une boutique bloquée, lente (240 s) ou sans résultat est ignorée.
+- Après le choix, l'achat se fait dans le Chrome local (comptes connectés) : nouvelle session sur la boutique choisie, l'agent retrouve le produit par la barre de recherche et vérifie le prix.
+- Poltronesofà retiré : site vitrine, pas de prix ni de vente en ligne (« Visitez nos magasins »).
+- Réponses de l'agent plus tolérantes : détails de produit libres (couleur, places…) acceptés au lieu de rejeter toute la boutique.
+- Mesuré : canapé d'angle gris, budget 1500 €, 6 options de 3 boutiques en 86 s. Achat après comparaison non testé en réel.
+

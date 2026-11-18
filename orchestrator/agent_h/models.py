@@ -13,7 +13,7 @@ import datetime as dt
 import json
 from decimal import ROUND_HALF_UP, Decimal
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from orchestrator.contracts import Fee, Option, OrderItem, OrderSummary, summary_hash
 from orchestrator.ports import PaymentResult
@@ -24,7 +24,10 @@ MAX_OPTIONS = 8
 
 
 class OptionDetails(BaseModel):
-    """Détails d'une option, à champs fixes : un dictionnaire libre est moins sûr en sortie structurée."""
+    """Détails d'une option. Champs connus pour les trains et les repas ; pour un produit, d'autres clés
+    (color, size, dimensions…) sont acceptées : rejeter la réponse ferait perdre toute la boutique."""
+
+    model_config = ConfigDict(extra="allow")
 
     departure: str | None = Field(default=None, description="Train : heure de départ, HH:MM")
     arrival: str | None = Field(default=None, description="Train : heure d'arrivée, HH:MM")
@@ -42,6 +45,19 @@ class AgentOption(BaseModel):
     description: str | None = None
     conditions: str | None = Field(default=None, description="Conditions d'échange ou de remboursement")
     details: OptionDetails = Field(default_factory=OptionDetails)
+
+    @field_validator("details", mode="before")
+    @classmethod
+    def _lenient_details(cls, value: object) -> object:
+        """Texte libre ou valeurs non textuelles : on garde ce qui est lisible au lieu de tout rejeter."""
+        if value is None:
+            return {}
+        if isinstance(value, str):
+            return {"info": value[:200]} if value.strip() else {}
+        if isinstance(value, dict):
+            return {str(k): str(v)[:200] for k, v in value.items() if v not in (None, "", [], {})}
+        return {}
+
     url: str | None = None
 
 

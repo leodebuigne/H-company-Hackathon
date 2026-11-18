@@ -140,12 +140,14 @@ def search_message(
     with_instructions: bool,
     with_vault: bool = False,
     memory: str = "",
+    note: str = "",
 ) -> str:
     head = generic_instructions(with_vault) + "\n" if with_instructions else ""
     login = LOGIN_FIRST + "\n\n" if with_vault else ""
     remembered = f"{memory}\n" if memory else ""
     return (
         f"{head}{site_card_text(card)}\n\n{remembered}{intent_text(intent, site)}\n\n{login}"
+        f"{note + chr(10) if note else ''}"
         "Étape : recherche. Trouve les options et renvoie-les dans le champ options. "
         "Ne mets rien dans le panier pour l'instant."
     )
@@ -228,4 +230,26 @@ def pay_message() -> str:
         "validation dans son application, attends jusqu'à 5 minutes que le titulaire valide sur son "
         "téléphone. Renvoie ensuite payment_result (refused, accepted ou unknown), le message exact "
         "affiché dans payment_message, et site_notes."
+    )
+
+
+def purchase_message(
+    intent: Intent,
+    site: str,
+    shop: str,
+    card: SiteCard | None,
+    chosen: Option,
+    step: str,
+    memory: str = "",
+) -> str:
+    """Achat après une comparaison : nouvelle session sur la boutique choisie, à partir de son accueil."""
+    remembered = f"{memory}\n" if memory else ""
+    return (
+        f"{site_card_text(card)}\n\n{remembered}{intent_text(intent, site)}\n\n"
+        f"Contexte : plusieurs boutiques ont été comparées et l'utilisateur a choisi une option chez {shop}. "
+        f"Le navigateur est ouvert sur l'accueil de {shop}. Retrouve ce produit avec la barre de recherche du "
+        "site (tape son nom tel qu'il est écrit, sans le nom de la boutique), ouvre sa page et vérifie que c'est "
+        "le même produit au même prix. S'il n'est plus disponible ou si le prix a changé, arrête-toi et "
+        "explique-le dans blocked_reason.\n"
+        f"{option_text(chosen)}\n\n{step}"
     )

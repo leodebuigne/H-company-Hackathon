@@ -970,3 +970,109 @@ def test_agent_instructions_have_the_card_rule():
 
     text = generic_instructions()
     assert "request_card" in text and "fill_card_field" in text and "DÉCOCHÉE" in text
+
+
+# --- comparaison entre boutiques ------------------------------------------------------
+
+
+from orchestrator.contracts import Option  # noqa: E402
+
+
+class _ShopSearch:
+    """Sous-recherche simulée : une boutique, ses options (ou une panne)."""
+
+    calls: list[str] = []
+
+    def __init__(self, catalogue: dict[str, list[tuple[str, int]] | None]) -> None:
+        self.catalogue, self.site, self._search_note = catalogue, "", ""
+
+    async def start(self, intent, site_card=None, site=None):
+        self.site = site
+        _ShopSearch.calls.append(site)
+
+    async def search(self):
+        found = self.catalogue[self.site]
+        if found is None:
+            raise AgentError("site bloqué")
+        return [
+            Option(id=f"o{i + 1}", rank=i + 1, title=t, price_cents=p, currency="EUR", rating=None,
+                   description=None, conditions=None, details={}, url=None)
+            for i, (t, p) in enumerate(found)
+        ]  # fmt: skip
+
+    async def cancel(self):
+        pass
+
+
+def _sofa():
+    return PIZZA.model_copy(
+        update={"category": "boutique", "object": "canapé d'angle", "text": "un canapé d'angle",
+                "details": {}, "constraints": [], "budget_cents": 150000}
+    )  # fmt: skip
+
+
+async def test_without_a_named_shop_several_shops_are_compared_in_parallel(monkeypatch):
+    from orchestrator.agent_h.shops import CONFORAMA, IKEA, MAISONS_DU_MONDE
+
+    monkeypatch.delenv("PILOTE_SITE_BOUTIQUE", raising=False)
+    catalogue = {
+        MAISONS_DU_MONDE[1]: [("Canapé Alba", 89900), ("Canapé Dafne", 129900)],
+        CONFORAMA[1]: None,  # bloque les robots : ignoré
+        IKEA[1]: [("Canapé Monaco", 59900)],
+    }
+    _ShopSearch.calls = []
+    agent = ShoppingAgent(
+        client=_FakeClient(lambda: _FakeSession(ANSWERS, agent)),
+        memory=InMemorySiteMemory(),
+        record_metrics=False,
+        compare_factory=lambda: _ShopSearch(catalogue),
+    )  # type: ignore[arg-type]
+    said = []
+
+    async def progress(text):
+        said.append(text)
+
+    agent.on_progress = progress
+    await agent.start(_sofa())
+    options = await agent.search()
+    assert sorted(_ShopSearch.calls) == sorted(url for _, url in (MAISONS_DU_MONDE, CONFORAMA, IKEA))
+    assert [o.title for o in options] == [
+        "Canapé Alba – Maisons du Monde",
+        "Canapé Monaco – Ikea",  # la meilleure de chaque boutique d'abord
+        "Canapé Dafne – Maisons du Monde",
+    ]
+    assert [o.id for o in options] == ["o1", "o2", "o3"] and options[1].details["shop"] == "Ikea"
+    assert "Je compare 3 boutiques" in said[0]
+
+    await agent.choose("o2")  # achat chez Ikea, dans une nouvelle session
+    await agent._ensure_purchase_session("Étape : achat.")
+    assert agent._site == IKEA[1]
+    first = agent._client.started["messages"]
+    assert "choisi une option chez Ikea" in first and "Canapé Monaco" in first
+
+
+def test_product_details_do_not_make_the_answer_rejected():
+    from orchestrator.agent_h.models import AgentAnswer, to_options
+
+    answer = AgentAnswer.model_validate(
+        {
+            "options": [
+                {"id": "o1", "title": "Canapé", "price_eur": 899, "details": {"color": "gris", "places": 3}},
+                {"id": "o2", "title": "Canapé B", "price_eur": 799, "details": "Livré en 3 semaines"},
+            ]
+        }
+    )
+    options = to_options(answer.options)
+    assert options[0].details == {"color": "gris", "places": "3"}
+    assert options[1].details == {"info": "Livré en 3 semaines"}
+
+
+def test_named_shop_or_fixed_shop_means_no_comparison(monkeypatch):
+    from orchestrator.agent_h.agent import comparison_wanted
+
+    monkeypatch.delenv("PILOTE_SITE_BOUTIQUE", raising=False)
+    assert comparison_wanted(_sofa())
+    assert not comparison_wanted(_sofa().model_copy(update={"text": "un canapé chez Ikea"}))
+    assert not comparison_wanted(PIZZA)  # repas : Uber Eats
+    monkeypatch.setenv("PILOTE_COMPARE", "0")
+    assert not comparison_wanted(_sofa())

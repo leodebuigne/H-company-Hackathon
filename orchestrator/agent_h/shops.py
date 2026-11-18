@@ -64,3 +64,69 @@ MONTHS_FR = [
     "janvier", "février", "mars", "avril", "mai", "juin",
     "juillet", "août", "septembre", "octobre", "novembre", "décembre",
 ]  # fmt: skip
+
+
+# --- comparaison entre boutiques (aucune boutique nommée) -----------------------------
+
+# Boutiques par type de produit, les plus spécialisées d'abord. Adresses vérifiées le 2026-11-18.
+MAISONS_DU_MONDE = ("Maisons du Monde", "https://www.maisonsdumonde.com/FR/fr")
+IKEA = ("Ikea", "https://www.ikea.com/fr/fr/")
+CONFORAMA = ("Conforama", "https://www.conforama.fr")
+LA_REDOUTE = ("La Redoute", "https://www.laredoute.fr")
+FNAC = ("Fnac", "https://www.fnac.com")
+DARTY = ("Darty", "https://www.darty.com")
+BOULANGER = ("Boulanger", "https://www.boulanger.com")
+CDISCOUNT = ("Cdiscount", "https://www.cdiscount.com")
+DECATHLON = ("Decathlon", "https://www.decathlon.fr")
+INTERSPORT = ("Intersport", "https://www.intersport.fr")
+LEROY_MERLIN = ("Leroy Merlin", "https://www.leroymerlin.fr")
+CASTORAMA = ("Castorama", "https://www.castorama.fr")
+MANOMANO = ("ManoMano", "https://www.manomano.fr")
+ZALANDO = ("Zalando", "https://www.zalando.fr")
+GALERIES_LAFAYETTE = ("Galeries Lafayette", "https://www.galerieslafayette.com")
+CULTURA = ("Cultura", "https://www.cultura.com")
+KING_JOUET = ("King Jouet", "https://www.king-jouet.com")
+SEPHORA = ("Sephora", "https://www.sephora.fr")
+NOCIBE = ("Nocibé", "https://www.nocibe.fr")
+
+CATALOG: list[tuple[str, list[tuple[str, str]]]] = [
+    # Poltronesofà n'est pas proposé : site vitrine sans prix ni vente en ligne (vu le 2026-11-18).
+    (r"canap|sofa|fauteuil|m[ée]ridienne|pouf", [MAISONS_DU_MONDE, CONFORAMA, IKEA]),
+    (r"\blit\b|matelas|sommier|armoire|commode|table|chaise|buffet|meuble|[ée]tag[èe]re|bureau|dressing",
+     [MAISONS_DU_MONDE, IKEA, CONFORAMA]),
+    (r"lampe|abat|luminaire|suspension|lampadaire|miroir|tapis|rideau|coussin|d[ée]co|vase|plaid",
+     [MAISONS_DU_MONDE, IKEA, LA_REDOUTE]),
+    (r"frigo|r[ée]frig[ée]rateur|lave|four|micro.?onde|aspirateur|cafeti[èe]re|machine [àa] caf[ée]|"
+     r"bouilloire|grille.?pain|plaque", [DARTY, BOULANGER, CDISCOUNT]),
+    (r"casque|[ée]couteur|t[ée]l[ée]|tv|ordinateur|\bpc\b|portable|smartphone|t[ée]l[ée]phone|tablette|"
+     r"console|enceinte|appareil photo|montre connect", [FNAC, DARTY, BOULANGER]),
+    (r"v[ée]lo|running|course|tente|ballon|raquette|sport|randonn|\bski\b|fitness|yoga|natation",
+     [DECATHLON, INTERSPORT, CDISCOUNT]),
+    (r"perceuse|visseuse|outil|peinture|parquet|carrelage|tondeuse|barbecue|jardin|robinet|[ée]chelle",
+     [LEROY_MERLIN, CASTORAMA, MANOMANO]),
+    (r"chaussure|basket|veste|manteau|robe|pantalon|jean|t.?shirt|pull|chemise|sac\b|v[êe]tement",
+     [ZALANDO, LA_REDOUTE, GALERIES_LAFAYETTE]),
+    (r"parfum|maquillage|cr[èe]me|soin|shampo|rouge [àa] l[èe]vres", [SEPHORA, NOCIBE]),
+    (r"livre|roman|\bbd\b|manga|jeu vid[ée]o", [FNAC, CULTURA]),
+    (r"jouet|lego|puzzle|poup[ée]e|peluche|jeu de soci[ée]t[ée]", [KING_JOUET, FNAC, CULTURA]),
+]  # fmt: skip
+GENERALISTS = [CDISCOUNT, LA_REDOUTE, FNAC]
+MAX_COMPARED = 3  # sessions H en même temps : 3 au plus avec l'offre gratuite
+
+
+def compare_sites(intent: Intent) -> list[tuple[str, str]]:
+    """Boutiques à comparer pour cet objet (nom, adresse), les plus adaptées d'abord."""
+    said = f"{intent.object or ''} {intent.text or ''}".lower()
+    for pattern, shops in CATALOG:
+        if re.search(pattern, said):
+            return shops[:MAX_COMPARED]
+    return GENERALISTS[:MAX_COMPARED]
+
+
+def shop_name(url: str) -> str:
+    """Nom lisible d'une boutique à partir de son adresse."""
+    known = {u: n for _, shops in CATALOG for n, u in shops} | {u: n for n, u in GENERALISTS}
+    if url in known:
+        return known[url]
+    host = re.sub(r"^https?://(www\.)?", "", url).split("/")[0]
+    return host
