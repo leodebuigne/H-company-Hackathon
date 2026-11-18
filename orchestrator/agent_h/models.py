@@ -10,6 +10,7 @@ devine jamais un montant.
 from __future__ import annotations
 
 import datetime as dt
+import json
 from decimal import ROUND_HALF_UP, Decimal
 
 from pydantic import BaseModel, Field, field_validator
@@ -77,6 +78,16 @@ class SiteNotes(BaseModel):
     useful_buttons: list[str] = Field(default_factory=list, description="Libellés exacts des boutons utiles")
 
 
+def parse_json_text(value: object) -> object:
+    """« {\"items\": …} » (texte) -> dict. Tout autre valeur est rendue telle quelle."""
+    if isinstance(value, str) and value.strip().startswith("{"):
+        try:
+            return json.loads(value)
+        except ValueError:
+            return value
+    return value
+
+
 class AgentAnswer(BaseModel):
     """Format unique de réponse de l'agent, quelle que soit la phase."""
 
@@ -88,7 +99,9 @@ class AgentAnswer(BaseModel):
         # L'agent répond parfois options = null quand il n'a rien trouvé : c'est une liste vide
         return [] if value is None else value
 
-    order_summary: AgentOrderSummary | None = Field(
+    # Le modèle envoie parfois ces objets sous forme de texte JSON : on l'accepte au lieu de le rejeter
+    # (sinon l'agent recommence sa réponse plusieurs fois, ou le paiement est refusé à tort).
+    order_summary: AgentOrderSummary | str | None = Field(
         default=None, description="Récapitulatif exact de la page de paiement"
     )
     payment_result: PaymentResult | None = Field(
@@ -96,7 +109,22 @@ class AgentAnswer(BaseModel):
     )
     payment_message: str | None = Field(default=None, description="Message exact du site ou de la banque")
     blocked_reason: str | None = Field(default=None, description="Raison si tu n'as pas pu continuer")
-    site_notes: SiteNotes | None = None
+    site_notes: SiteNotes | str | None = None
+
+    @field_validator("order_summary", "site_notes", mode="before")
+    @classmethod
+    def _json_text(cls, value: object) -> object:
+        return parse_json_text(value)
+
+    @field_validator("order_summary", mode="after")
+    @classmethod
+    def _summary_object(cls, value: object) -> object:
+        return value if isinstance(value, AgentOrderSummary) else None
+
+    @field_validator("site_notes", mode="after")
+    @classmethod
+    def _notes_object(cls, value: object) -> object:
+        return value if isinstance(value, SiteNotes) else None
 
 
 # --- Conversion vers les contrats -----------------------------------------------------

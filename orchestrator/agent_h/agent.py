@@ -51,7 +51,7 @@ from .base import (
     UnapprovedPurchase,
 )
 from .metrics import RunMetrics, append_result
-from .models import AgentAnswer, AgentOrderSummary, to_options, to_order_summary
+from .models import AgentAnswer, AgentOrderSummary, parse_json_text, to_options, to_order_summary
 from .narration import actions_in, describe_action
 from .site_memory import SiteMemory, domain_of, merge_card, site_memory_from_env, starter_card
 
@@ -120,6 +120,7 @@ class ShoppingAgent:
         self._real_client = False
         self._portal: dict[str, Any] | None = None
         self.last_payment_message: str | None = None  # message du site après un achat
+        self.last_denial_reason: str | None = None  # pourquoi le garde-fou a refusé de payer
         # Commentaire en direct : appelé avec une phrase courte à chaque action notable de l'agent
         self.on_progress: Callable[[str], Awaitable[None]] | None = None
         self._cursor = 0
@@ -153,6 +154,7 @@ class ShoppingAgent:
         """Décision de l'outil request_payment_approval. Tout ce qui est douteux donne "denied"."""
         # Le SDK passe les arguments tels que l'agent les envoie : un dict JSON, pas un objet.
         try:
+            summary = parse_json_text(summary)  # le modèle l'envoie parfois en texte JSON
             raw = (
                 summary
                 if isinstance(summary, AgentOrderSummary)
@@ -160,6 +162,8 @@ class ShoppingAgent:
             )
             order = to_order_summary(raw, order_id=self.order_id, site=self._site or "inconnu")
         except Exception:
+            self.last_denial_reason = "le récapitulatif du panier était illisible"
+            self._pay_denied = self._pay_denied or self._paying
             return "denied"  # récapitulatif illisible : on ne paie pas
         key = ("pay", order.hash)
         if key in self._tool_cache:  # appels répétés pour la même action : même réponse
@@ -168,12 +172,15 @@ class ShoppingAgent:
             return "denied"  # hors de l'étape pay() : l'agent ne paie jamais de lui-même (pas mis en cache)
         if order.total_cents > self._max_total_eur * 100:
             decision = "denied"  # paiement réel : jamais au-delà du plafond
+            self.last_denial_reason = "le total dépassait le plafond autorisé"
         elif self._approval_callback is not None:
             try:
                 answer = await self._approval_callback(order)
             except Exception:
                 answer = "denied"  # erreur ou délai dépassé côté orchestrateur : refus
             decision = "approved" if answer == "approved" else "denied"
+            if decision == "denied":
+                self.last_denial_reason = "Pilote n'a pas autorisé ce paiement"
         else:
             decision = "approved" if self._auto_approve else "denied"
         self._tool_cache[key] = decision
@@ -495,7 +502,7 @@ class ShoppingAgent:
             raise PaymentDenied(str(blocked)) from blocked
         finally:
             self._paying = False
-        if answer.payment_result is None:
+        if answer.payment_result is None or self._pay_denied:
             await self._finish("paiement non effectué", "-")
             raise PaymentDenied(
                 answer.blocked_reason or "L'agent n'a pas pu payer (plafond ou total illisible)."
@@ -510,6 +517,7 @@ class ShoppingAgent:
         if not self.order_id:
             self.order_id = str(uuid.uuid4())
         self.last_payment_message = None
+        self.last_denial_reason = None
         self._paying, self._pay_denied = True, False
         try:
             answer = await self._send(prompts.buy_message(self._chosen), "buy")
@@ -520,9 +528,11 @@ class ShoppingAgent:
             raise PaymentDenied(str(blocked)) from blocked
         finally:
             self._paying = False
-        if answer.payment_result is None:
+        if answer.payment_result is None or self._pay_denied:
             await self._finish("achat non effectué", "-")
-            raise PaymentDenied(answer.blocked_reason or "L'agent n'a pas pu acheter.")
+            raise PaymentDenied(
+                self.last_denial_reason or answer.blocked_reason or "L'agent n'a pas pu acheter."
+            )
         self.last_payment_message = answer.payment_message
         await self._finish("achat direct", answer.payment_result, answer)
         return answer.payment_result

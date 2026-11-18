@@ -758,8 +758,12 @@ class Session:
             await self._step("choose", self._agent.choose(option.id))
             result = await self._step("buy", self._agent.buy())
         except PaymentDenied as error:
-            reason = self._payment_refusal or "le site n'a pas permis l'achat"
-            raise Abort(f"Je n'ai pas acheté : {reason}. Rien n'a été débité.") from error
+            reason = (
+                self._payment_refusal
+                or getattr(self._agent, "last_denial_reason", None)
+                or "le site n'a pas permis l'achat"
+            )
+            raise Abort(f"Je n'ai pas acheté : {reason}. Rien n'a été payé.") from error
         finally:
             self._direct_limit = None
         self._journal("payment", result=result, direct=True)

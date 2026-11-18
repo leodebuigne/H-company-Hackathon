@@ -804,3 +804,35 @@ async def test_session_stays_open_between_steps_so_the_agent_keeps_its_memory(mo
     await agent.checkout()
     assert len(starts) == 1 and starts[0]["idle_timeout_s"] == 900  # une seule session, gardée ouverte
     assert len(sessions[0].sent) == 1 and "Étape : panier" in sessions[0].sent[0]
+
+
+def test_answer_accepts_summary_and_notes_sent_as_json_text():
+    from orchestrator.agent_h.models import AgentAnswer
+
+    answer = AgentAnswer.model_validate(
+        {
+            "order_summary": '{"items": [{"name": "TGV", "quantity": 1, "total_eur": 0}], "total_eur": 0}',
+            "site_notes": '{"steps": ["Clique sur le train"]}',
+            "payment_result": "accepted",
+        }
+    )
+    assert answer.order_summary is not None and answer.order_summary.total_eur == 0
+    assert answer.site_notes is not None and answer.site_notes.steps == ["Clique sur le train"]
+    assert AgentAnswer.model_validate({"site_notes": "texte libre"}).site_notes is None
+
+
+async def test_payment_tool_reads_a_summary_sent_as_json_text():
+    approvals = []
+
+    async def approve(summary):
+        approvals.append(summary.total_cents)
+        return "approved"
+
+    agent = ShoppingAgent(
+        client=object(), approval_callback=approve, memory=InMemorySiteMemory(), record_metrics=False
+    )  # type: ignore[arg-type]
+    agent.order_id, agent._paying, agent._site = ORDER_ID, True, "https://www.sncf-connect.com"
+    text = '{"items": [{"name": "TGV INOUI 06:32", "quantity": 1, "total_eur": 0}], "total_eur": 0}'
+    assert await agent._decide_payment(text) == "approved" and approvals == [0]
+    assert await agent._decide_payment("pas du JSON") == "denied"
+    assert agent.last_denial_reason == "le récapitulatif du panier était illisible"
