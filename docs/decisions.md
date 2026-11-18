@@ -180,3 +180,8 @@ Test à la voix sur SNCF : code bon, paiement autorisé, l'agent clique, puis un
 - **Chrome local** (agent du portail recopié, sous-agents compris) : recherche 115 s, 3 options justes (dont 0 € avec MAX JEUNE) ; panier bloqué par des coupures du lien local avec H. Aucun sous-agent appelé.
 - **Navigateur cloud H** (`PILOTE_BROWSER_HOST=cloud`, agent du portail tel quel) : démarrage 2 s, recherche 76 s, page de paiement 136 s (« Valider et payer », 71 €), relecture identique 146 s. Pas de CAPTCHA jusqu'au paiement, sans être connecté : prix plein tarif (71 € au lieu de 49 € ou 0 € avec l'abonnement du compte). Aucun sous-agent appelé.
 - Les sous-agents ne servent pas sur ce parcours : le modèle ne délègue pas une navigation sur une page déjà ouverte.
+
+## 2026-11-18 : questions dans le cloud H, nouvelle interface (v2 locale, membre 4)
+
+- **Questions** : `PILOTE_H_QUESTION_AGENT=pilote-shopper` fait répondre aux questions par l'agent du portail tel quel (navigateur cloud H, sous-agents de lecture). Les commandes restent sur le Chrome local. Mesuré : « à quelle heure ferme la gare de Lille Flandres ? », réponse sourcée en 23 s. L'agent n'a pas délégué à ses sous-agents sur cette question.
+- **Interface** : fond blanc, halo bleu lumineux autour du micro (respire au repos, tourne pendant le travail de l'agent, suit le niveau du micro), conversation toujours visible en bulles bleues (personne) et grises (Pilote), indicateur « en train d'écrire », police système (SF Pro sur Mac). L'écran du jury suit le même style.

@@ -714,6 +714,7 @@ async def test_portal_agent_is_mirrored_onto_the_local_chrome(monkeypatch):
                     "environments": ["chrome"],
                     "instructions": "CONSIGNES DU PORTAIL",
                     "skills": ["h/visual-browser", "h/answering"],
+                    "subagents": ["h/web-scraper-flash"],
                     "model": None,
                     "reasoning_effort": "medium",
                 }
@@ -741,6 +742,7 @@ async def test_portal_agent_is_mirrored_onto_the_local_chrome(monkeypatch):
         "h/answering",
     ]
     assert spec["reasoning_effort"] == "medium" and "model" not in spec
+    assert spec["subagents"] == ["h/web-scraper-flash"]  # sous-agents du portail gardés
     assert env["host"] == "user_device" and env["mode"] == {"type": "visual", "markdown": True}
     assert "vault_id" not in env
     assert "CONSIGNES DU PORTAIL" not in client.started["messages"]  # pas de doublon dans le message

@@ -258,6 +258,10 @@ class ShoppingAgent:
         }
         if agent.get("skills"):
             spec["skills"] = agent["skills"]
+        # Sous-agents du portail (lecture rapide du web) : ils gardent leurs propres navigateurs chez H,
+        # l'agent principal reste sur le Chrome local (compte connecté, paiement).
+        if agent.get("subagents"):
+            spec["subagents"] = agent["subagents"]
         model = (os.getenv("PILOTE_H_MODEL") or "").strip() or agent.get("model")
         if model:
             spec["model"] = model
@@ -530,9 +534,14 @@ class ShoppingAgent:
         self._metrics = RunMetrics(
             site="question", agent=self._agent_name or "inline", started=time.monotonic()
         )
+        # Questions : agent du portail tel quel, dans le navigateur cloud de H, avec ses sous-agents de
+        # lecture rapide (PILOTE_H_QUESTION_AGENT). Aucun compte ni paiement : le Chrome local reste aux commandes.
+        question_agent = os.getenv("PILOTE_H_QUESTION_AGENT", "").strip() or None
         self._session = await client.start_session(
-            agent=self._agent_spec(),
-            messages=prompts.question_message(question, with_instructions=bool(self._agent_name)),
+            agent=question_agent or self._agent_spec(),
+            messages=prompts.question_message(
+                question, with_instructions=bool(question_agent or self._agent_name)
+            ),
             answer_schema=AgentAnswer,
             tools=self._tools(),
             idempotency_key=uuid.uuid4().hex,

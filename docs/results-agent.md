@@ -46,3 +46,7 @@ Une ligne par commande, ajoutée automatiquement par orchestrator/agent_h/metric
 | 2026-11-18 17:02 | www.sncf-connect.com | inline | annulée | 171 | 2 | - |
 | 2026-11-18 17:05 | www.sncf-connect.com | inline | annulée | 80 | 12 | - |
 | 2026-11-18 21:07 | www.sncf-connect.com | inline | annulée | 586 | ? | - |
+| 2026-11-18 21:21 | www.sncf-connect.com | pilote-shopper | annulée | 295 | 7 | - |
+| 2026-11-18 21:27 | www.sncf-connect.com | pilote-shopper | annulée | 146 | 1 | - |
+| 2026-11-18 21:33 | question | inline | question | 58 | 6 | - |
+| 2026-11-18 21:36 | question | inline | question | 46 | 4 | - |
