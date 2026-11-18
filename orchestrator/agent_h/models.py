@@ -88,6 +88,37 @@ def parse_json_text(value: object) -> object:
     return value
 
 
+def summary_from_cents(value: object) -> object:
+    """Récapitulatif au format du contrat (centimes : total_cents…) -> format de l'agent (euros).
+
+    L'agent remplit parfois le format du contrat ; sans cette conversion, le total paraissait
+    illisible et le paiement était refusé à tort (mesuré le 2026-11-18).
+    """
+    if not isinstance(value, dict) or "total_eur" in value or "total_cents" not in value:
+        return value
+
+    def eur(cents: object) -> float | None:
+        return None if cents is None else round(float(cents) / 100, 2)  # type: ignore[arg-type]
+
+    converted = dict(value)
+    converted["total_eur"] = eur(value.get("total_cents"))
+    converted["items"] = [
+        {
+            **item,
+            "unit_price_eur": eur(item.get("unit_price_cents")),
+            "total_eur": eur(item.get("total_cents")),
+        }
+        for item in value.get("items") or []
+        if isinstance(item, dict)
+    ]
+    converted["fees"] = [
+        {**fee, "amount_eur": eur(fee.get("amount_cents"))}
+        for fee in value.get("fees") or []
+        if isinstance(fee, dict)
+    ]
+    return converted
+
+
 class AgentAnswer(BaseModel):
     """Format unique de réponse de l'agent, quelle que soit la phase."""
 
@@ -114,7 +145,7 @@ class AgentAnswer(BaseModel):
     @field_validator("order_summary", "site_notes", mode="before")
     @classmethod
     def _json_text(cls, value: object) -> object:
-        return parse_json_text(value)
+        return summary_from_cents(parse_json_text(value))
 
     @field_validator("order_summary", mode="after")
     @classmethod

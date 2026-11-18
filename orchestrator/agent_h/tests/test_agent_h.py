@@ -836,3 +836,24 @@ async def test_payment_tool_reads_a_summary_sent_as_json_text():
     assert await agent._decide_payment(text) == "approved" and approvals == [0]
     assert await agent._decide_payment("pas du JSON") == "denied"
     assert agent.last_denial_reason == "le récapitulatif du panier était illisible"
+
+
+async def test_payment_tool_accepts_the_contract_cents_format_sent_by_the_agent():
+    # Récapitulatif exact envoyé par l'agent H le 2026-11-18 (refusé à tort : « total illisible »)
+    sent = (
+        '{"order_id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890", "site": "SNCF Connect", '
+        '"page_url": "https://www.sncf-connect.com/cart", "items": [{"name": "TGV INOUI 2de classe", '
+        '"quantity": 1, "unit_price_cents": 0, "total_cents": 0, "options": ["2de classe"]}], "fees": [], '
+        '"total_cents": 0, "currency": "EUR", "payment_button_label": "Valider et payer"}'
+    )
+    totals = []
+
+    async def approve(summary):
+        totals.append(summary.total_cents)
+        return "approved"
+
+    agent = ShoppingAgent(
+        client=object(), approval_callback=approve, memory=InMemorySiteMemory(), record_metrics=False
+    )  # type: ignore[arg-type]
+    agent.order_id, agent._paying, agent._site = ORDER_ID, True, "https://www.sncf-connect.com"
+    assert await agent._decide_payment(sent) == "approved" and totals == [0]

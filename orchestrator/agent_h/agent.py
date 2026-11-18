@@ -51,7 +51,14 @@ from .base import (
     UnapprovedPurchase,
 )
 from .metrics import RunMetrics, append_result
-from .models import AgentAnswer, AgentOrderSummary, parse_json_text, to_options, to_order_summary
+from .models import (
+    AgentAnswer,
+    AgentOrderSummary,
+    parse_json_text,
+    summary_from_cents,
+    to_options,
+    to_order_summary,
+)
 from .narration import actions_in, describe_action
 from .site_memory import SiteMemory, domain_of, merge_card, site_memory_from_env, starter_card
 
@@ -139,7 +146,7 @@ class ShoppingAgent:
         agent = self
 
         @tool(name="request_payment_approval")
-        async def request_payment_approval(summary: OrderSummary) -> str:
+        async def request_payment_approval(summary: AgentOrderSummary) -> str:
             """À appeler AVANT tout clic qui engage de l'argent (Payer, Commander, Acheter, Valider la commande, Confirmer), avec le récapitulatif exact affiché. Renvoie "approved" ou "denied". Si "denied", ne clique pas."""
             return await agent._decide_payment(summary)
 
@@ -154,7 +161,7 @@ class ShoppingAgent:
         """Décision de l'outil request_payment_approval. Tout ce qui est douteux donne "denied"."""
         # Le SDK passe les arguments tels que l'agent les envoie : un dict JSON, pas un objet.
         try:
-            summary = parse_json_text(summary)  # le modèle l'envoie parfois en texte JSON
+            summary = summary_from_cents(parse_json_text(summary))  # texte JSON, ou centimes du contrat
             raw = (
                 summary
                 if isinstance(summary, AgentOrderSummary)
