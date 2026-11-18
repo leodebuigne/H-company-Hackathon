@@ -6,7 +6,8 @@
   voix du navigateur.
 
 Les modèles se changent par variables d'environnement (PILOTE_ASR_MODEL, PILOTE_LLM_MODEL,
-PILOTE_VLM_MODEL, PILOTE_TTS_MODEL, PILOTE_TTS_VOICE). Voir docs/decisions.md pour les mesures.
+PILOTE_VLM_MODEL, PILOTE_TTS_MODEL, PILOTE_TTS_VOICE, PILOTE_TTS_PROVIDER).
+Voir docs/decisions.md pour les mesures.
 """
 
 from __future__ import annotations
@@ -36,6 +37,9 @@ DEFAULT_LLM_MODEL = "meta-llama/Llama-3.3-70B-Instruct"
 DEFAULT_VLM_MODEL = "Qwen/Qwen3-VL-30B-A3B-Instruct"
 DEFAULT_TTS_MODEL = "hexgrad/Kokoro-82M"
 DEFAULT_TTS_VOICE = "ff_siwis"
+# Fournisseur imposé pour la voix : sans lui, Hugging Face peut router Kokoro vers fal-ai, qui
+# n'a que des voix anglaises (erreur 422 sur ff_siwis, constaté le 18/11).
+DEFAULT_TTS_PROVIDER = "deepinfra"
 
 DEFAULT_SPEAK_TIMEOUT_S = 6.0
 SPEAK_ATTEMPTS = 3  # Hugging Face renvoie parfois 503 : on réessaie avant la voix du navigateur
@@ -278,10 +282,12 @@ class HFAI:
         self.vlm_model = _env("PILOTE_VLM_MODEL", DEFAULT_VLM_MODEL)
         self.tts_model = _env("PILOTE_TTS_MODEL", DEFAULT_TTS_MODEL)
         self.tts_voice = _env("PILOTE_TTS_VOICE", DEFAULT_TTS_VOICE)
+        self.tts_provider = _env("PILOTE_TTS_PROVIDER", DEFAULT_TTS_PROVIDER)
         self.speak_timeout = float(_env("PILOTE_TTS_TIMEOUT_S", str(DEFAULT_SPEAK_TIMEOUT_S)))
         self.usage = {"prompt_tokens": 0, "completion_tokens": 0, "calls": 0}
         self._chat = chat_client
         self._speech = speech_client
+        self._tts = speech_client  # client injecté (tests) : sert aussi à la voix
 
     @property
     def chat_client(self) -> Any:
@@ -298,6 +304,14 @@ class HFAI:
 
             self._speech = AsyncInferenceClient(token=self.token)
         return self._speech
+
+    @property
+    def tts_client(self) -> Any:
+        if self._tts is None:
+            from huggingface_hub import AsyncInferenceClient
+
+            self._tts = AsyncInferenceClient(token=self.token, provider=self.tts_provider)
+        return self._tts
 
     # --- voix -> texte -----------------------------------------------------
 
@@ -415,7 +429,7 @@ class HFAI:
         async def one(chunk: str) -> bytes:
             for attempt in range(SPEAK_ATTEMPTS):
                 try:
-                    return await self.speech_client.text_to_speech(
+                    return await self.tts_client.text_to_speech(
                         chunk, model=self.tts_model, extra_body={"voice": self.tts_voice, "lang_code": "f"}
                     )
                 except Exception:
