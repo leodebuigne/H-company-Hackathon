@@ -72,52 +72,28 @@ export default function Orb({ mode, level = 0, size = 320 }: Props) {
 
       ctx.clearRect(0, 0, size, size);
 
-      // Lueur intérieure
-      const glow = ctx.createRadialGradient(c, c, base * 0.2, c, c, base * 1.25);
-      glow.addColorStop(0, `rgba(79, 227, 255, ${0.05 + energy * 0.08})`);
-      glow.addColorStop(0.75, `rgba(79, 227, 255, ${0.1 + energy * 0.12})`);
-      glow.addColorStop(1, "rgba(79, 227, 255, 0)");
-      ctx.fillStyle = glow;
+      // Anneau de la photo : bande cyan large, centre blanc, bord extérieur granuleux, aucun trait net.
+      const ring = base * breath * (1 + energy * 0.04);
+      const band = size * 0.045 * (1 + energy * 0.35);
+
+      // 1. Bande de lumière douce : se fond vers le centre blanc, plus franche vers l'extérieur
+      const light = ctx.createRadialGradient(c, c, ring - band * 1.4, c, c, ring + band * 0.8);
+      light.addColorStop(0, "rgba(79, 227, 255, 0)");
+      light.addColorStop(0.5, `rgba(79, 227, 255, ${0.12 + energy * 0.1})`);
+      light.addColorStop(0.82, `rgba(79, 227, 255, ${0.7 + energy * 0.2})`);
+      light.addColorStop(1, "rgba(79, 227, 255, 0)");
+      ctx.fillStyle = light;
       ctx.beginPath();
-      ctx.arc(c, c, base * 1.3, 0, Math.PI * 2);
+      ctx.arc(c, c, ring + band * 0.7, 0, Math.PI * 2);
       ctx.fill();
 
-      // Anneaux qui ondulent (plusieurs couches décalées = matière lumineuse)
-      // Bande lumineuse large et floue, sans trait net (pièce jointe : anneau doux et granuleux)
-      const layers = [
-        { color: "79, 227, 255", width: 34, alpha: 0.1, seed: 0.0, amp: 1.2, blur: 50 },
-        { color: "79, 227, 255", width: 20, alpha: 0.2, seed: 1.7, amp: 1.0, blur: 34 },
-        { color: "110, 234, 255", width: 10, alpha: 0.28, seed: 3.1, amp: 0.9, blur: 22 },
-      ];
-      ctx.lineJoin = "round";
-      for (const layer of layers) {
-        ctx.beginPath();
-        const steps = 120;
-        for (let i = 0; i <= steps; i++) {
-          const a = (i / steps) * Math.PI * 2;
-          const r = base * breath + wobble(a + spin, t, layer.seed) * base * 0.13 * energy * layer.amp;
-          const x = c + Math.cos(a) * r;
-          const y = c + Math.sin(a) * r;
-          if (i === 0) ctx.moveTo(x, y);
-          else ctx.lineTo(x, y);
-        }
-        ctx.closePath();
-        ctx.strokeStyle = `rgba(${layer.color}, ${layer.alpha})`;
-        ctx.lineWidth = layer.width;
-        ctx.shadowColor = "rgba(79, 227, 255, 0.9)";
-        ctx.shadowBlur = layer.blur + energy * 20;
-        ctx.stroke();
-      }
-      ctx.shadowBlur = 0;
-
-      // Grain lumineux autour de l'anneau, plus dense au bord extérieur (comme la pièce jointe)
-      const dust = 900 + Math.round(energy * 600);
+      // 2. Grain : points cyan serrés sur le bord extérieur, qui ondulent avec la voix
+      const dust = 2200 + Math.round(energy * 900);
       for (let i = 0; i < dust; i++) {
         const a = Math.random() * Math.PI * 2;
-        const spread = (Math.random() + Math.random() + Math.random() - 1.5) / 1.5; // presque gaussien
-        const r = base * breath + wobble(a + spin, t, 1.7) * base * 0.13 * energy + spread * (14 + energy * 22) + 4;
-        const outer = spread > 0 ? 0.35 : 0;
-        ctx.fillStyle = `rgba(79, 227, 255, ${0.12 + outer + Math.random() * 0.4})`;
+        const depth = Math.pow(Math.random(), 1.8); // 0 = bord extérieur, 1 = vers l'intérieur
+        const r = ring + band * 0.7 - depth * band * 1.2 + wobble(a + spin, t, 1.7) * base * 0.06 * energy;
+        ctx.fillStyle = `rgba(${Math.random() < 0.85 ? "79, 227, 255" : "40, 200, 245"}, ${(1 - depth) * (0.35 + Math.random() * 0.5)})`;
         ctx.fillRect(c + Math.cos(a) * r, c + Math.sin(a) * r, 1.3, 1.3);
       }
 
