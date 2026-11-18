@@ -512,11 +512,6 @@ export default function PiloteApp() {
                 autoFocus
               >
                 <Orb mode={orbMode} level={micLevel} size={orbSize} />
-                {!started && (
-                  <span className="pilote-orb-hint">
-                    Touchez pour commencer
-                  </span>
-                )}
               </button>
             </div>
             <p className="pilote-state">
