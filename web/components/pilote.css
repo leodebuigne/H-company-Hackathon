@@ -116,7 +116,13 @@ body {
 .pilote-talk:focus-visible { outline: none; }
 .pilote-talk:focus-visible .pilote-orb { filter: drop-shadow(0 0 22px rgba(79, 227, 255, 0.55)); }
 .pilote-orb { position: relative; display: block; }
-.pilote-orb-canvas { display: block; filter: blur(0.6px); }
+.pilote-orb-canvas { display: block; }
+/* Sans WebGL : sphère dégradée fixe */
+.pilote-orb-canvas.is-fallback {
+  border-radius: 50%; transform: scale(0.8);
+  background: radial-gradient(circle at 35% 30%, #fff 0%, #eaf4ff 45%, #9fd0ff 85%, #6fb2ff 100%);
+  box-shadow: 0 0 40px rgba(110, 180, 255, 0.45);
+}
 .pilote-orb-hint {
   position: absolute; inset: 0; display: grid; place-items: center; font-size: 0.95rem; font-weight: 500;
   color: var(--muted); letter-spacing: -0.01em;
