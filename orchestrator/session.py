@@ -438,6 +438,20 @@ class Session:
         self._last_progress = now
         await self._emit(await self._say_message(text))
 
+    async def _talk(self, fallback: str, situation: str, facts: str = "", heard: str = "") -> None:
+        """Dit une phrase rédigée par le modèle de langage (adaptée à la conversation), faits vérifiés.
+        Sans modèle, en cas d'erreur ou de doute : la phrase écrite d'avance."""
+        text = fallback
+        reply = getattr(self.ai, "reply", None)
+        if reply is not None:
+            try:
+                text = await reply(
+                    situation=situation, fallback=fallback, facts=facts, heard=heard, history=self.history
+                )
+            except Exception:
+                log.info("réponse rédigée indisponible")
+        await self._say(text or fallback)
+
     async def _say(self, text: str) -> None:
         self.history.append({"role": "pilote", "text": text})
         await self._emit(ServerTranscript(role="pilote", text=text))
@@ -481,14 +495,22 @@ class Session:
             if intent is None:
                 if self._waiting:
                     await self._set_state(self._resume_state)
-                    await self._say("Je n'ai pas compris. Pouvez-vous répéter ?")
+                    await self._talk(
+                        "Je n'ai pas compris. Pouvez-vous répéter ?",
+                        "Tu n'as pas compris la dernière phrase : demande gentiment de la redire autrement.",
+                    )
                 continue
             if intent.kind == "cancel":
                 await self.cancel_order("D'accord, j'annule. Rien n'a été acheté.")
             elif self._waiting:
                 await self._answers.put(intent)
             else:
-                await self._say("Un instant, je travaille sur votre commande. Dites « annule » pour arrêter.")
+                await self._talk(
+                    "Un instant, je travaille sur votre commande. Dites « annule » pour arrêter.",
+                    "Tu es en train de travailler sur la commande. Réponds brièvement à ce que la personne "
+                    "vient de dire, rassure-la, rappelle qu'elle peut dire « annule ».",
+                    heard=intent.text,
+                )
 
     async def _understand(self, message: ClientMessage) -> Intent | None:
         if isinstance(message, ClientConfirm):
@@ -637,7 +659,11 @@ class Session:
             self._agent.on_progress = self._progress  # type: ignore[attr-defined]
         if hasattr(self._agent, "on_stuck"):
             self._agent.on_stuck = self._stuck  # type: ignore[attr-defined]
-        await self._say("Je cherche la réponse sur le web, cela peut prendre une minute.")
+        await self._talk(
+            "Je cherche la réponse sur le web, cela peut prendre une minute.",
+            "La personne pose une question : dis que tu cherches la réponse sur le web, en une phrase.",
+            heard=intent.text,
+        )
         reply = await self._step("search", self._agent.ask(intent.text))
         self._journal("question_answered")
         await self._end_order("done", reply)
@@ -655,13 +681,26 @@ class Session:
             elif pending is not None and answer.kind in ("new_request", "refine", "other"):
                 intent = merge_answer(pending, answer)
             else:
-                await self._say("Dites-moi ce que vous voulez commander, ou posez-moi une question.")
+                await self._talk(
+                    "Dites-moi ce que vous voulez commander, ou posez-moi une question.",
+                    "La personne a dit quelque chose qui n'est ni une commande ni une question à chercher "
+                    "(salutation, remerciement, remarque, question sur toi ou sur ce que tu sais faire). "
+                    "Réponds-lui naturellement et brièvement, puis invite-la à dire ce que tu peux faire "
+                    "pour elle : commander un billet de train, un repas, ou répondre à une question.",
+                    heard=answer.text,
+                )
                 continue
             if intent.missing:
                 pending = intent
                 # Mêmes questions rédigées quelle que soit l'IA (la factice pose « details.origin »).
                 question = QUESTIONS.get(intent.missing[0]) or intent.question
-                await self._say(question or "Pouvez-vous préciser votre demande ?")
+                await self._talk(
+                    question or "Pouvez-vous préciser votre demande ?",
+                    "Il manque une information pour la commande : pose la question de référence, "
+                    "naturellement, en tenant compte de ce que la personne vient de dire.",
+                    facts=intent.text,
+                    heard=answer.text,
+                )
                 continue
             return intent
 
@@ -712,7 +751,14 @@ class Session:
             self._agent.on_progress = self._progress  # type: ignore[attr-defined]
         if hasattr(self._agent, "on_stuck"):
             self._agent.on_stuck = self._stuck  # type: ignore[attr-defined]
-        await self._say(f"{describe_request(intent, self.today())} Dites « annule » si ce n'est pas ça.")
+        request = describe_request(intent, self.today())
+        await self._talk(
+            f"{request} Dites « annule » si ce n'est pas ça.",
+            "Tu vas lancer la recherche : redis la demande comprise pour que la personne vérifie, "
+            "et rappelle qu'elle peut dire « annule » si ce n'est pas ça.",
+            facts=request,
+            heard=intent.text,
+        )
         await self._step("start", self._agent.start(intent, None))
         options = await self._step("search", self._agent.search())
         if not options:
@@ -728,21 +774,28 @@ class Session:
 
     async def _propose(self, options: list[Option]) -> Option:
         assert self._agent is not None
-        await self._say(await self.ai.summarize_options(options))
+        await self._present(options)
         while True:
             answer = await self._ask("proposing", self.settings.confirm_timeout_s * 2)
             option = self._option_at(options, answer.choice_index)
             if answer.kind == "choose" and option is not None:
                 return option
             if answer.kind == "details" and option is not None:
-                await self._say(self._describe(option))
+                details = self._describe(option)
+                await self._talk(
+                    details, "Détaille cette option, puis demande si elle convient.", details, answer.text
+                )
             elif answer.kind == "confirm" and len(options) == 1:
                 return options[0]
             elif answer.kind in ("choose", "details", "confirm"):
-                await self._say(f"Dites le numéro de l'option, entre 1 et {len(options)}.")
+                await self._talk(
+                    f"Dites le numéro de l'option, entre 1 et {len(options)}.",
+                    "La personne n'a pas donné de numéro valable : demande-lui le numéro de l'option.",
+                    heard=answer.text,
+                )
             elif answer.kind == "new_request" and same_request(answer, self._intent):
                 # Même demande redite : on ne relance pas la recherche, on relit les options.
-                await self._say(await self.ai.summarize_options(options))
+                await self._present(options, answer.text)
             elif answer.kind in ("refine", "new_request"):
                 await self._set_state("searching")
                 # La correction met à jour TOUTE la demande (date, heure, contraintes) : l'agent ne
@@ -759,11 +812,46 @@ class Session:
                 if not options:
                     raise Abort("Je n'ai rien trouvé avec cette précision. Essayez une autre demande.")
                 await self._emit(ServerOptions(options=options))
-                await self._say(await self.ai.summarize_options(options))
+                await self._present(options, answer.text)
             elif answer.kind == "deny":
-                await self._say("D'accord. Dites ce que vous voulez changer, ou « annule ».")
+                await self._talk(
+                    "D'accord. Dites ce que vous voulez changer, ou « annule ».",
+                    "Aucune option ne convient : demande ce que la personne veut changer, "
+                    "ou propose d'annuler.",
+                    facts=self._options_facts(options),
+                    heard=answer.text,
+                )
             else:
-                await self._say("Dites « la première », « la deuxième », ou demandez des détails.")
+                await self._talk(
+                    "Dites « la première », « la deuxième », ou demandez des détails.",
+                    "Réponds à ce que la personne vient de dire (si elle pose une question sur les options, "
+                    "comme la moins chère ou la plus tôt, réponds avec les faits), puis rappelle-lui qu'elle "
+                    "peut choisir une option par son numéro ou demander des détails.",
+                    facts=self._options_facts(options),
+                    heard=answer.text,
+                )
+
+    @staticmethod
+    def _options_facts(options: list[Option]) -> str:
+        """Les options en faits bruts (numéro, nom, horaires, prix) pour le modèle de langage."""
+        parts = []
+        for o in options[:3]:
+            times = " ".join(
+                f"{k} {v}" for k, v in o.details.items() if k in ("departure", "arrival", "duration")
+            )
+            parts.append(f"Numéro {o.rank} : {o.title}, {times}, {euros(o.price_cents)}".replace(", ,", ","))
+        return " ; ".join(parts)
+
+    async def _present(self, options: list[Option], heard: str = "") -> None:
+        """Lit les options : formulation naturelle, prix et heures repris tels quels des options."""
+        summary = await self.ai.summarize_options(options)
+        await self._talk(
+            summary,
+            "Présente ces options à voix haute, clairement et chaleureusement, sans en ajouter ni en "
+            "retirer, puis demande laquelle la personne préfère (par son numéro).",
+            facts=summary,
+            heard=heard,
+        )
 
     @staticmethod
     def _describe(option: Option) -> str:

@@ -10,6 +10,7 @@ import asyncio
 import datetime as dt
 import re
 import unicodedata
+from typing import Any
 
 from orchestrator.ai.speech_text import options_summary, order_statement
 from orchestrator.contracts import Intent, Option, OrderSummary, When
@@ -156,6 +157,12 @@ class FakeAI:
                 break
         if intent.object is None:
             intent.missing.append("object")
+
+    async def reply(
+        self, *, situation: str, fallback: str, facts: str = "", heard: str = "", history: Any = None
+    ) -> str:
+        """Sans modèle : la phrase écrite d'avance."""
+        return fallback
 
     async def summarize_options(self, options: list[Option]) -> str:
         await self._wait()

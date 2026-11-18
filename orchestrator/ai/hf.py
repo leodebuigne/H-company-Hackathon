@@ -25,6 +25,7 @@ from typing import Any
 
 from pydantic import ValidationError
 
+from orchestrator.ai import conversation
 from orchestrator.ai.speech_text import for_speech, options_summary, order_statement
 from orchestrator.contracts import Intent, Option, OrderSummary
 from orchestrator.ports import HistoryTurn, PageReading
@@ -388,6 +389,22 @@ class HFAI:
             self.usage["completion_tokens"] += response.usage.completion_tokens or 0
         self.usage["calls"] += 1
         return response.choices[0].message.content or ""
+
+    async def reply(
+        self, *, situation: str, fallback: str, facts: str = "", heard: str = "", history: Any = None
+    ) -> str:
+        """Phrase de Pilote rédigée par le modèle de langage, faits vérifiés (voir conversation.py)."""
+        if _env("PILOTE_CONVERSATION", "1").strip() == "0":
+            return fallback
+        return await conversation.reply(
+            self.chat_client,
+            self.llm_model,
+            situation=situation,
+            fallback=fallback,
+            facts=facts,
+            heard=heard,
+            history=list(history or []),
+        )
 
     async def parse_intent(self, text: str, today: dt.date, history: list[HistoryTurn]) -> Intent:
         """Un seul appel au modèle par phrase, sortie validée contre le contrat Intent.

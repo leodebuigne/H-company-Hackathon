@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import datetime as dt
 from collections.abc import Awaitable, Callable
-from typing import Literal, Protocol, TypedDict
+from typing import Any, Literal, Protocol, TypedDict
 
 from orchestrator.contracts import (
     Intent,
@@ -98,6 +98,12 @@ class AI(Protocol):
         ...
 
     async def parse_intent(self, text: str, today: dt.date, history: list[HistoryTurn]) -> Intent: ...
+
+    async def reply(
+        self, *, situation: str, fallback: str, facts: str = "", heard: str = "", history: Any = None
+    ) -> str:
+        """Phrase de Pilote reformulée par le modèle de langage ; `fallback` si les faits ne sont pas sûrs."""
+        ...
 
     async def summarize_options(self, options: list[Option]) -> str:
         """3 options au maximum, environ 50 mots, finit en proposant les détails."""

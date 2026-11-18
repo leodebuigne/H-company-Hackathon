@@ -189,3 +189,10 @@ Test à la voix sur SNCF : code bon, paiement autorisé, l'agent clique, puis un
 ## 2026-11-18 : voix de l'ordinateur en voix principale (v2 locale, membre 4)
 
 `PILOTE_VOICE=navigateur` : l'orchestrateur ne demande plus de synthèse à Hugging Face (Kokoro mettait de 1 à plus de 20 s ce soir-là), la page parle tout de suite avec la meilleure voix française de l'ordinateur (voix Premium ou Améliorée en priorité). Aucune autre voix française de Hugging Face Inference Providers ne parle correctement français (essais Chatterbox, Chatterbox Turbo, Sesame CSM retranscrits par Whisper). Kokoro reste disponible (`PILOTE_VOICE` vide).
+
+## 2026-11-18 : Pilote converse avec un modèle de langage, faits vérifiés (v2 locale, membre 4)
+
+Retour : Pilote semblait réciter des phrases toutes faites. Ses phrases de conversation sont maintenant rédigées par le modèle de langage (`PILOTE_LLM_MODEL`, Llama 3.3 70B) à partir de la situation, des faits, de la phrase écrite d'avance et de l'historique (`orchestrator/ai/conversation.py`, `Session._talk`). Il répond aux salutations, remerciements et questions sur lui, et aux questions sur les options (« lequel est le moins cher ? »).
+- **Garde-fous** : chaque nombre de la réponse doit venir des faits, de la phrase d'avance ou de la phrase de la personne ; une réponse qui annonce un achat ou un paiement absent de la phrase d'avance est refusée ; délai de 4 s ; au moindre doute, la phrase écrite d'avance.
+- **Restent fixes** : l'annonce « je suis une IA », la demande du code, le montant payé, les résultats de paiement et d'annulation.
+- Mesuré : 1,4 à 2,1 s par réponse. `PILOTE_CONVERSATION=0` revient aux phrases écrites d'avance.
