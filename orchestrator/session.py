@@ -172,7 +172,9 @@ def describe_request(intent: Intent, today: dt.date) -> str:
     if intent.when.asap:
         hours += " le plus vite possible"
     extra = f", {', '.join(intent.constraints)}" if intent.constraints else ""
-    budget = f", {euros(intent.budget_cents)} maximum" if intent.budget_cents else ""
+    budget = ""
+    if intent.budget_cents is not None:
+        budget = ", gratuit" if intent.budget_cents == 0 else f", {euros(intent.budget_cents)} maximum"
     return f"Je cherche {what}{route}{day}{hours}{extra}{budget}. Cela peut prendre une minute."
 
 
@@ -728,7 +730,17 @@ class Session:
                 await self._say(await self.ai.summarize_options(options))
             elif answer.kind in ("refine", "new_request"):
                 await self._set_state("searching")
-                options = (await self._step("refine", self._agent.refine(answer.text)))[:8]
+                # La correction met à jour TOUTE la demande (date, heure, contraintes) : l'agent ne
+                # reçoit plus une demande et une correction contradictoires (« 18/11 » puis « demain »).
+                if self._intent is not None:
+                    self._intent = merge_answer(self._intent.model_copy(update={"missing": []}), answer)
+                    if hasattr(self._agent, "_intent"):
+                        self._agent._intent = self._intent  # type: ignore[attr-defined]
+                    await self._emit(ServerIntent(intent=self._intent))
+                    await self._say(f"{describe_request(self._intent, self.today())}")
+                request = describe_request(self._intent, self.today()) if self._intent else answer.text
+                message = f"La personne corrige sa demande : « {answer.text} ». Demande à jour : {request}"
+                options = (await self._step("refine", self._agent.refine(message)))[:8]
                 if not options:
                     raise Abort("Je n'ai rien trouvé avec cette précision. Essayez une autre demande.")
                 await self._emit(ServerOptions(options=options))

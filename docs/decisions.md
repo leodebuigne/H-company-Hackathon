@@ -130,3 +130,31 @@ Commande à la voix (mode texte) sur Rail Démo, navigateur cloud H, IA Hugging 
 
 - **À la source** : la consigne de l'agent H (`prompts.py`) lui demande des messages courts en français simple, sans identifiant (o1, o2), sans anglais, sans nom d'outil, dates en toutes lettres.
 - **Filet de sécurité** : `readable_progress` écarte toute phrase de progression technique (adresse web, nom d'outil, code, mot anglais) ; `for_speech` réécrit dates (« 11/19/2026 » → « 19 novembre 2026 »), identifiants (« o2 » → « numéro 2 ») et jargon (« authentification forte », « DSP2 », « pop-up »).
+
+## 2026-11-18 : premiers essais sur SNCF Connect (Chrome local, sans paiement)
+
+- **Essai 1** (agent sans compétences, sans fiche) : 10 minutes à tâtonner (onglet « Trains » vers une page promo, menu « Voyager », chat d'aide rouvert à chaque clic), sans atteindre les résultats. Modèle utilisé : `holo4-27b`, le même que `h/web-surfer-pro`, mais sans ses compétences.
+- **Corrections** : compétences `h/planning` et `h/answering` (comme `h/web-surfer-pro`), fiche de départ SNCF (`agent_h/starter_cards.py`), règle anti-boucle dans la consigne (changer de méthode après 2 échecs, demander un humain après 3 minutes).
+- **Essai 2** : l'agent va droit au formulaire, le pré-remplit (Paris → Lille, 14 h), mais « Voir les prix » et le calendrier ne réagissent à aucun clic automatisé. Il demande un humain au bout de 8 minutes au lieu de boucler. Hypothèse : protection anti-robots du site qui neutralise les clics pilotés. À vérifier en cliquant à la main.
+
+## 2026-11-18 : compétences H retirées, délais raccourcis, modèle réglable
+
+- **Compétences `h/planning` et `h/answering` retirées** : testées seules et ensemble, elles terminent la session après la première réponse ; le message suivant (panier) provoque une erreur de l'agent. Sans compétence, l'agent enchaîne les étapes normalement.
+- **Arrêt détecté tout de suite** : si l'agent termine ou plante après notre message sans répondre, l'étape échoue aussitôt au lieu d'attendre.
+- **Délais raccourcis** (retour : au-delà de 5 minutes, c'est trop long) : 3 minutes au plus par étape de navigation, 6 pour le paiement (validation bancaire), 3 pour un geste humain. L'outil de vérification s'arrête à 5 minutes.
+- **Modèle et réflexion réglables** : `PILOTE_H_MODEL` (vide = holo4-27b) et `PILOTE_H_REASONING` (disabled, low, medium, xhigh). Modèles accessibles avec la clé de l'équipe (`GET https://api.hcompany.ai/v1/models`, 18/11) : holo4-27b, holo4-35b-a3b, holo3-1-35b-a3b, holo3-122b-a10b (sans outils). Aucun modèle « devin » : une session avec ce nom échoue.
+
+## 2026-11-18 : SNCF Connect fonctionne jusqu'à la page de paiement (Chrome local)
+
+Trois causes trouvées, dans l'ordre :
+1. **Chrome Retina** : en densité 2 et fenêtre de 1200 px, l'agent cliquait à côté (« Trajets via » au lieu du champ « Aller », chat d'aide). `scripts/lancer-chrome-agent.sh` lance le Chrome de l'agent en densité 1 et 1440 px : recherche en 37 s (avant : jamais).
+2. **Mode « votre navigateur »** : H termine la session dès la première réponse (« destroy » envoyé au relais local, puis fin de session) ; le message de l'étape suivante n'est jamais lu. Chaque étape démarre maintenant une session courte qui reprend sur la page laissée, dans le même Chrome (`ShoppingAgent._start_step_session`).
+3. **Prix à 0 €** lus par erreur (« Trajet recommandé ») : ces options sont écartées.
+
+Résultat (sans paiement) : recherche 37 s, page de paiement 138 s (TGV INOUI 49 €), relecture 171 s.
+
+## 2026-11-18 : billets à 0 € gardés, une correction met à jour toute la demande
+
+- **0 € est un vrai prix** : sur SNCF Connect, un abonnement (MAX JEUNE) affiche des billets à 0 €. Le filtre qui les écartait, et celui qui ignorait « gratuit » ou un budget de 0 €, sont retirés.
+- **Correction de la demande** (« j'ai dit demain après 14 h ») : l'intention est fusionnée avec la correction, redite à la personne, et l'agent reçoit la demande à jour. Avant, il recevait l'ancienne date et la correction, contradictoires, et hésitait entre 14 h et 16 h.
+- **Heure** : SNCF Connect ne propose que des créneaux de 2 heures (14 h, 16 h…), et une heure déjà passée n'est pas proposée pour aujourd'hui.

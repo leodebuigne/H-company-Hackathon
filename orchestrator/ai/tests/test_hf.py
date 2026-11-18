@@ -317,14 +317,10 @@ def test_benchmark_check_rules():
     assert check(intent, {"kind": "cancel"}) != []
 
 
-def test_zero_budget_and_free_constraint_are_never_a_real_request():
+def test_a_free_ticket_request_is_kept():
     from orchestrator.ai.hf import complete_intent
 
-    data = {
-        "kind": "new_request",
-        "category": "train",
-        "budget_cents": 0,
-        "constraints": ["gratuit", "direct"],
-    }
-    intent = complete_intent(data, "un train")
-    assert intent["budget_cents"] is None and intent["constraints"] == ["direct"]
+    data = {"kind": "new_request", "category": "train", "budget_cents": 0}
+    data["constraints"] = ["gratuit"]
+    intent = complete_intent(data, "un train gratuit")
+    assert intent["budget_cents"] == 0 and intent["constraints"] == ["gratuit"]

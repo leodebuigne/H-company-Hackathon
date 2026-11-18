@@ -499,3 +499,15 @@ def test_pilote_repeats_what_it_understood_before_searching():
     )
     expected = "Je cherche un train de Paris à Lille demain, jeudi 19 novembre après 14:00."
     assert describe_request(intent, TODAY).startswith(expected)
+
+
+async def test_a_correction_updates_the_whole_request_sent_to_the_agent():
+    async with Harness() as h:
+        await h.text("Un train de Paris pour Lille ce soir")
+        await h.wait("proposing")
+        await h.text("Un train de Paris pour Lille demain après 14 h")
+        await _until(lambda: h.said().count("J'ai trouvé") == 2, 5)
+        assert h.session._intent.when.date == TODAY + dt.timedelta(days=1)
+        assert h.agents[0]._intent.when.date == TODAY + dt.timedelta(days=1), "l'agent a la demande à jour"
+        assert "demain, jeudi 19 novembre" in h.said()
+        await h.session.receive({"type": "cancel"})
