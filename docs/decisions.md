@@ -203,3 +203,9 @@ Retour : Pilote semblait réciter des phrases toutes faites. Ses phrases de conv
 - **« Bonjour Pilote »** : quand Pilote ne parle pas et n'enregistre pas, la reconnaissance vocale du navigateur (Chrome, Safari) guette « Bonjour Pilote ». La suite de la phrase (« Bonjour Pilote, un train pour Lille ») est envoyée directement. Un premier geste (Espace ou toucher l'orbe) reste nécessaire : le navigateur bloque le son et le micro sans lui.
 - **Réaction immédiate** : « D'accord. », « Je m'en occupe. »… dès qu'on a fini de parler (nouvelle demande ou choix seulement).
 - **Modèle des réponses** : Qwen3-30B-A3B essayé, plus lent ce soir (plus de 4 s, donc phrase d'avance) ; Llama 3.3 70B gardé (1,5 à 1,7 s). Les nombres doivent être écrits en chiffres : un nombre en lettres échapperait à la vérification et fait reprendre la phrase d'avance.
+
+## 2026-11-18 : code dit à voix haute, « OK Pilote », écoute automatique limitée (v2 locale, membre 4)
+
+- **Code** : Pilote demande le code à voix haute ; le champ à taper n'apparaît que si on choisit « Je préfère le taper au clavier ».
+- **« OK Pilote »** : pendant que Pilote parle, la reconnaissance vocale du navigateur guette « OK Pilote » ; il se tait aussitôt et écoute. Seule cette phrase compte pendant qu'il parle (sa propre voix ne la dit jamais).
+- **Écoute automatique** : une seule fois par phrase de Pilote, et seulement si elle attend une réponse (choix, oui / non, code, ou question finissant par « ? »). Plus d'écoute automatique après la fin d'une commande ni après une écoute restée sans parole : il faut dire « Bonjour Pilote » ou appuyer. Avant, une écoute sans parole relançait aussitôt une nouvelle écoute.

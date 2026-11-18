@@ -193,6 +193,8 @@ kbd {
 }
 .pilote-code button:disabled { opacity: 0.35; cursor: default; }
 .pilote-code .pilote-muted { margin: 0; }
+.pilote-code.is-voice { justify-items: start; }
+.pilote-code-title { margin: 0; font-size: 1.15rem; font-weight: 600; letter-spacing: -0.015em; }
 
 /* Cartes (options, récapitulatif) */
 .pilote-card { background: #fff; border: 1px solid var(--line); border-radius: 22px; padding: 18px; box-shadow: var(--shadow); }

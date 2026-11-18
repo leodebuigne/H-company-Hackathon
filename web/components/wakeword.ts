@@ -37,6 +37,13 @@ export function findWakeWord(text: string): { found: boolean; rest: string } {
   return { found: true, rest };
 }
 
+// « OK Pilote » pendant que Pilote parle : il se tait tout de suite.
+const STOP = /\b(ok|okay|ok[ée]|o\.k\.?|au ?qu[ée])[\s,!.-]*pilot(e|es)?\b/i;
+
+export function isStopWord(text: string): boolean {
+  return STOP.test(text);
+}
+
 export function wakeWordSupported(): boolean {
   if (typeof window === "undefined") return false;
   const w = window as unknown as Record<string, unknown>;
@@ -46,6 +53,11 @@ export function wakeWordSupported(): boolean {
 export class WakeWordListener {
   // Appelé avec la suite de la phrase (vide si on a seulement dit « Bonjour Pilote »)
   onWake: (rest: string) => void = () => {};
+  // Appelé quand on dit « OK Pilote » pendant qu'il parle
+  onStop: () => void = () => {};
+  // Pilote est-il en train de parler ? (on guette alors « OK Pilote », pas « Bonjour Pilote »)
+  isSpeaking: () => boolean = () => false;
+  private stopped = -1; // dernier résultat qui a déjà coupé Pilote
   private rec: Recognition | null = null;
   private wanted = false;
   private woken = false;
@@ -60,7 +72,7 @@ export class WakeWordListener {
     this.launch();
   }
 
-  // Pause pendant que Pilote parle ou enregistre : le micro est pris, et Pilote dit son propre nom.
+  // Pause pendant l'enregistrement : le micro est pris par l'enregistreur.
   stop() {
     this.wanted = false;
     this.rec?.abort();
@@ -75,10 +87,19 @@ export class WakeWordListener {
     rec.continuous = true;
     rec.interimResults = true;
     this.woken = false;
+    this.stopped = -1;
     rec.onresult = (event) => {
       for (let i = event.resultIndex; i < event.results.length; i++) {
         const result = event.results[i];
         const text = result[0]?.transcript ?? "";
+        if (this.isSpeaking()) {
+          // Pilote parle : seul « OK Pilote » compte (sa propre voix ne dit jamais ces mots)
+          if (i !== this.stopped && isStopWord(text)) {
+            this.stopped = i;
+            this.onStop();
+          }
+          continue;
+        }
         const { found, rest } = findWakeWord(text);
         if (!found) continue;
         // On attend la fin de la phrase pour récupérer la demande qui suit le mot d'activation.

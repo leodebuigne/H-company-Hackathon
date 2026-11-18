@@ -50,10 +50,22 @@ const TAP_MS = 450;
 const HANDS_FREE = { silenceMs: 1400, noSpeechMs: 7000, maxMs: 30000 };
 
 // États où Pilote attend une réponse : il réécoute tout seul après avoir parlé (conversation mains libres).
-const AUTO_LISTEN_STATES: State[] = ["listening", "proposing", "confirm_1", "confirm_2", "human_needed"];
+const AUTO_LISTEN_STATES: State[] = [
+  "listening",
+  "proposing",
+  "confirm_1",
+  "confirm_2",
+  "human_needed",
+];
 
 // Réaction immédiate quand on a fini de parler, le temps que Pilote comprenne et réponde.
-const ACKS = ["D'accord.", "Entendu.", "Très bien, je regarde.", "Je m'en occupe.", "Voyons cela."];
+const ACKS = [
+  "D'accord.",
+  "Entendu.",
+  "Très bien, je regarde.",
+  "Je m'en occupe.",
+  "Voyons cela.",
+];
 
 // Réglages gardés dans ce navigateur seulement (aucune donnée personnelle).
 const PREFS_KEY = "pilote-prefs";
@@ -106,6 +118,7 @@ export default function PiloteApp() {
   const [micError, setMicError] = useState<string | null>(null);
   const [textInput, setTextInput] = useState("");
   const [codeInput, setCodeInput] = useState("");
+  const [typingCode, setTypingCode] = useState(false); // le code se dit à voix haute ; clavier sur demande
   const prefs = useSyncExternalStore(subscribePrefs, getPrefs, getServerPrefs);
   const [voices, setVoices] = useState<string[]>([]);
   const [busySince, setBusySince] = useState<number | null>(null);
@@ -120,6 +133,9 @@ export default function PiloteApp() {
   const autoListenRef = useRef(false); // écoute lancée par Pilote (pas par un appui) : silence = rien à dire
   const awaitingReplyRef = useRef(false); // on a parlé, la réponse de Pilote n'est pas encore arrivée
   const wakeRef = useRef<WakeWordListener | null>(null);
+  const sayCountRef = useRef(0); // numéro de la dernière phrase de Pilote
+  const autoForRef = useRef(-1); // phrase après laquelle on a déjà réécouté (une seule fois)
+  const endedRef = useRef(true); // conversation terminée : on attend « Bonjour Pilote » ou un appui
 
   useEffect(() => {
     const speaker = new Speaker();
@@ -186,9 +202,13 @@ export default function PiloteApp() {
       if (!startedRef.current) return;
       if (msg.type === "say") {
         awaitingReplyRef.current = false;
+        sayCountRef.current += 1;
         tell(msg.text, msg.audio, msg.mime);
       }
       if (msg.type === "state") {
+        // Commande finie ou annulée : la conversation s'arrête, Pilote ne réécoute plus tout seul
+        if (msg.state === "done" || msg.state === "cancelled")
+          endedRef.current = true;
         const earcon = earconForState(msg.state);
         if (earcon) playEarcon(earcon);
       }
@@ -265,7 +285,9 @@ export default function PiloteApp() {
         return tell("C'était trop court. Appuyez une fois, puis parlez.");
       playEarcon("thinking");
       awaitingReplyRef.current = true;
-      if (!send({ type: "audio", data: recording.data, mime: recording.mime })) {
+      if (
+        !send({ type: "audio", data: recording.data, mime: recording.mime })
+      ) {
         awaitingReplyRef.current = false;
         tell("Je ne suis pas connecté à Pilote pour le moment.");
       } else acknowledge();
@@ -275,6 +297,7 @@ export default function PiloteApp() {
 
   // Appui (barre d'espace ou bouton)
   const startTalking = useCallback(async () => {
+    endedRef.current = false; // on parle à Pilote : la conversation reprend
     // En écoute continue, un nouvel appui envoie tout de suite
     if (handsFreeRef.current) return void finishTalking("tap");
     if (recorderRef.current?.isRecording) return;
@@ -334,26 +357,59 @@ export default function PiloteApp() {
       setHandsFree(true);
       setRecording(true);
       playEarcon("listening");
-      rec.watchSilence({ ...HANDS_FREE, onStop: (reason) => void finishTalking(reason) });
+      rec.watchSilence({
+        ...HANDS_FREE,
+        onStop: (reason) => void finishTalking(reason),
+      });
     },
     [finishTalking],
   );
 
-  // Conversation : quand Pilote a fini de parler et attend une réponse, il réécoute tout seul.
+  // Conversation : Pilote réécoute tout seul UNE fois après une phrase qui attend une réponse
+  // (un choix, un oui / non, le code, ou une question qui finit par « ? »). Pas après la fin d'une
+  // commande : il faut alors dire « Bonjour Pilote » ou appuyer.
   useEffect(() => {
     if (!started || speaking || recording || voiceMode !== "voice") return;
-    if (!AUTO_LISTEN_STATES.includes(state) || awaitingReplyRef.current) return;
+    if (
+      endedRef.current ||
+      awaitingReplyRef.current ||
+      autoForRef.current === sayCountRef.current
+    )
+      return;
+    const asks =
+      state !== "listening"
+        ? AUTO_LISTEN_STATES.includes(state)
+        : lastSay.trim().endsWith("?");
+    if (!asks) return;
     const timer = setTimeout(() => {
-      if (speakerRef.current?.speaking || recorderRef.current?.isRecording) return;
+      if (speakerRef.current?.speaking || recorderRef.current?.isRecording)
+        return;
+      autoForRef.current = sayCountRef.current;
       void listenHandsFree(true);
     }, 350);
     return () => clearTimeout(timer);
-  }, [started, speaking, recording, state, voiceMode, listenHandsFree]);
+  }, [
+    started,
+    speaking,
+    recording,
+    state,
+    lastSay,
+    voiceMode,
+    listenHandsFree,
+  ]);
 
-  // « Bonjour Pilote » : écoute du mot d'activation quand Pilote ne parle pas et n'enregistre pas.
+  // « Bonjour Pilote » pour le réveiller, « OK Pilote » pour le couper : écoute hors enregistrement.
   useEffect(() => {
     const wake = (wakeRef.current ??= new WakeWordListener());
+    wake.isSpeaking = () => !!speakerRef.current?.speaking;
+    wake.onStop = () => {
+      // « OK Pilote » : il se tait et écoute ce qu'on veut lui dire
+      speakerRef.current?.stop();
+      endedRef.current = false;
+      void listenHandsFree(false);
+    };
     wake.onWake = (rest) => {
+      endedRef.current = false;
       if (rest.split(/\s+/).filter(Boolean).length >= 2) {
         // « Bonjour Pilote, un train pour Lille » : la demande est déjà là
         playEarcon("thinking");
@@ -363,9 +419,9 @@ export default function PiloteApp() {
         acknowledge();
       } else void listenHandsFree(false);
     };
-    if (started && !speaking && !recording && voiceMode === "voice") wake.start();
+    if (started && !recording && voiceMode === "voice") wake.start();
     else wake.stop();
-  }, [started, speaking, recording, voiceMode, listenHandsFree, send, acknowledge]);
+  }, [started, recording, voiceMode, listenHandsFree, send, acknowledge]);
   useEffect(() => () => wakeRef.current?.stop(), []);
 
   // Niveau du micro pour l'anneau du bouton
@@ -413,6 +469,7 @@ export default function PiloteApp() {
       if (/^\s*annul/i.test(text)) cancel();
       else {
         awaitingReplyRef.current = true;
+        endedRef.current = false;
         send({ type: "text", text });
       }
     },
@@ -610,7 +667,9 @@ export default function PiloteApp() {
               {talkLabel}
             </p>
             <p id="pilote-help" className="pilote-help">
-              {started && wakeWordSupported() && <>Dites « Bonjour Pilote » · </>}
+              {started && wakeWordSupported() && (
+                <>Dites « Bonjour Pilote » · </>
+              )}
               <kbd>Espace</kbd> pour parler · <kbd>Échap</kbd> pour annuler
               {lastSay && started && (
                 <>
@@ -747,7 +806,27 @@ export default function PiloteApp() {
               </div>
             )}
 
-            {askingCode && (
+            {askingCode && !typingCode && (
+              <section
+                className="pilote-code is-voice"
+                aria-label="Code secret"
+              >
+                <p className="pilote-code-title">
+                  Dites votre code à 3 chiffres
+                </p>
+                <p className="pilote-muted">
+                  Il n&apos;est ni affiché ni enregistré.
+                </p>
+                <button
+                  type="button"
+                  className="pilote-link"
+                  onClick={() => setTypingCode(true)}
+                >
+                  Je préfère le taper au clavier
+                </button>
+              </section>
+            )}
+            {askingCode && typingCode && (
               <form
                 className="pilote-code"
                 aria-label="Code secret"
@@ -756,6 +835,7 @@ export default function PiloteApp() {
                   if (codeInput.length !== 3) return;
                   sendText(codeInput);
                   setCodeInput("");
+                  setTypingCode(false);
                 }}
               >
                 <label htmlFor="pilote-code-input">
@@ -783,8 +863,7 @@ export default function PiloteApp() {
                   </button>
                 </div>
                 <p id="pilote-code-help" className="pilote-muted">
-                  Ou dites-le à voix haute. Il n&apos;est ni affiché ni
-                  enregistré.
+                  Il n&apos;est ni affiché ni enregistré.
                 </p>
               </form>
             )}
