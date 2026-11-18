@@ -4,7 +4,10 @@
 
 // Voix de secours, de la plus naturelle à la plus robotique. Les voix « Premium » / « Enhanced »
 // de macOS et les voix « Natural » / « Online » d'Edge sont bien meilleures que les voix de base.
-const QUALITY_HINTS = ["premium", "enhanced", "améliorée", "natural", "neural", "online", "google"];
+// Voix de l'ordinateur de haute qualité (Premium / Améliorée sur Mac) : toujours en tête.
+const QUALITY_HINTS = ["premium", "enhanced", "améliorée", "natural", "neural"];
+// Voix en ligne du navigateur (Google) : correctes, mais après les voix Premium / Améliorées.
+const ONLINE_HINTS = ["google", "online"];
 const PREFERRED_NAMES = ["Audrey", "Amélie", "Thomas", "Denise", "Henri", "Marie", "Google français"];
 
 let frenchVoice: SpeechSynthesisVoice | null = null;
@@ -20,6 +23,7 @@ function score(v: SpeechSynthesisVoice): number {
   let s = 0;
   const q = QUALITY_HINTS.findIndex((hint) => name.includes(hint));
   if (q >= 0) s += 100 - q * 5;
+  if (ONLINE_HINTS.some((hint) => name.includes(hint))) s += 20;
   const p = PREFERRED_NAMES.findIndex((n) => v.name.includes(n));
   if (p >= 0) s += 40 - p * 3;
   if (v.lang === "fr-FR") s += 10;
