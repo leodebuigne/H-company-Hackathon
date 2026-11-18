@@ -93,12 +93,85 @@ def _hours(hours: str, minutes: str) -> str:
     return f"{int(hours)} {unit}" if minutes == "00" else f"{int(hours)} {unit} {minutes}"
 
 
+_MONTHS = (
+    "janvier", "février", "mars", "avril", "mai", "juin",
+    "juillet", "août", "septembre", "octobre", "novembre", "décembre",
+)  # fmt: skip
+_DATE_ISO = re.compile(r"\b(\d{4})-(\d{2})-(\d{2})\b")
+_DATE_SLASH = re.compile(r"\b(\d{1,2})/(\d{1,2})/(\d{4})\b")
+# Identifiants internes de l'agent : « o2 », « opt-3 », « option o1 »
+_OPTION_ID = re.compile(r"\b(?:opt-?|o)(\d{1,2})\b", re.IGNORECASE)
+# Jargon -> mots de tous les jours (en minuscules, comparés sans tenir compte de la casse)
+_JARGON = {
+    r"\s*\(?\b(?:simulation\s+)?DSP2\)?": "",
+    r"\b(?:la\s+)?simulation\s+de\s+l['’]authentification\s+forte\b": "la validation par votre banque",
+    r"\bl['’]authentification\s+forte\b": "la validation par votre banque",
+    r"\bauthentification\s+forte\b": "validation par votre banque",
+    r"\b3-?D\s*Secure\b": "validation par votre banque",
+    r"\bcheckout\b": "paiement",
+    r"\b(?:le|la|un|une)\s+pop-?up\b": "la fenêtre",
+    r"\bpop-?up\b": "fenêtre",
+    r"\bURL\b": "adresse",
+    r"\bCTA\b": "bouton",
+    r"\bdropdown\b": "liste",
+    r"\bscroll(?:er|e)?\b": "faire défiler",
+}
+
+
+def _date(day: int, month: int, year: int) -> str:
+    if not (1 <= month <= 12 and 1 <= day <= 31):
+        return f"{day}/{month}/{year}"
+    return f"{'1er' if day == 1 else day} {_MONTHS[month - 1]} {year}"
+
+
+def _slash_date(m: re.Match[str]) -> str:
+    a, b, year = int(m[1]), int(m[2]), int(m[3])
+    # 11/19/2026 : format américain (le 2e nombre dépasse 12) ; sinon format français jour/mois
+    return _date(b, a, year) if b > 12 >= a else _date(a, b, year)
+
+
 def for_speech(text: str) -> str:
-    """Réécrit un texte affiché pour qu'il sonne juste à l'oral (heures, flèches, prix, abréviations).
+    """Réécrit un texte affiché pour qu'il sonne juste à l'oral (dates, identifiants, jargon, heures,
+    flèches, prix, abréviations).
 
     « 14:44 → 15:48, 2de classe » -> « 14 heures 44 vers 15 heures 48, seconde classe ».
     Ne change que la prononciation : le texte affiché à l'écran reste celui du site.
     """
+    text = _DATE_ISO.sub(lambda m: _date(int(m[3]), int(m[2]), int(m[1])), text)
+    text = _DATE_SLASH.sub(_slash_date, text)
+    text = _OPTION_ID.sub(lambda m: f"numéro {int(m[1])}", text)
+    for pattern, plain in _JARGON.items():
+        text = re.sub(pattern, plain, text, flags=re.IGNORECASE)
     for pattern, replacement in _SPOKEN_REPLACEMENTS:
         text = pattern.sub(replacement, text)
-    return text.strip()
+    text = text.replace("**", "").replace("`", "")
+    return re.sub(r"\s{2,}", " ", text).strip()
+
+
+# --- Ce que l'agent dit faire : seulement si un humain lambda le comprend --------------------
+
+_TECHNICAL = re.compile(
+    r"https?://|www\.|\.(?:com|app|fr|io)\b|[{}\[\]<>]|\b\w+_\w+\b|\bjson\b|\bapi\b|\bsch[ée]ma|"
+    r"format structur|\boutil|\btool|\bcallback|\bsession\b|\btoken\b|\buuid\b|\bhash\b|"
+    r"\bchamp\b|\bpayment\b|\bapproval\b|\banswer\b|\bstep\b|\bxpath\b|\bselector\b|\bdom\b",
+    re.IGNORECASE,
+)
+_ENGLISH = {"the", "is", "and", "to", "of", "i", "i'm", "it", "this", "now", "will", "click", "page",
+            "button", "on", "with", "for", "be", "need", "should", "let", "me", "my", "we"}  # fmt: skip
+_FRENCH = {"le", "la", "les", "un", "une", "des", "je", "j", "de", "du", "et", "sur", "pour", "est",
+           "à", "a", "en", "il", "ce", "cette", "mon", "vers", "page", "bouton"}  # fmt: skip
+
+
+def readable_progress(line: str) -> str | None:
+    """Garde une phrase de progression seulement si elle est claire pour tout le monde, sinon None.
+
+    Écarte ce qui contient des traces techniques (adresse web, nom d'outil, code, identifiant) ou
+    ce qui est en anglais ; le reste passe ensuite par for_speech (dates, heures, prix).
+    """
+    text = " ".join(line.replace("**", "").replace("`", "").split())
+    if len(text) < 10 or _TECHNICAL.search(text):
+        return None
+    words = re.findall(r"[a-zà-ÿ']+", text.lower())
+    if sum(w in _ENGLISH for w in words) > sum(w in _FRENCH for w in words):
+        return None
+    return text

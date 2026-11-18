@@ -21,3 +21,13 @@ Une ligne par commande, ajoutée automatiquement par orchestrator/agent_h/metric
 | 2026-11-18 17:03 | www.sncf-connect.com | pilote-shopper | achat non effectué | 161 | 7 | - |
 | 2026-11-18 17:11 | www.sncf-connect.com | pilote-shopper | achat direct | 172 | 9 | accepted |
 | 2026-11-18 17:17 | www.sncf-connect.com | pilote-shopper | achat direct | 180 | 9 | accepted |
+| 2026-11-18 11:56 | h-company-hackathon-rail-demo.vercel.app | inline | annulée | 40 | 7 | - |
+| 2026-11-18 11:59 | h-company-hackathon-rail-demo.vercel.app | inline | annulée | 95 | 8 | - |
+| 2026-11-18 12:10 | h-company-hackathon-rail-demo.vercel.app | inline | annulée | 99 | 1 | - |
+| 2026-11-18 12:18 | h-company-hackathon-rail-demo.vercel.app | inline | annulée | 359 | 2 | - |
+| 2026-11-18 12:22 | h-company-hackathon-rail-demo.vercel.app | inline | paiement tenté | 198 | 2 | refused |
+| 2026-11-18 12:28 | h-company-hackathon-rail-demo.vercel.app | inline | paiement tenté | 229 | 4 | unknown |
+| 2026-11-18 12:34 | h-company-hackathon-rail-demo.vercel.app | inline | annulée | 206 | 1 | - |
+| 2026-11-18 12:44 | h-company-hackathon-rail-demo.vercel.app | inline | annulée | 119 | 1 | - |
+| 2026-11-18 13:16 | h-company-hackathon-rail-demo.vercel.app | inline | paiement tenté | 423 | 8 | unknown |
+| 2026-11-18 13:25 | h-company-hackathon-rail-demo.vercel.app | inline | paiement tenté | 194 | 5 | unknown |

@@ -34,7 +34,7 @@ from pydantic import BaseModel, TypeAdapter, ValidationError
 
 from orchestrator.agent_h.base import AgentError, NeedsHuman, PaymentDenied, UnapprovedPurchase
 from orchestrator.ai.hf import QUESTIONS, SPEAK_MIME, AIError, complete_intent
-from orchestrator.ai.speech_text import euros
+from orchestrator.ai.speech_text import euros, readable_progress
 from orchestrator.config import Settings
 from orchestrator.contracts import (
     ClientAudio,
@@ -637,7 +637,7 @@ class Session:
     async def _checkout(self, option: Option) -> OrderSummary:
         assert self._agent is not None
         await self._set_state("cart")
-        await self._say(f"Je mets {option.title} dans le panier.")
+        await self._say(f"Je mets le numéro {option.rank} dans le panier : {option.title}.")
         await self._step("choose", self._agent.choose(option.id))
         summary = await self._step("checkout", self._agent.checkout())
         self._summary = summary

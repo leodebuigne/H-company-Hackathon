@@ -61,8 +61,8 @@ from .models import (
     to_order_summary,
 )
 from .narration import actions_in, describe_action
-from .watch import StepWatch, StuckCallback, screenshot_in
 from .site_memory import SiteMemory, domain_of, merge_card, site_memory_from_env, starter_card
+from .watch import StepWatch, StuckCallback, screenshot_in
 
 OK_STATUSES = {"idle", "completed"}
 
@@ -307,7 +307,10 @@ class ShoppingAgent:
             changes = await self._session.changes(from_index=index, wait_for_seconds=10, include_events=True)
             now = time.monotonic()
             events = (
-                [e.model_dump(mode="json") if hasattr(e, "model_dump") else e for e in changes.new_events or []]
+                [
+                    e.model_dump(mode="json") if hasattr(e, "model_dump") else e
+                    for e in changes.new_events or []
+                ]
                 if changes is not None
                 else []
             )

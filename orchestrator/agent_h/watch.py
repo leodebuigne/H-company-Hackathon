@@ -25,7 +25,8 @@ def action_signature(name: str, args: dict[str, Any]) -> str:
     element = str(args.get("element") or "")
     quoted = re.search(r"[\"«]([^\"»]+)[\"»]", element)
     target = quoted.group(1) if quoted else " ".join(element.split()[:3])
-    target = target or str(args.get("url") or "").split("?")[0] or str(args.get("keys") or args.get("text") or "")
+    target = target or str(args.get("url") or "").split("?")[0]
+    target = target or str(args.get("keys") or args.get("text") or "")
     return f"{name}:{target.strip().lower()}"
 
 

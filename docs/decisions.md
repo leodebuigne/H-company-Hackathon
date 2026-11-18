@@ -107,3 +107,26 @@ Base : `partie-5` (contrats et squelette), puis `partie-2` (IA), `partie-4` (int
 ## 2026-11-18 : fournisseur de la voix imposé (v1 locale)
 
 Sans fournisseur précisé, Hugging Face a routé `hexgrad/Kokoro-82M` vers fal-ai (`fal-ai/kokoro/american-english`), qui refuse la voix `ff_siwis` (erreur 422 : voix anglaises seulement). Avec `provider="deepinfra"`, la voix française fonctionne, mais a mis 16 s ce jour-là (Hugging Face signalait un contrôle de santé raté). `PILOTE_TTS_PROVIDER` (deepinfra par défaut) règle le fournisseur. Au-delà de `PILOTE_TTS_TIMEOUT_S`, l'interface utilise la voix du navigateur. Transcription (Whisper turbo) : 1,5 s ; compréhension (Llama 3.3) : 2,3 s.
+
+## 2026-11-18 : premier parcours complet avec le vrai agent H (v1 locale)
+
+Commande à la voix (mode texte) sur Rail Démo, navigateur cloud H, IA Hugging Face : demande → 3 options → panier (29 €) → premier oui → relecture → deuxième oui → approbation de l'orchestrateur → clic « Payer 29,00 € » → page de validation bancaire simulée. Écarts constatés avec le SDK `hai-agents` 1.5.3, corrigés dans `orchestrator/agent_h/agent.py` :
+
+- **Fin d'étape.** Juste après `send_message`, la session est encore « idle » et renvoie la réponse précédente. Les messages après le premier n'ont pas de `RequestStartEvent` (ce sont des `message_event`), et la réponse peut n'exister que comme appel de l'outil `answer`. L'agent lit désormais la réponse qui suit son dernier message dans les événements (`_step_answer`). Avant cette correction, la relecture reprenait la réponse du panier.
+- **Objets imbriqués en texte.** L'agent envoie souvent `order_summary`, `site_notes` et le récapitulatif de `request_payment_approval` en texte JSON : acceptés et convertis. `options: null` devient une liste vide.
+- **Outil de paiement.** Il était déclaré avec le contrat (centimes) mais lu au format de l'agent (euros) : tout paiement était refusé. Il est déclaré au format de l'agent, et les deux formats sont acceptés.
+- **Résultat sans approbation.** Un `payment_result` annoncé sans « approved » du garde-fou n'est plus cru : refus annoncé comme « rien n'a été cliqué », et un « accepted » sans approbation devient `unknown` (« vérifiez sur le site »).
+- **Validation bancaire.** Sur la page simulée de Rail Démo, l'agent attend 30 s puis renvoie `unknown`. Pour la démo, un humain valide ou refuse sur cette page ; la consigne prévoit jusqu'à 5 minutes, à régler si besoin.
+
+## 2026-11-18 : retours du premier test au micro (v1 locale)
+
+- **Voix en double** : plusieurs pages Pilote ouvertes parlaient en même temps. Une seule page parle désormais (la dernière démarrée prévient les autres par `BroadcastChannel`), et une page cachée se tait.
+- **Heures** : « 14:57 » était lu « quatorze cinquante-sept ». `orchestrator.ai.speech_text.for_speech` réécrit chaque phrase dite : « 14 heures 57 », « départ 14 heures 14, arrivée 15 heures 16 », « Paris vers Lille », « 29 euros ».
+- **Faux « prix changé »** : la relecture comparait l'empreinte, qui dépend des libellés recopiés par l'agent (jamais identiques deux fois). La relecture et le dernier verrou comparent maintenant le total au centime et les quantités (`session.same_order`). Un vrai changement de prix bloque toujours.
+- **Compréhension** : « la deuxième », « le 3 », « détails du 2 », « oui », « non », « annule » sont compris sans le modèle de langage quand Pilote attend ce type de réponse (`session.quick_intent`). La même demande redite relit les options au lieu de relancer la recherche. Les options finissent par la réponse attendue (« Dites le numéro… »).
+- **Progression** : pendant les étapes longues, Pilote dit ce que fait l'agent (première phrase de ses `policy_event`), au plus une phrase toutes les 12 s.
+
+## 2026-11-18 : Pilote ne dit que des choses compréhensibles par tout le monde (v1 locale)
+
+- **À la source** : la consigne de l'agent H (`prompts.py`) lui demande des messages courts en français simple, sans identifiant (o1, o2), sans anglais, sans nom d'outil, dates en toutes lettres.
+- **Filet de sécurité** : `readable_progress` écarte toute phrase de progression technique (adresse web, nom d'outil, code, mot anglais) ; `for_speech` réécrit dates (« 11/19/2026 » → « 19 novembre 2026 »), identifiants (« o2 » → « numéro 2 ») et jargon (« authentification forte », « DSP2 », « pop-up »).
