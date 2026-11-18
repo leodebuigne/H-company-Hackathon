@@ -13,7 +13,6 @@ import {
   useRef,
   useState,
   useSyncExternalStore,
-  type CSSProperties,
   type FormEvent,
 } from "react";
 import { earconForState, playEarcon, unlockAudio } from "./earcons";
@@ -30,6 +29,7 @@ import {
 import { PushToTalkRecorder, RELEASE_TAIL_MS } from "./recorder";
 import { Speaker, listFrenchVoices, setBrowserVoice } from "./speech";
 import { usePilote } from "./usePilote";
+import Orb, { type OrbMode } from "./Orb";
 
 // Obligatoire (AI Act, article 50). Normalement dit par l'orchestrateur à la connexion ;
 // répété ici si sa phrase d'accueil n'a pas pu être jouée.
@@ -84,15 +84,6 @@ function writePrefs(patch: Partial<Prefs>): Prefs {
   savePrefs(cachedPrefs);
   prefListeners.forEach((listener) => listener());
   return cachedPrefs;
-}
-
-function MicIcon() {
-  return (
-    <svg viewBox="0 0 24 24" width="56" height="56" aria-hidden="true" focusable="false">
-      <rect x="8.5" y="2.5" width="7" height="12" rx="3.5" fill="currentColor" />
-      <path d="M5 11a7 7 0 0 0 14 0M12 18v3.5M8.5 21.5h7" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-    </svg>
-  );
 }
 
 export default function PiloteApp() {
@@ -397,42 +388,51 @@ export default function PiloteApp() {
     state === "done" ? "is-done" : state === "cancelled" ? "is-cancelled" : state === "human_needed" ? "is-alert" : "";
   const listening = recording || handsFree;
   const haloClass = listening ? "is-listening" : speaking ? "is-speaking" : busy ? "is-busy" : started ? "" : "is-idle";
+  const orbSize = 360;
+  const orbMode: OrbMode = listening ? "listening" : speaking ? "speaking" : busy ? "thinking" : "idle";
 
   return (
     <main className="pilote">
-      <header className="pilote-header">
-        <div className="pilote-brand">
-          <h1>Pilote</h1>
-          <p>Votre assistant vocal pour acheter en ligne</p>
-        </div>
+      <div className="pilote-backdrop" aria-hidden="true">
+        <span />
+        <span />
+      </div>
+
+      <header className="pilote-nav">
+        <p className="pilote-wordmark">Pilote</p>
         <p className={`pilote-connection ${connected ? "is-on" : "is-off"}`}>
           <span className="pilote-dot" aria-hidden="true" />
-          {connected ? "Connecté" : "Connexion…"}
+          {connected ? "En ligne" : "Connexion…"}
         </p>
       </header>
+
+      <section className="pilote-intro">
+        <p className="pilote-eyebrow">Assistant vocal · H Company × Hugging Face</p>
+        <h1>
+          Achetez en ligne,
+          <br />
+          <span>simplement en parlant.</span>
+        </h1>
+        <p className="pilote-lede">
+          Pilote cherche, compare et commande pour vous sur les vrais sites. Pensé pour les personnes aveugles et
+          malvoyantes.
+        </p>
+        <ul className="pilote-chips" aria-label="Ce que Pilote sait faire">
+          <li>Billets de train</li>
+          <li>Repas livrés</li>
+          <li>Réponses aux questions</li>
+          <li>Paiement par code secret</li>
+        </ul>
+      </section>
 
       {/* Ce qui est annoncé au lecteur d'écran (mode lecteur d'écran uniquement) */}
       <div className="sr-only" aria-live="polite" aria-atomic="true">
         {voiceMode === "screenreader" ? announce : ""}
       </div>
 
-      <ol className="pilote-steps" aria-label="Étapes de la commande">
-        {STEPS.map((step, i) => (
-          <li
-            key={step.label}
-            className={i < currentStep || state === "done" ? "is-past" : i === currentStep ? "is-current" : ""}
-            aria-current={i === currentStep ? "step" : undefined}
-          >
-            <span className="pilote-step-dot" aria-hidden="true" />
-            <span className="pilote-step-label">{step.label}</span>
-          </li>
-        ))}
-      </ol>
 
       <section className={`pilote-hero ${tone}`} aria-label="Où en est la commande">
-        <div className={`pilote-halo ${haloClass}`} style={{ "--level": micLevel.toFixed(2) } as CSSProperties}>
-          <span className="pilote-halo-ring" aria-hidden="true" />
-          <span className="pilote-halo-glow" aria-hidden="true" />
+        <div className={`pilote-halo ${haloClass}`}>
           <button
             type="button"
             className={`pilote-talk ${listening ? "is-recording" : ""}`}
@@ -457,7 +457,8 @@ export default function PiloteApp() {
             }}
             autoFocus
           >
-            {listening ? <span className="pilote-rec-dot" aria-hidden="true" /> : <MicIcon />}
+            <Orb mode={orbMode} level={micLevel} size={orbSize} />
+            {!started && <span className="pilote-orb-hint">Touchez pour commencer</span>}
           </button>
         </div>
         <p className="pilote-state">
@@ -479,6 +480,19 @@ export default function PiloteApp() {
           )}
         </p>
       </section>
+
+      <ol className="pilote-steps" aria-label="Étapes de la commande">
+        {STEPS.map((step, i) => (
+          <li
+            key={step.label}
+            className={i < currentStep || state === "done" ? "is-past" : i === currentStep ? "is-current" : ""}
+            aria-current={i === currentStep ? "step" : undefined}
+          >
+            <span className="pilote-step-dot" aria-hidden="true" />
+            <span className="pilote-step-label">{step.label}</span>
+          </li>
+        ))}
+      </ol>
 
       <section className="pilote-thread" aria-label="Conversation">
         {recentLog.length === 0 && (
