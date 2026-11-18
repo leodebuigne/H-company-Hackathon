@@ -418,3 +418,17 @@ async def test_a_question_is_answered_without_buying_anything():
         await h.wait_said("ferme à 20 heures")
         assert h.paid == 0 and "cart" not in h.states()
         await h.wait("listening")
+
+
+
+
+async def test_stuck_agent_gets_a_hint_and_the_person_hears_the_page():
+    async with Harness() as h:
+        h.session.state = "searching"
+        hint = await h.session._stuck(b"capture", "boucle")
+        assert hint and "Rechercher" in hint
+        assert "Je regarde la page : La page montre un formulaire de recherche" in h.said()
+        silent = await h.session._stuck(b"capture", "silence")
+        assert silent  # le conseil est renvoyé, mais l'agent ne l'envoie pas pour un simple silence
+        h.session.state = "listening"
+        assert await h.session._stuck(b"capture", "boucle") is None, "rien hors d'une étape de l'agent"

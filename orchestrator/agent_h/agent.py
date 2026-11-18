@@ -35,6 +35,7 @@ import uuid
 from collections.abc import Awaitable, Callable
 from typing import Any
 
+import httpx
 from hai_agents import AsyncClient
 from hai_agents.tools import Tool, tool
 
@@ -60,6 +61,7 @@ from .models import (
     to_order_summary,
 )
 from .narration import actions_in, describe_action
+from .watch import StepWatch, StuckCallback, screenshot_in
 from .site_memory import SiteMemory, domain_of, merge_card, site_memory_from_env, starter_card
 
 OK_STATUSES = {"idle", "completed"}
@@ -128,6 +130,8 @@ class ShoppingAgent:
         self.last_denial_reason: str | None = None  # pourquoi le garde-fou a refusé de payer
         # Commentaire en direct : appelé avec une phrase courte à chaque action notable de l'agent
         self.on_progress: Callable[[str], Awaitable[None]] | None = None
+        # Rappelée avec la dernière capture quand l'agent est bloqué : renvoie un conseil, ou None.
+        self.on_stuck: StuckCallback | None = None
         self._cursor = 0
         self._intent: Intent | None = None
         self._options: list[Option] = []
@@ -298,26 +302,50 @@ class ShoppingAgent:
     async def _watch_progress(self, from_index: int) -> None:
         """Suit le flux d'événements H et annonce ce que l'agent s'apprête à faire."""
         index, last = from_index, None
+        watch = StepWatch(time.monotonic())
         while True:
             changes = await self._session.changes(from_index=index, wait_for_seconds=10, include_events=True)
-            if changes is None:
-                await asyncio.sleep(1)
-                continue
-            events = [
-                e.model_dump(mode="json") if hasattr(e, "model_dump") else e for e in changes.new_events or []
-            ]
-            index = (changes.first_index or index) + len(events) if events else index
+            now = time.monotonic()
+            events = (
+                [e.model_dump(mode="json") if hasattr(e, "model_dump") else e for e in changes.new_events or []]
+                if changes is not None
+                else []
+            )
+            index = (changes.first_index or index) + len(events) if changes is not None and events else index
             for event in events:
+                if url := screenshot_in(event):
+                    watch.saw_screenshot(url)
                 for name, args in actions_in(event):
+                    watch.saw_action(name, args, now)
                     sentence = describe_action(name, args)
                     if sentence and sentence != last and self.on_progress is not None:
                         last = sentence
                         await self.on_progress(sentence)
+            await self._help_if_stuck(watch, now)
+            if changes is None:
+                await asyncio.sleep(1)
+
+    async def _help_if_stuck(self, watch: StepWatch, now: float) -> None:
+        """Surveillant : boucle ou étape qui n'avance plus -> lecture de la page, conseil à l'agent."""
+        reason = watch.stuck_reason(now) if self.on_stuck is not None else None
+        if reason is None or self.on_stuck is None or watch.screenshot is None:
+            return
+        watch.helped(now)
+        try:
+            image = await self._fetch_screenshot(watch.screenshot)
+            hint = await self.on_stuck(image, reason) if image else None
+            if hint:
+                await self._session.send_message(
+                    f"Conseil pour avancer (lecture de la page) : {hint} "
+                    "Si cela ne marche pas, change de méthode ou appelle need_human."
+                )
+        except Exception:  # le surveillant ne doit jamais gêner la commande
+            return
 
     async def _wait(self, phase: str) -> AgentAnswer:
         """Attend que l'agent ait fini l'étape et renvoie sa réponse structurée."""
         watcher: asyncio.Task[None] | None = None
-        if self.on_progress is not None and hasattr(self._session, "changes"):
+        if (self.on_progress is not None or self.on_stuck is not None) and hasattr(self._session, "changes"):
             watcher = asyncio.create_task(self._watch_progress(self._cursor))
         try:
             return await self._wait_answer(phase)
@@ -326,6 +354,22 @@ class ShoppingAgent:
                 watcher.cancel()
                 with contextlib.suppress(asyncio.CancelledError, Exception):
                     await watcher
+
+    async def _fetch_screenshot(self, url: str) -> bytes | None:
+        """Capture de l'agent (adresse H protégée par la clé, redirigée vers l'image)."""
+        from hai_agents.client import default_api_key
+
+        key = default_api_key()
+        if not key:
+            return None
+        try:
+            async with httpx.AsyncClient(timeout=20, follow_redirects=True) as http:
+                response = await http.get(url, headers={"Authorization": f"Bearer {key}"})
+            if response.status_code == 200 and response.headers.get("content-type", "").startswith("image/"):
+                return response.content
+        except httpx.HTTPError:
+            pass
+        return None
 
     async def _wait_answer(self, phase: str) -> AgentAnswer:
         started = time.monotonic()

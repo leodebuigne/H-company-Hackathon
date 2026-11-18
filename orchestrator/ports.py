@@ -78,6 +78,13 @@ class ShoppingAgent(Protocol):
 AgentFactory = Callable[[ApprovalCallback, NeedHumanCallback], ShoppingAgent]
 
 
+class PageReading(TypedDict):
+    """Lecture d'une page par le modèle de vision : pour la personne, et pour l'agent."""
+
+    description: str  # « La page montre la liste des trains ; le moins cher est à 29 euros. »
+    hint: str  # « Clique sur le bouton bleu « Rechercher » en bas du formulaire. »
+
+
 class HistoryTurn(TypedDict):
     role: Literal["user", "pilote"]
     text: str
@@ -99,6 +106,11 @@ class AI(Protocol):
     async def confirm_statement(self, summary: OrderSummary) -> str: ...
 
     async def describe_product(self, image: bytes, question: str) -> str: ...
+
+    async def read_page(self, image: bytes, goal: str) -> PageReading:
+        """Lit une capture d'écran de l'agent (modèle de vision Hugging Face) : ce que montre la page,
+        en mots simples pour la personne, et un conseil pour que l'agent avance vers `goal`."""
+        ...
 
     async def speak(self, text: str) -> bytes | None:
         """Audio prêt à jouer, ou None si trop lent : l'interface utilise alors la voix du navigateur."""

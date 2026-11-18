@@ -13,7 +13,7 @@ import unicodedata
 
 from orchestrator.ai.speech_text import options_summary, order_statement
 from orchestrator.contracts import Intent, Option, OrderSummary, When
-from orchestrator.ports import HistoryTurn
+from orchestrator.ports import HistoryTurn, PageReading
 
 FAKE_TRANSCRIPT = "Un train pour Lille demain après 14 h"
 
@@ -168,6 +168,13 @@ class FakeAI:
     async def describe_product(self, image: bytes, question: str) -> str:
         await self._wait()
         return "Je vois un produit de couleur claire, au contour net. Les avis sont plutôt positifs."
+
+    async def read_page(self, image: bytes, goal: str) -> PageReading:
+        await self._wait()
+        return {
+            "description": "La page montre un formulaire de recherche, déjà rempli.",
+            "hint": "Clique sur le bouton « Rechercher » sous le formulaire.",
+        }
 
     async def speak(self, text: str) -> bytes | None:
         await self._wait()

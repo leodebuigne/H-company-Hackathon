@@ -27,7 +27,7 @@ from pydantic import ValidationError
 
 from orchestrator.ai.speech_text import for_speech, options_summary, order_statement
 from orchestrator.contracts import Intent, Option, OrderSummary
-from orchestrator.ports import HistoryTurn
+from orchestrator.ports import HistoryTurn, PageReading
 
 log = logging.getLogger(__name__)
 
@@ -46,6 +46,7 @@ SPEAK_ATTEMPTS = 3  # Hugging Face renvoie parfois 503 : on réessaie avant la v
 SPEAK_CHUNK_CHARS = 60
 SPEAK_MIME = "audio/wav"
 LLM_TIMEOUT_S = 15.0
+VISION_TIMEOUT_S = 25.0
 ASR_TIMEOUT_S = 15.0
 HISTORY_TURNS = 6
 
@@ -148,6 +149,19 @@ VISION_SYSTEM_PROMPT = (
 )
 
 
+PAGE_READING_PROMPT = """\
+Tu aides un agent qui navigue sur un site web pour une personne aveugle. Tu reçois une capture \
+d'écran de la page actuelle et le but de l'agent. Réponds par UN SEUL objet JSON, sans texte autour :
+{"description": "...", "hint": "..."}
+- description : pour la personne aveugle, une ou deux phrases courtes en français simple sur ce que \
+montre la page (quelle page, l'information utile visible : prix, horaires, message). Pas de détail \
+technique, pas d'adresse web, pas de coordonnées.
+- hint : pour l'agent, un conseil concret pour avancer vers le but depuis cette page : quel élément \
+visible utiliser (son texte exact et sa position : en haut à droite…), ou quoi fermer (fenêtre, chat, \
+bandeau) qui gêne. Si le but semble atteint ou si rien n'est faisable, dis-le simplement.
+Ne décris que ce que tu vois. N'invente rien."""
+
+
 class AIError(Exception):
     """Échec d'une fonction IA. `code` reprend les codes de l'objet `error` des messages WebSocket."""
 
@@ -168,6 +182,23 @@ def _image_mime(image: bytes) -> str:
     if image[:4] == b"RIFF" and image[8:12] == b"WEBP":
         return "image/webp"
     return "image/png"
+
+
+def shrink_image(image: bytes, max_width: int = 1280) -> bytes:
+    """Capture réduite en JPEG (≈ 10 fois plus légère) : la lecture par le modèle est plus rapide."""
+    try:
+        from PIL import Image
+
+        with Image.open(io.BytesIO(image)) as picture:
+            picture = picture.convert("RGB")
+            if picture.width > max_width:
+                ratio = max_width / picture.width
+                picture = picture.resize((max_width, int(picture.height * ratio)))
+            out = io.BytesIO()
+            picture.save(out, format="JPEG", quality=80)
+            return out.getvalue()
+    except Exception:  # Pillow absent ou image illisible : on envoie l'original
+        return image
 
 
 def extract_json(content: str) -> dict[str, Any]:
@@ -420,6 +451,29 @@ class HFAI:
         except Exception as error:
             raise AIError("internal", f"description impossible : {error}") from error
         return (response.choices[0].message.content or "").strip()
+
+    async def read_page(self, image: bytes, goal: str) -> PageReading:
+        """Lecture de page par le modèle de vision (PILOTE_VLM_MODEL), réponse JSON validée."""
+        data_url = f"data:image/jpeg;base64,{base64.b64encode(shrink_image(image)).decode('ascii')}"
+        messages = [
+            {"role": "system", "content": PAGE_READING_PROMPT},
+            {
+                "role": "user",
+                "content": [
+                    {"type": "image_url", "image_url": {"url": data_url}},
+                    {"type": "text", "text": f"But de l'agent : {goal}"},
+                ],
+            },
+        ]
+        try:
+            content = await asyncio.wait_for(self._chat_json(messages, self.vlm_model), VISION_TIMEOUT_S)
+            data = extract_json(content)
+        except Exception as error:
+            raise AIError("internal", f"lecture de page impossible : {error}") from error
+        description, hint = str(data.get("description") or "").strip(), str(data.get("hint") or "").strip()
+        if not description and not hint:
+            raise AIError("internal", "lecture de page vide")
+        return {"description": description, "hint": hint}
 
     # --- texte -> voix -----------------------------------------------------
 

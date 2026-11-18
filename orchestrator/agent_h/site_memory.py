@@ -1,14 +1,16 @@
 """Mémoire des sites : une fiche par domaine, stockée dans Redis (Upstash REST).
 
-Sans UPSTASH_REDIS_REST_URL / UPSTASH_REDIS_REST_TOKEN, la mémoire reste en RAM :
-pratique pour développer, perdue au redémarrage.
+Sans UPSTASH_REDIS_REST_URL / UPSTASH_REDIS_REST_TOKEN, les fiches sont gardées dans un fichier
+local (data/site-cards.json, ou PILOTE_SITE_MEMORY_PATH) : un site appris le reste.
 """
 
 from __future__ import annotations
 
 import datetime as dt
+import json
 import os
 import re
+from pathlib import Path
 from typing import Protocol
 
 import httpx
@@ -176,8 +178,44 @@ class UpstashSiteMemory:
         await self._cmd("SET", f"site:{card.domain}", card.model_dump_json())
 
 
+class FileSiteMemory:
+    """Fiches gardées dans un fichier JSON sur cet ordinateur : chaque site appris le reste après un
+    redémarrage. Utilisée par défaut quand Redis (Upstash) n'est pas configuré."""
+
+    def __init__(self, path: str | os.PathLike[str]) -> None:
+        self._path = Path(path)
+
+    def _read(self) -> dict[str, dict]:
+        try:
+            data = json.loads(self._path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return {}
+        return data if isinstance(data, dict) else {}
+
+    async def get(self, domain: str) -> SiteCard | None:
+        raw = self._read().get(domain)
+        if raw is None:
+            return None
+        try:
+            return SiteCard.model_validate(raw)
+        except ValidationError:  # fiche d'un ancien format : on repart de zéro
+            return None
+
+    async def put(self, card: SiteCard) -> None:
+        data = self._read()
+        data[card.domain] = card.model_dump(mode="json")
+        self._path.parent.mkdir(parents=True, exist_ok=True)
+        tmp = self._path.with_suffix(".tmp")
+        tmp.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+        tmp.replace(self._path)  # écriture atomique : jamais de fichier à moitié écrit
+
+
+DEFAULT_MEMORY_PATH = "data/site-cards.json"
+
+
 def site_memory_from_env() -> SiteMemory:
+    """Redis (Upstash) s'il est configuré, sinon un fichier local (PILOTE_SITE_MEMORY_PATH)."""
     url, token = os.getenv("UPSTASH_REDIS_REST_URL"), os.getenv("UPSTASH_REDIS_REST_TOKEN")
     if url and token:
         return UpstashSiteMemory(url, token)
-    return InMemorySiteMemory()
+    return FileSiteMemory(os.getenv("PILOTE_SITE_MEMORY_PATH") or DEFAULT_MEMORY_PATH)

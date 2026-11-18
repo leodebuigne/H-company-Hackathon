@@ -34,3 +34,6 @@ logs/
 
 # Divers
 .DS_Store
+
+# Fiches des sites apprises sur cet ordinateur
+data/

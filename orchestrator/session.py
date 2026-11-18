@@ -578,8 +578,10 @@ class Session:
     async def _search(self, intent: Intent) -> list[Option]:
         await self._set_state("searching")
         self._agent = self.agent_factory(self.approve_payment, self.need_human)
-        if hasattr(self._agent, "on_progress"):  # commentaire en direct de ce que fait l'agent
-            self._agent.on_progress = self._progress
+        if hasattr(self._agent, "on_progress"):
+            self._agent.on_progress = self._progress  # type: ignore[attr-defined]
+        if hasattr(self._agent, "on_stuck"):
+            self._agent.on_stuck = self._stuck  # type: ignore[attr-defined]
         await self._say("Je cherche sur le site, cela peut prendre une minute.")
         await self._step("start", self._agent.start(intent, None))
         options = await self._step("search", self._agent.search())
