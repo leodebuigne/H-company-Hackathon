@@ -159,7 +159,8 @@ export default function PiloteApp() {
 
   // Une phrase à dire : à voix haute (mode voix) ou via la région ARIA live (mode lecteur d'écran)
   // Une seule page Pilote parle à la fois : la dernière démarrée prévient les autres, qui se taisent.
-  // Et une page cachée (onglet en arrière-plan) ne parle pas. Évite la voix en double (18/11).
+  // Évite la voix en double (18/11). Une page en arrière-plan continue de parler : on regarde souvent
+  // l'écran du jury pendant la recherche, et c'est justement là que Pilote décrit ce que fait l'agent.
   const mutedRef = useRef(false);
   const channelRef = useRef<BroadcastChannel | null>(null);
   useEffect(() => {
@@ -177,7 +178,7 @@ export default function PiloteApp() {
 
   const tell = useCallback((text: string, audio?: string | null, mime?: string | null) => {
     if (voiceModeRef.current === "voice") {
-      if (mutedRef.current || document.visibilityState !== "visible") return;
+      if (mutedRef.current) return;
       speakerRef.current?.enqueue(text, audio, mime);
     } else setAnnounce((prev) => (prev === text ? `${text} ` : text)); // force la relecture d'un texte identique
   }, []);

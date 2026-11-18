@@ -124,7 +124,7 @@ Commande à la voix (mode texte) sur Rail Démo, navigateur cloud H, IA Hugging 
 - **Heures** : « 14:57 » était lu « quatorze cinquante-sept ». `orchestrator.ai.speech_text.for_speech` réécrit chaque phrase dite : « 14 heures 57 », « départ 14 heures 14, arrivée 15 heures 16 », « Paris vers Lille », « 29 euros ».
 - **Faux « prix changé »** : la relecture comparait l'empreinte, qui dépend des libellés recopiés par l'agent (jamais identiques deux fois). La relecture et le dernier verrou comparent maintenant le total au centime et les quantités (`session.same_order`). Un vrai changement de prix bloque toujours.
 - **Compréhension** : « la deuxième », « le 3 », « détails du 2 », « oui », « non », « annule » sont compris sans le modèle de langage quand Pilote attend ce type de réponse (`session.quick_intent`). La même demande redite relit les options au lieu de relancer la recherche. Les options finissent par la réponse attendue (« Dites le numéro… »).
-- **Progression** : pendant les étapes longues, Pilote dit ce que fait l'agent (première phrase de ses `policy_event`), au plus une phrase toutes les 12 s.
+- **Progression** : pendant les étapes longues, Pilote dit ce que fait l'agent (première phrase de ses `policy_event`), au plus une phrase toutes les 10 s (la première dès qu’elle arrive).
 
 ## 2026-11-18 : Pilote ne dit que des choses compréhensibles par tout le monde (v1 locale)
 
