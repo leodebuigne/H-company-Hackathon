@@ -484,3 +484,18 @@ async def test_repeating_the_same_request_does_not_search_again():
         await _until(lambda: h.said().count("J'ai trouvé") == 2, 5)
         assert len(h.agents) == searches, "pas de nouvelle recherche pour la même demande"
         await h.session.receive({"type": "cancel"})
+
+
+def test_pilote_repeats_what_it_understood_before_searching():
+    from orchestrator.contracts import When
+    from orchestrator.session import _intent, describe_request
+
+    intent = _intent("new_request", "train").model_copy(
+        update={
+            "category": "train",
+            "details": {"origin": "Paris", "destination": "Lille"},
+            "when": When(date=TODAY + dt.timedelta(days=1), after="14:00", before=None, asap=False),
+        }
+    )
+    expected = "Je cherche un train de Paris à Lille demain, jeudi 19 novembre après 14:00."
+    assert describe_request(intent, TODAY).startswith(expected)

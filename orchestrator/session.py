@@ -142,6 +142,40 @@ def same_request(a: Intent, b: Intent | None) -> bool:
     return same_details and a.when.date in (None, b.when.date)
 
 
+_WEEKDAYS = ("lundi", "mardi", "mercredi", "jeudi", "vendredi", "samedi", "dimanche")
+_MONTHS = ("janvier", "février", "mars", "avril", "mai", "juin", "juillet", "août", "septembre",
+           "octobre", "novembre", "décembre")  # fmt: skip
+
+
+def describe_request(intent: Intent, today: dt.date) -> str:
+    """Ce que Pilote a compris, redit avant de chercher : la personne peut corriger tout de suite."""
+    what = {"train": "un train", "repas": intent.object or "un repas"}.get(
+        intent.category or "", intent.object or "ça"
+    )
+    route = ""
+    if intent.details.get("origin") or intent.details.get("destination"):
+        route = f" de {intent.details.get('origin', '?')} à {intent.details.get('destination', '?')}"
+    day = ""
+    date = intent.when.date
+    if date is not None:
+        if date == today:
+            day = " aujourd'hui"
+        elif date == today + dt.timedelta(days=1):
+            day = f" demain, {_WEEKDAYS[date.weekday()]} {date.day} {_MONTHS[date.month - 1]}"
+        else:
+            day = f", {_WEEKDAYS[date.weekday()]} {date.day} {_MONTHS[date.month - 1]}"
+    hours = ""
+    if intent.when.after:
+        hours += f" après {intent.when.after}"
+    if intent.when.before:
+        hours += f" avant {intent.when.before}"
+    if intent.when.asap:
+        hours += " le plus vite possible"
+    extra = f", {', '.join(intent.constraints)}" if intent.constraints else ""
+    budget = f", {euros(intent.budget_cents)} maximum" if intent.budget_cents else ""
+    return f"Je cherche {what}{route}{day}{hours}{extra}{budget}. Cela peut prendre une minute."
+
+
 def same_order(a: OrderSummary, b: OrderSummary) -> bool:
     """Même commande pour la personne : même total au centime, mêmes quantités d'articles.
 
@@ -661,7 +695,7 @@ class Session:
             self._agent.on_progress = self._progress  # type: ignore[attr-defined]
         if hasattr(self._agent, "on_stuck"):
             self._agent.on_stuck = self._stuck  # type: ignore[attr-defined]
-        await self._say("Je cherche sur le site, cela peut prendre une minute.")
+        await self._say(f"{describe_request(intent, self.today())} Dites « annule » si ce n'est pas ça.")
         await self._step("start", self._agent.start(intent, None))
         options = await self._step("search", self._agent.search())
         if not options:

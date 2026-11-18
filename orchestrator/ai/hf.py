@@ -256,6 +256,15 @@ def _is_filled(data: dict[str, Any], path: str) -> bool:
     return value not in (None, "", [], {})
 
 
+# Un budget de 0 € ou une contrainte « gratuit » ne sont jamais une vraie demande d'achat : c'est
+# une phrase mal transcrite ou mal comprise (vu le 18/11 : l'agent a cherché des trains gratuits).
+_FREE = re.compile(r"gratuit|free|0 ?(€|euro)", re.IGNORECASE)
+
+
+def _real_budget(value: Any) -> Any:
+    return None if isinstance(value, int | float) and not isinstance(value, bool) and value <= 0 else value
+
+
 def complete_intent(data: dict[str, Any], text: str) -> dict[str, Any]:
     """Rend la sortie du modèle conforme au contrat, sans lui faire confiance pour ce qui se calcule.
 
@@ -278,9 +287,9 @@ def complete_intent(data: dict[str, Any], text: str) -> dict[str, Any]:
             "before": when.get("before"),
             "asap": bool(when.get("asap")),
         },
-        "budget_cents": data.get("budget_cents"),
+        "budget_cents": _real_budget(data.get("budget_cents")),
         "details": {str(k): str(v) for k, v in details.items() if v not in (None, "")},
-        "constraints": [str(c) for c in constraints if c],
+        "constraints": [str(c) for c in constraints if c and not _FREE.search(str(c))],
         "choice_index": data.get("choice_index"),
         "missing": [],
         "question": None,

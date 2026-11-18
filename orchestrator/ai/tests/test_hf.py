@@ -315,3 +315,16 @@ def test_benchmark_check_rules():
     assert check(intent, {"missing": []}) != []
     assert check(intent, {"missing": ["when.date"]}) == []
     assert check(intent, {"kind": "cancel"}) != []
+
+
+def test_zero_budget_and_free_constraint_are_never_a_real_request():
+    from orchestrator.ai.hf import complete_intent
+
+    data = {
+        "kind": "new_request",
+        "category": "train",
+        "budget_cents": 0,
+        "constraints": ["gratuit", "direct"],
+    }
+    intent = complete_intent(data, "un train")
+    assert intent["budget_cents"] is None and intent["constraints"] == ["direct"]
