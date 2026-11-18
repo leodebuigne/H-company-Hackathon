@@ -429,3 +429,13 @@ def test_spoken_digits_reads_words_and_figures():
 
     assert spoken_digits("Un, deux, trois.") == "123"
     assert spoken_digits("1 2 3") == "123" and spoken_digits("mon code est 908") == "908"
+
+
+async def test_direct_buy_never_asks_a_relative_only_the_code():
+    # Même réglage que la démo : proche factice qui REFUSE. S'il était consulté, rien ne serait acheté.
+    refusing = FakeApprovals("denied", delay_s=0)
+    async with Harness(direct_buy=True, purchase_code="123", approvals=refusing) as h:
+        await _to_code_prompt(h)
+        await h.text("un deux trois")
+        await h.wait_said("C'est acheté")
+        assert "awaiting_relative" not in h.states() and "J'ai envoyé un message" not in h.said()
