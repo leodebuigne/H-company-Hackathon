@@ -82,7 +82,8 @@ UN SEUL objet JSON, sans texte autour, avec exactement ces champs, tous présent
   "budget_cents": montant maximal en centimes entiers | null,
   "details": {"clé": "valeur"},
   "constraints": ["contrainte courte en minuscules"],
-  "choice_index": numéro de l'option choisie (1, 2, 3) | null
+  "choice_index": numéro de l'option choisie (1, 2, 3) | null,
+  "needs": {"key": "clé de details en anglais", "question": "question courte au vouvoiement ?"} | null
 }
 
 Sens de kind :
@@ -100,6 +101,13 @@ Catégories :
 - train : un billet de train. repas : un repas livré (Uber Eats). boutique : un produit à acheter \
 en ligne (électronique, vêtements, livres, maison…). reservation : réserver une table au restaurant, \
 un hôtel, un rendez-vous (médecin, coiffeur…) ou une place de spectacle.
+
+needs (seulement pour new_request) : la SEULE information indispensable qui manque encore pour \
+choisir correctement ce qu'on achète ou réserve, et que la personne doit donner (ex. la taille d'un \
+vêtement → size, la pointure → size, le modèle de téléphone pour une coque → phone_model, \
+l'imprimante pour des cartouches → printer, le nombre de personnes pour une table → people). \
+null si rien d'indispensable ne manque : ne pose pas de question de confort (couleur, marque) si \
+la personne ne l'a pas évoquée.
 
 Règles :
 - Ne devine jamais : une information absente de la phrase et de l'historique reste null. Le système \
@@ -260,6 +268,36 @@ def join_wav(parts: list[bytes]) -> bytes:
     return out.getvalue()
 
 
+# Informations indispensables selon ce qu'on achète ou réserve (règles sûres, sans modèle)
+_SHOES = re.compile(
+    r"\b(chaussures?|baskets?|sneakers?|bottes?|bottines?|sandales?|escarpins?|mocassins?|tongs?|chaussons?)\b",
+    re.I,
+)
+_CLOTHES = re.compile(
+    r"\b(t-?shirts?|tee-?shirts?|chemises?|chemisiers?|pantalons?|jeans?|robes?|jupes?|shorts?|pulls?|"
+    r"sweats?|hoodies?|vestes?|manteaux?|manteau|blousons?|doudounes?|gilets?|polos?|maillots?|"
+    r"leggings?|survêtements?|pyjamas?|soutien-gorges?|culottes?|caleçons?|boxers?|chaussettes?|"
+    r"costumes?|tailleurs?|parkas?|imperméables?|débardeurs?|tops?|blazers?|vêtements?)\b",
+    re.I,
+)
+_TABLE = re.compile(r"\b(table|restaurant|resto|dîner|déjeuner|brunch)\b", re.I)
+
+
+def _object_needs(intent: dict[str, Any]) -> list[tuple[str, str]]:
+    """(chemin, question) indispensables pour cet objet : taille d'un vêtement, pointure, table…"""
+    what = f"{intent.get('object') or ''} {intent.get('text') or ''}"
+    needs: list[tuple[str, str]] = []
+    if intent.get("category") == "boutique":
+        if _SHOES.search(what):
+            needs.append(("details.size", "Quelle pointure faites-vous ?"))
+        elif _CLOTHES.search(what):
+            needs.append(("details.size", "Quelle taille faut-il ? Par exemple S, M, L, ou 38, 40."))
+    if intent.get("category") == "reservation" and _TABLE.search(what):
+        needs.append(("details.people", "Pour combien de personnes ?"))
+        needs.append(("when.after", "Pour quelle heure ?"))
+    return needs
+
+
 def _is_filled(data: dict[str, Any], path: str) -> bool:
     value: Any = data
     for part in path.split("."):
@@ -301,6 +339,21 @@ def complete_intent(data: dict[str, Any], text: str) -> dict[str, Any]:
         intent["missing"] = [path for path in required if not _is_filled(intent, path)]
         if intent["missing"]:
             intent["question"] = QUESTIONS[intent["missing"][0]]
+        else:
+            # Puis ce qui dépend de l'objet (taille, pointure…), et enfin ce que le modèle juge
+            # indispensable pour bien choisir (« needs »), une question à la fois.
+            for path, question in _object_needs(intent):
+                if path == "when.after" and (_is_filled(intent, "when.before") or intent["when"]["asap"]):
+                    continue
+                if not _is_filled(intent, path):
+                    intent["missing"], intent["question"] = [path], question
+                    break
+            needs = data.get("needs") if isinstance(data.get("needs"), dict) else None
+            key = str((needs or {}).get("key") or "").strip()
+            ask = str((needs or {}).get("question") or "").strip()
+            if not intent["missing"] and re.fullmatch(r"[a-z_]{2,20}", key) and ask.endswith("?"):
+                if not _is_filled(intent, f"details.{key}"):
+                    intent["missing"], intent["question"] = [f"details.{key}"], ask
     return intent
 
 

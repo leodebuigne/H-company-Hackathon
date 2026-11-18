@@ -324,3 +324,41 @@ def test_a_free_ticket_request_is_kept():
     data["constraints"] = ["gratuit"]
     intent = complete_intent(data, "un train gratuit")
     assert intent["budget_cents"] == 0 and intent["constraints"] == ["gratuit"]
+
+
+def _base(**over):
+    data = {"kind": "new_request", "category": "boutique", "object": "t-shirt blanc"}
+    data.update({"when": {}, "details": {}})
+    data.update(over)
+    return data
+
+
+def test_clothes_and_shoes_ask_for_the_size():
+    from orchestrator.ai.hf import complete_intent
+
+    shirt = complete_intent(_base(), "un t-shirt blanc")
+    assert shirt["missing"] == ["details.size"] and "taille" in shirt["question"]
+    shoes = complete_intent(_base(object="baskets Nike"), "des baskets Nike")
+    assert shoes["missing"] == ["details.size"] and "pointure" in shoes["question"]
+    sized = complete_intent(_base(details={"size": "M"}), "un t-shirt blanc taille M")
+    assert sized["missing"] == []
+
+
+def test_restaurant_table_asks_people_then_time():
+    from orchestrator.ai.hf import complete_intent
+
+    table = _base(category="reservation", object="table au restaurant italien", when={"date": "2026-11-20"})
+    assert complete_intent(table, "une table")["missing"] == ["details.people"]
+    table["details"] = {"people": "2"}
+    assert complete_intent(table, "une table pour 2")["missing"] == ["when.after"]
+
+
+def test_model_flagged_essential_is_asked():
+    from orchestrator.ai.hf import complete_intent
+
+    needs = {"key": "phone_model", "question": "Pour quel téléphone ?"}
+    case = _base(object="coque de téléphone", needs=needs)
+    out = complete_intent(case, "une coque")
+    assert out["missing"] == ["details.phone_model"] and out["question"] == "Pour quel téléphone ?"
+    case["needs"] = {"key": "color", "question": "Quelle couleur"}  # pas une question : ignorée
+    assert complete_intent(case, "une coque")["missing"] == []

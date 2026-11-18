@@ -229,3 +229,10 @@ Essai réel (Chrome local, agent du code, aucun site imposé, « casque Bluetoot
 - **Orchestrateur** (membre 5) : la demande redite gère la réservation.
 - **Agent** (membre 1) : texte de la page aussi pour l'agent du portail recopié ; `pilote-shopper` mis à jour sur H avec la nouvelle consigne (sous-agents gardés).
 - **Sites** : sans site configuré (boutique, réservation), l'agent choisit le site le plus connu. `PILOTE_SITE_REPAS` vidé dans `.env` : les repas vont sur le vrai Uber Eats (connexion à faire dans le Chrome de l'agent).
+
+## 2026-11-19 : Pilote demande ce qui manque pour bien choisir (v2 locale, membre 4)
+
+Retour : pour un vêtement, Pilote ne demandait pas la taille. En plus des informations obligatoires par catégorie, `complete_intent` demande maintenant (une question à la fois) :
+- **par règle** : la taille d'un vêtement, la pointure de chaussures, le nombre de personnes puis l'heure pour une table au restaurant ;
+- **par le modèle** (champ `needs` de sa réponse, hors contrat) : la seule information indispensable restante (modèle de téléphone pour une coque, imprimante pour des cartouches…), jamais une question de confort.
+Essai réel : pull → taille ; baskets → pointure ; coque → modèle de téléphone ; cartouches → imprimante ; t-shirt taille M → rien ; table japonaise → nombre de personnes ; livre précis → rien.
