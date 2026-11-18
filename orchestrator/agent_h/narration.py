@@ -19,6 +19,21 @@ def _plain(text: str) -> str:
     return "".join(c for c in decomposed if not unicodedata.combining(c))
 
 
+# Sites connus : nom dit à voix haute quand l'agent les ouvre
+_SITES: list[tuple[str, str]] = [
+    ("sncf", "SNCF Connect"),
+    ("ubereats", "Uber Eats"),
+    ("google.com/maps", "Google Maps"),
+    ("amazon", "Amazon"),
+    ("fnac", "la Fnac"),
+    ("darty", "Darty"),
+    ("doctolib", "Doctolib"),
+    ("booking.com", "Booking"),
+    ("thefork", "TheFork"),
+    ("duckduckgo", "le moteur de recherche"),
+    ("google.", "Google"),
+]
+
 # (mots à trouver dans la description de l'élément cliqué, phrase) — le premier qui correspond gagne
 _CLICKS: list[tuple[tuple[str, ...], str]] = [
     (("valider et payer", "payer", "commander", "confirmer la commande"), "Je valide l'achat."),
@@ -29,11 +44,12 @@ _CLICKS: list[tuple[tuple[str, ...], str]] = [
     (("passer l'etape", "continuer", "suivant"), "J'avance dans la réservation."),
     (("panier",), "J'ouvre le panier."),
     (("lancer la recherche", "rechercher", "loupe"), "Je lance la recherche."),
-    (("onglet", "trains"), "J'ouvre la recherche de trains."),
+    (("trains",), "J'ouvre la recherche de trains."),
     (("calendrier", "date", "aller", "jour "), "Je choisis la date."),
     (("depart",), "J'indique la gare de départ."),
     (("arrivee",), "J'indique la gare d'arrivée."),
-    (("se connecter", "connexion", "mon compte"), "Je me connecte au compte."),
+    (("reserver une table", "reserver"), "J'ouvre la réservation."),
+    (("se connecter", "connexion", "mon compte"), "J'ouvre la page de connexion."),
     (("cookies", "accepter", "refuser"), "Je ferme le bandeau des cookies."),
 ]
 
@@ -43,10 +59,9 @@ def describe_action(tool_name: str, args: dict[str, Any] | None) -> str | None:
     args = args or {}
     if tool_name == "go_to_web":
         url = str(args.get("url", ""))
-        if "sncf" in url:
-            return "J'ouvre SNCF Connect."
-        if "ubereats" in url:
-            return "J'ouvre Uber Eats."
+        for part, name in _SITES:
+            if part in url:
+                return f"J'ouvre {name}."
         return None
     if tool_name == "write":
         text = " ".join(str(args.get("text", "")).split())

@@ -32,6 +32,14 @@ class OptionDetails(BaseModel):
     via: str | None = Field(default=None, description="Train : direct ou correspondances")
     delivery: str | None = Field(default=None, description="Repas : délai ou heure de livraison")
     restaurant: str | None = Field(default=None, description="Repas : nom du restaurant")
+    brand: str | None = Field(default=None, description="Produit : marque")
+    seller: str | None = Field(default=None, description="Produit : vendeur")
+    address: str | None = Field(default=None, description="Restaurant, lieu : quartier ou rue")
+    slots: str | None = Field(default=None, description="Réservation : heures disponibles, ex. 19 h 30, 20 h")
+    cuisine: str | None = Field(default=None, description="Restaurant : type de cuisine")
+    avg_price: str | None = Field(default=None, description="Restaurant : prix moyen affiché, en texte")
+    phone: str | None = Field(default=None, description="Restaurant, lieu : numéro de téléphone")
+    booking: str | None = Field(default=None, description="« oui » si la réservation en ligne est possible")
 
 
 class AgentOption(BaseModel):
