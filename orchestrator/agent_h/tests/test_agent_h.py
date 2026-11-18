@@ -205,8 +205,8 @@ def test_site_for_uses_category_and_env_override(monkeypatch):
 def test_site_for_refuses_unknown_category():
     with pytest.raises(AgentError):
         site_for(PIZZA.model_copy(update={"category": None}))
-    with pytest.raises(AgentError):
-        site_for(PIZZA.model_copy(update={"category": "boutique"}))
+    # Sans site configuré (une boutique), l'agent choisit lui-même le site.
+    assert site_for(PIZZA.model_copy(update={"category": "boutique"})) == ""
 
 
 def test_intent_text_describes_the_contract_intent():

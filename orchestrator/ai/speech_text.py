@@ -144,6 +144,7 @@ def for_speech(text: str) -> str:
         text = re.sub(pattern, plain, text, flags=re.IGNORECASE)
     for pattern, replacement in _SPOKEN_REPLACEMENTS:
         text = pattern.sub(replacement, text)
+    text = re.sub(r"(\d+)\s*×\s*", r"\1 ", text)
     text = text.replace("**", "").replace("`", "")
     return re.sub(r"\s{2,}", " ", text).strip()
 

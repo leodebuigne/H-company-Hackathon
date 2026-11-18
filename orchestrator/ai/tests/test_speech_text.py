@@ -8,7 +8,7 @@ from orchestrator.ai.speech_text import for_speech
     [
         (
             "Paris → Lille 14:14 → 15:16, 38 euros",
-            "Paris vers Lille départ 14 heures 14, arrivée 15 heures 16, 38 euros",
+            "Paris vers Lille 14 heures 14 vers 15 heures 16, 38 euros",
         ),
         ("Train 14:57", "Train 14 heures 57"),
         ("départ 14:00", "départ 14 heures"),
@@ -31,7 +31,7 @@ from orchestrator.ai.speech_text import for_speech
         ("Je ferme le pop-up.", "Je ferme la fenêtre."),
         (
             "La page s'affiche — c'est la simulation de l'authentification forte.",
-            "La page s'affiche — c'est la validation par votre banque.",
+            "La page s'affiche, c'est la validation par votre banque.",
         ),
     ],
 )
