@@ -36,10 +36,6 @@ import { WakeWordListener, wakeWordSupported } from "./wakeword";
 // Obligatoire (AI Act, article 50). Normalement dit par l'orchestrateur à la connexion ;
 // répété ici si sa phrase d'accueil n'a pas pu être jouée.
 const AI_DISCLOSURE = "Je suis Pilote, un assistant automatique.";
-const KEYBOARD_HELP =
-  "Ensuite, parlez-moi simplement : je vous écoute après chaque réponse. Pour me réveiller, dites « Bonjour Pilote ». " +
-  "Vous pouvez aussi appuyer une fois sur la barre d'espace, puis parler. " +
-  "Entrée pour dire oui, N pour dire non, Échap pour annuler à tout moment, R pour répéter.";
 
 // "voice" : Pilote parle lui-même. "screenreader" : Pilote se tait et laisse VoiceOver lire les annonces.
 // Jamais les deux à la fois, sinon les deux voix se superposent.
@@ -251,7 +247,8 @@ export default function PiloteApp() {
         ? lastSay
         : `${AI_DISCLOSURE} ${lastSay}`;
     tell(greeting.trim());
-    tell(KEYBOARD_HELP);
+    // L'accueil finit par « Comment allez-vous ? » : Pilote écoute la réponse une fois
+    endedRef.current = false;
   }, [lastSay, tell]);
 
   // Réaction immédiate pendant que Pilote comprend : seulement pour une nouvelle demande ou un choix,

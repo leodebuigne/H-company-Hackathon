@@ -70,8 +70,8 @@ log = logging.getLogger(__name__)
 T = TypeVar("T")
 
 INTRO = (
-    "Je suis Pilote, un assistant automatique. Que puis-je faire pour vous ? Par exemple : un train de "
-    "Paris pour Lille demain après 14 heures, ou une question comme « à quelle heure ferme la poste ? »."
+    "Bonjour ! Je suis Pilote, un assistant automatique. Je peux commander un billet de train, un repas, "
+    "ou chercher une information pour vous. Comment allez-vous aujourd'hui ?"
 )
 NEXT = "Que puis-je faire d'autre pour vous ?"
 # Paiement autorisé puis contact perdu avec le site : on ne sait pas si l'achat est passé (test du 18/11).
@@ -711,7 +711,10 @@ class Session:
                     "La personne a dit quelque chose qui n'est ni une commande ni une question à chercher "
                     "(salutation, remerciement, remarque, question sur toi ou sur ce que tu sais faire). "
                     "Réponds-lui naturellement et brièvement, puis invite-la à dire ce que tu peux faire "
-                    "pour elle : commander un billet de train, un repas, ou répondre à une question.",
+                    "pour elle : commander un billet de train, un repas, ou répondre à une question. "
+                    "Si elle demande comment te parler : elle parle simplement après tes questions, dit "
+                    "« Bonjour Pilote » pour te réveiller, appuie sur Espace pour parler, "
+                    "Échap pour annuler.",
                     heard=answer.text,
                 )
                 continue
