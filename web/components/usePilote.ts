@@ -55,7 +55,8 @@ export function reduce(s: PiloteSnapshot, msg: ServerMessage): PiloteSnapshot {
     case "transcript":
       return { ...s, log: [...s.log, entry(msg.role, msg.text)] };
     case "intent":
-      return { ...s, intent: msg.intent };
+      // L'écran du jury montre la demande ; « la deuxième » ou « oui » ne la remplacent pas.
+      return ["new_request", "refine"].includes(msg.intent.kind) ? { ...s, intent: msg.intent } : s;
     case "options":
       return { ...s, options: msg.options };
     case "summary":

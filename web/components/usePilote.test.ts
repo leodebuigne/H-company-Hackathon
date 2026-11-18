@@ -54,4 +54,13 @@ describe("reduce", () => {
     expect(s.options).toEqual([]);
     expect(s.agentViewUrl).toBeNull();
   });
+
+  it("garde la demande comprise quand l'utilisateur choisit une option ou dit oui", () => {
+    const example = serverExamples.find((e) => e.msg.type === "intent");
+    expect(example).toBeDefined();
+    const request = example!.msg as Extract<ServerMessage, { type: "intent" }>;
+    let s = reduce(empty, { type: "intent", intent: { ...request.intent, kind: "new_request" } });
+    s = reduce(s, { type: "intent", intent: { ...request.intent, kind: "choose", choice_index: 2 } });
+    expect(s.intent?.kind).toBe("new_request");
+  });
 });
