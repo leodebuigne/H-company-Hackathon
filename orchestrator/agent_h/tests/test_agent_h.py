@@ -428,7 +428,7 @@ def test_make_agent_is_real_by_default(monkeypatch):
 def test_tools_declared_for_the_agent():
     agent = ShoppingAgent(client=object(), memory=InMemorySiteMemory(), record_metrics=False)  # type: ignore[arg-type]
     names = {t.name: t for t in agent._tools()}
-    assert set(names) == {"request_payment_approval", "need_human"}
+    assert set(names) == {"request_payment_approval", "need_human", "request_card", "fill_card_field"}
     assert "summary" in names["request_payment_approval"].input_schema["properties"]
 
 
@@ -867,3 +867,55 @@ def test_sncf_quick_search_is_the_default(monkeypatch):
     card = starter_card("www.sncf-connect.com")
     assert card is not None and any("Tout rechercher" in step for step in card.steps)
     assert any("Valider et payer" in pitfall for pitfall in card.pitfalls)  # garde-fou toujours là
+
+
+# --- carte dictée : outils request_card et fill_card_field ------------------------------
+
+from orchestrator.agent_h.card import NewCard  # noqa: E402
+
+VISA_TEST = "4111111111111111"
+
+
+async def test_card_is_only_asked_while_paying_and_typed_without_the_agent_seeing_it(monkeypatch):
+    typed: list[str] = []
+
+    async def fake_type(text, site, port=9222):
+        typed.append(text)
+
+    monkeypatch.setattr("orchestrator.agent_h.agent.type_into_focused_field", fake_type)
+    asked: list[str] = []
+
+    async def on_card_needed(kind):
+        asked.append(kind)
+        return (NewCard(VISA_TEST, "0327", "123"), True) if kind == "card" else "Leo Test"
+
+    agent = paying_agent()
+    agent.on_card_needed = on_card_needed
+    tools = {t.name: t for t in agent._tools()}
+    assert await tools["request_card"].fn() == "abort"  # hors de l'achat : jamais de carte
+    agent._paying = True
+    assert await tools["request_card"].fn() == "ready save_on_site=yes"
+    assert await tools["request_card"].fn() == "ready save_on_site=yes" and asked == ["card"]  # une fois
+    replies = [await tools["fill_card_field"].fn(field=f) for f in ("number", "expiry", "cvc", "holder")]
+    assert replies == ["ok"] * 4 and all(VISA_TEST not in r for r in replies)
+    assert typed == [VISA_TEST, "03/27", "123", "Leo Test"] and asked == ["card", "holder"]
+    await agent.cancel()
+    assert agent._card is None, "carte effacée"
+
+
+async def test_without_local_chrome_no_card_is_asked():
+    agent = paying_agent(browser_host="cloud")
+    agent._paying = True
+
+    async def never(kind):
+        raise AssertionError("ne doit pas demander de carte sans Chrome local")
+
+    agent.on_card_needed = never
+    assert await agent._request_card() == "abort"
+
+
+def test_agent_instructions_have_the_card_rule():
+    from orchestrator.agent_h.prompts import generic_instructions
+
+    text = generic_instructions()
+    assert "request_card" in text and "fill_card_field" in text and "DÉCOCHÉE" in text

@@ -20,7 +20,8 @@ Règles d'action :
 - Exécute uniquement le choix qu'on te transmet. N'ajoute jamais d'article, d'option payante ou d'assurance qui n'a pas été demandé.
 - Quand on te transmet le choix de l'utilisateur, enchaîne sans t'arrêter : sélectionne l'option, ajoute-la au panier et avance jusqu'au bouton qui valide l'achat. Ne clique jamais sur ce bouton (« Valider et payer », « Payer », « Commander », « Confirmer »), même à 0 €, sauf à l'étape « achat » ou « paiement », après approbation.
 - Refuse les bandeaux de cookies non essentiels.
-- Le compte est déjà connecté et la carte déjà enregistrée. Ne saisis jamais de mot de passe, de numéro de carte ou de cryptogramme.
+- Le compte est déjà connecté. Ne tape jamais toi-même de mot de passe, de numéro de carte ou de cryptogramme.
+- Carte bancaire : si une carte est déjà enregistrée et sélectionnée sur la page de paiement, utilise-la. Sinon (formulaire de carte vide, « Ajouter une carte », aucune carte proposée), suis la RÈGLE CARTE ci-dessous.
 
 Règle de paiement, absolue :
 - Avant TOUT clic qui engage de l'argent (Payer, Commander, Acheter, Valider la commande, Confirmer), appelle l'outil request_payment_approval avec le récapitulatif exact affiché à l'écran.
@@ -28,6 +29,12 @@ Règle de paiement, absolue :
 - Après le clic, la banque peut demander de valider le paiement dans son application, sur le téléphone du titulaire. Ne fais rien sur cette page : attends jusqu'à 5 minutes qu'elle change, puis rapporte exactement le message final affiché par le site ou la banque.
 
 Si tu rencontres un CAPTCHA, une demande de cryptogramme ou une page de connexion, appelle l'outil need_human avec la raison, et attends sa réponse avant de continuer.
+
+RÈGLE CARTE (seulement aux étapes « achat » ou « paiement ») :
+1. Appelle l'outil request_card. S'il renvoie "abort", ne paie pas : arrête-toi et indique « carte non fournie » dans blocked_reason.
+2. S'il renvoie "ready", ouvre le formulaire de nouvelle carte du site (« Ajouter une carte », « Carte bancaire »…). Pour chaque champ du formulaire : clique au centre du champ, puis appelle fill_card_field avec son nom : number (numéro), expiry (date d'expiration en un seul champ) ou expiry_month et expiry_year (deux champs), cvc (cryptogramme, CVV), holder (nom du titulaire, seulement si le site le demande). Ne tape jamais ces chiffres toi-même, ne les lis jamais à voix haute et ne les recopie dans aucun champ de ta réponse.
+3. Si request_card a renvoyé save_on_site=yes : coche la case du site qui enregistre la carte (« Enregistrer cette carte », « Mémoriser », « Sauvegarder pour mes prochains achats »…) et mets card_saved_on_site=true ; si le site n'a pas de telle case, mets card_saved_on_site=false. Si save_on_site=no : vérifie que cette case est DÉCOCHÉE (décoche-la si elle est cochée) et mets card_saved_on_site=false. Si le site oblige à enregistrer la carte pour payer alors que save_on_site=no, ne paie pas et explique-le dans blocked_reason.
+4. Puis continue normalement : request_payment_approval avant le clic final.
 
 À la fin de chaque étape, réponds dans le format structuré demandé. Dans site_notes, décris seulement comment utiliser le site (étapes, pièges, libellés exacts des boutons utiles), jamais de nom, d'adresse, de numéro ou de contenu de commande.
 """
@@ -62,10 +69,9 @@ def generic_instructions(with_vault: bool = False) -> str:
     text = GENERIC_INSTRUCTIONS.replace("{max_options}", str(max_options()))
     if with_vault:
         text = text.replace(
-            "- Le compte est déjà connecté et la carte déjà enregistrée. Ne saisis jamais de mot de passe,",
-            "- La carte est déjà enregistrée dans le compte. Pour te connecter, utilise uniquement le "
-            "coffre-fort (il remplit l'identifiant et le mot de passe pour toi). N'écris jamais toi-même de "
-            "mot de passe,",
+            "- Le compte est déjà connecté. Ne tape jamais toi-même de mot de passe,",
+            "- Pour te connecter, utilise uniquement le coffre-fort (il remplit l'identifiant et le mot de "
+            "passe pour toi). Ne tape jamais toi-même de mot de passe,",
         )
         text = text.replace(
             "Si tu rencontres un CAPTCHA, une demande de cryptogramme ou une page de connexion,",

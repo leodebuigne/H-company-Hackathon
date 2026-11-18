@@ -93,10 +93,16 @@ class FakeShoppingAgent:
         price_change_on_recheck: bool = False,
         need_human_at: str | None = None,
         speed: float | None = None,
+        needs_card: bool = False,
     ) -> None:
         logging.getLogger(__name__).warning("Agent FACTICE : aucune action sur un vrai site.")
         self.order_id = ""
         self.last_payment_message: str | None = None
+        # Carte dictée : le site simulé n'a pas de carte enregistrée si needs_card
+        self.on_card_needed = None  # posé par l'orchestrateur
+        self._needs_card = needs_card
+        self.card_used = None  # dernière carte « tapée » (tests), effacée comme dans le vrai agent
+        self.last_card_saved: bool | None = None
         self.agent_view_url: str | None = None
         self._approval_callback = approval_callback
         self._need_human_callback = need_human_callback
@@ -179,6 +185,17 @@ class FakeShoppingAgent:
         await self._wait(4.0, "pay")  # le temps de valider dans l'application bancaire
         return "accepted"  # simulation : aucune commande réelle
 
+    async def _use_dictated_card(self) -> None:
+        """Comme le vrai agent : sans carte enregistrée, on fait dicter la carte, puis on l'oublie."""
+        if not self._needs_card:
+            return
+        result = await self.on_card_needed("card") if self.on_card_needed else None
+        if not result:
+            raise PaymentDenied("carte non fournie")
+        card, save = result
+        self.card_used = card
+        self.last_card_saved = bool(save)
+
     async def buy(self) -> PaymentResult:
         """Achat direct simulé : approbation demandée sur le récapitulatif du panier, puis « accepté »."""
         if not self.order_id:
@@ -189,6 +206,7 @@ class FakeShoppingAgent:
             decision = await self._approval_callback(summary)
         if decision != "approved":
             raise PaymentDenied("Achat non approuvé : rien n'a été cliqué.")
+        await self._use_dictated_card()
         await self._wait(4.0, "pay")
         self.last_payment_message = "Votre commande est confirmée."
         return "accepted"

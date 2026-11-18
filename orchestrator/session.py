@@ -33,6 +33,8 @@ from zoneinfo import ZoneInfo
 from pydantic import BaseModel, TypeAdapter, ValidationError
 
 from orchestrator.agent_h.base import AgentError, NeedsHuman, PaymentDenied, UnapprovedPurchase
+from orchestrator.agent_h.card import NewCard, parse_cvc, parse_expiry, parse_number
+from orchestrator.agent_h.site_memory import domain_of
 from orchestrator.ai.hf import QUESTIONS, SPEAK_MIME, AIError, complete_intent
 from orchestrator.ai.speech_text import euros
 from orchestrator.approvals import ApprovalsError
@@ -79,6 +81,7 @@ NEXT = "Que voulez-vous commander ?"
 # États où Pilote attend une réponse de la personne.
 WAITING: set[State] = {"listening", "proposing", "confirm_1", "confirm_2", "human_needed"}
 SITE_NAMES = {"www.sncf-connect.com": "SNCF Connect", "www.ubereats.com": "Uber Eats"}
+CATEGORY_SITES = {"train": "SNCF Connect", "repas": "Uber Eats"}
 CLIENT_MESSAGE: TypeAdapter[ClientMessage] = TypeAdapter(ClientMessage)
 SendFn = Callable[[dict[str, Any]], Awaitable[None]]
 
@@ -234,7 +237,8 @@ class Session:
         self._armed_hash: str | None = None
         self._direct_limit: int | None = None  # achat direct : prix maximal accepté (centimes)
         self._last_progress = 0.0
-        self._secret_mode = False  # pendant la demande du code secret
+        self._secret_mode = False  # pendant la demande du code secret ou de la carte
+        self._card_dictated = False  # une carte a été dictée pour la commande en cours
         self._payment_refusal: str | None = None
         self._flow: asyncio.Task[None] | None = None
         self._reader: asyncio.Task[None] | None = None
@@ -573,6 +577,9 @@ class Session:
         self._agent = self.agent_factory(self.approve_payment, self.need_human)
         if hasattr(self._agent, "on_progress"):  # commentaire en direct de ce que fait l'agent
             self._agent.on_progress = self._progress
+        if hasattr(self._agent, "on_card_needed"):  # carte dictée quand le site n'en a pas
+            self._agent.on_card_needed = self._provide_card
+        self._card_dictated = False
         await self._say("Je cherche sur le site, cela peut prendre une minute.")
         await self._step("start", self._agent.start(intent, None))
         options = await self._step("search", self._agent.search())
@@ -774,7 +781,10 @@ class Session:
             "unknown": "Je ne sais pas si l'achat est passé. Vérifiez sur le site avant de recommencer.",
         }
         said = messages.get(result, messages["unknown"])
-        await self._end_order("done", f"{said} {site}".strip() if result == "accepted" and site else said)
+        said = f"{said} {site}".strip() if result == "accepted" and site else said
+        if result == "accepted":
+            said = f"{said} {self._card_saved_sentence()}".strip()
+        await self._end_order("done", said)
 
     async def _pay(self, summary: OrderSummary) -> None:
         assert self._agent is not None
@@ -825,6 +835,100 @@ class Session:
             )
         self._journal("payment_approval", decision="approved" if approved else "denied")
         return "approved" if approved else "denied"
+
+    # --- carte dictée (outil request_card de l'agent) -------------------------------------
+
+    async def _secret_answer(self, prompt: str, parse: Callable[[str], str | None], retry: str) -> str | None:
+        """Une réponse dictée, masquée (ni modèle de langage, ni historique, ni affichage). None : « non »."""
+        await self._say(prompt)
+        self._secret_mode = True
+        try:
+            for _ in range(CODE_ATTEMPTS):
+                answer = await self._ask("confirm_1", self.settings.confirm_timeout_s)
+                if answer.kind == "deny":
+                    return None
+                value = parse(answer.text)
+                if value:
+                    return value
+                await self._say(retry)
+            return None
+        finally:
+            self._secret_mode = False
+
+    async def _provide_card(self, kind: str) -> Any:
+        """Carte dictée pour ce paiement : (NewCard, enregistrer sur le site ?), ou None si refus.
+
+        Rien n'est gardé ici : la carte va à l'agent, qui la tape dans le Chrome local puis l'oublie.
+        """
+        previous = self.state
+        category = self._intent.category if self._intent else None
+        site = SITE_NAMES.get(domain_of(self._agent_site())) or CATEGORY_SITES.get(category or "", "ce site")
+        try:
+            if kind == "holder":
+                return await self._secret_answer(
+                    "Le site demande le nom du titulaire. Dites-le tel qu'il est écrit sur la carte.",
+                    lambda text: text.strip() or None,
+                    "Je n'ai pas compris le nom. Redites-le.",
+                )
+            await self._say(
+                f"{site[:1].upper()}{site[1:]} n'a pas de carte enregistrée. Je vais vous demander "
+                "votre carte bancaire, pour ce paiement seulement : je ne la garderai pas. "
+                "Attention, les chiffres seront entendus autour de vous. Dites « non » pour arrêter."
+            )
+            number = await self._secret_answer(
+                "Dites le numéro de la carte, les seize chiffres.",
+                parse_number,
+                "Je n'ai pas un numéro de carte valide. Redites les chiffres, lentement.",
+            )
+            if number is None:
+                return None
+            expiry = await self._secret_answer(
+                "La date d'expiration : le mois puis l'année, par exemple zéro trois, vingt-sept.",
+                lambda text: parse_expiry(text, self.today()),
+                "Je n'ai pas compris la date, ou la carte est expirée. Le mois, puis l'année.",
+            )
+            if expiry is None:
+                return None
+            cvc = await self._secret_answer(
+                "Le cryptogramme : les trois chiffres au dos de la carte.",
+                parse_cvc,
+                "Il faut trois chiffres. Redites-les.",
+            )
+            if cvc is None:
+                return None
+            card = NewCard(number, expiry, cvc)
+            spaced = " ".join(card.last4)
+            if not await self._yes_no(
+                "confirm_1",
+                f"Carte qui finit par {spaced}, valable jusqu'en {expiry[:2]} {expiry[2:]}. C'est bien ça ?",
+            ):
+                return None
+            save = await self._yes_no(
+                "confirm_1",
+                f"Voulez-vous enregistrer cette carte sur {site} pour vos prochains achats ? "
+                "C'est le site qui la gardera, pas moi.",
+            )
+            self._card_dictated = True
+            self._journal("card_dictated", save_on_site=save)  # jamais de chiffres
+            return card, save
+        except Abort:
+            return None
+        finally:
+            with contextlib.suppress(Exception):
+                await self._set_state(previous)
+
+    def _agent_site(self) -> str:
+        return getattr(self._agent, "_site", "") or ""
+
+    def _card_saved_sentence(self) -> str:
+        if not self._card_dictated:
+            return ""
+        saved = getattr(self._agent, "last_card_saved", None)
+        if saved is True:
+            return "Votre carte est maintenant enregistrée sur le site."
+        if saved is False:
+            return "La carte n'a pas été enregistrée sur le site."
+        return ""
 
     async def need_human(self, reason: str) -> NeedHumanDecision:
         """Outil need_human : CAPTCHA, cryptogramme, connexion. Attend « c'est fait » ou « annule »."""

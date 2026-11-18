@@ -29,6 +29,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import dataclasses
 import os
 import time
 import uuid
@@ -50,6 +51,7 @@ from .base import (
     PaymentDenied,
     UnapprovedPurchase,
 )
+from .card import CardField, NewCard, type_into_focused_field
 from .metrics import RunMetrics, append_result
 from .models import (
     AgentAnswer,
@@ -130,6 +132,12 @@ class ShoppingAgent:
         self.last_denial_reason: str | None = None  # pourquoi le garde-fou a refusé de payer
         # Commentaire en direct : appelé avec une phrase courte à chaque action notable de l'agent
         self.on_progress: Callable[[str], Awaitable[None]] | None = None
+        # Carte dictée quand le site n'en a pas : posé par l'orchestrateur. kind = "card" (numéro, date,
+        # cryptogramme, et souhait d'enregistrement sur le site) ou "holder" (nom du titulaire).
+        self.on_card_needed: Callable[[str], Awaitable[Any]] | None = None
+        self._card: NewCard | None = None  # effacée à la fin de buy(), pay() et cancel()
+        self._save_card_on_site = False
+        self.last_card_saved: bool | None = None  # le site a-t-il enregistré la carte (dernier achat)
         self._cursor = 0
         self._intent: Intent | None = None
         self._options: list[Option] = []
@@ -155,7 +163,69 @@ class ShoppingAgent:
             """À appeler en cas de CAPTCHA, de cryptogramme demandé ou de page de connexion (pas pour la validation dans l'application bancaire : celle-ci, attends-la). Attends la réponse : "resolved" (un humain a fait le geste, continue) ou "abort" (arrête-toi)."""
             return await agent._ask_human(reason)
 
-        return [request_payment_approval, need_human]
+        @tool(name="request_card")
+        async def request_card() -> str:
+            """À appeler sur la page de paiement si aucune carte enregistrée n'est utilisable (formulaire de carte vide, « Ajouter une carte »). Pilote fait dicter la carte à l'utilisateur. Renvoie "ready save_on_site=yes" ou "ready save_on_site=no" (puis remplis chaque champ avec fill_card_field), ou "abort" (arrête-toi sans payer)."""
+            return await agent._request_card()
+
+        @tool(name="fill_card_field")
+        async def fill_card_field(field: CardField) -> str:
+            """Après request_card : clique d'abord dans un champ du formulaire de carte, puis appelle cet outil avec son nom (number, expiry, expiry_month, expiry_year, cvc, holder). Pilote tape lui-même la valeur ; tu ne la connais pas et ne dois jamais la lire ni la recopier. Renvoie "ok" ou la raison du refus."""
+            return await agent._fill_card_field(field)
+
+        return [request_payment_approval, need_human, request_card, fill_card_field]
+
+    async def _request_card(self) -> str:
+        """Fait dicter la carte (une fois par paiement). La carte reste dans ce processus, jamais chez H."""
+        if not self._paying:
+            return "abort"  # on ne demande une carte qu'à l'étape d'achat ou de paiement
+        if self._card is not None:
+            return f"ready save_on_site={'yes' if self._save_card_on_site else 'no'}"
+        if self._browser_host != "user_device" or self.on_card_needed is None:
+            return "abort"  # sans le Chrome local, on ne peut pas taper la carte sans passer par H
+        try:
+            result = await self.on_card_needed("card")
+        except Exception:
+            result = None
+        if not result:
+            return "abort"
+        card, save = result
+        self._card, self._save_card_on_site = card, bool(save)
+        return f"ready save_on_site={'yes' if self._save_card_on_site else 'no'}"
+
+    async def _fill_card_field(self, field: Any) -> str:
+        """Tape une valeur de la carte dans le champ qui a le focus. N'en renvoie jamais la valeur."""
+        card = self._card
+        if not self._paying or card is None:
+            return "refusé : appelle d'abord request_card"
+        name = str(field)
+        if name == "holder" and not card.holder and self.on_card_needed is not None:
+            try:
+                holder = await self.on_card_needed("holder")
+            except Exception:
+                holder = None
+            if holder:
+                card = self._card = dataclasses.replace(card, holder=holder)
+        value = card.value(name)  # type: ignore[arg-type]
+        if not value:
+            return f"refusé : champ inconnu ou vide ({name})"
+        try:
+            await type_into_focused_field(value, self._site)
+        except Exception as error:  # jamais la valeur dans le message
+            self._log_card_error(name, error)
+            return "erreur : saisie impossible, clique dans le champ puis réessaie"
+        return "ok"
+
+    @staticmethod
+    def _log_card_error(name: str, error: Exception) -> None:
+        import logging
+
+        logging.getLogger(__name__).warning(
+            "Saisie de carte impossible (%s) : %s", name, type(error).__name__
+        )
+
+    def _forget_card(self) -> None:
+        self._card, self._save_card_on_site = None, False
 
     async def _decide_payment(self, summary: Any) -> str:
         """Décision de l'outil request_payment_approval. Tout ce qui est douteux donne "denied"."""
@@ -513,6 +583,7 @@ class ShoppingAgent:
             raise PaymentDenied(str(blocked)) from blocked
         finally:
             self._paying = False
+            self._forget_card()  # la carte dictée n'est gardée que le temps du paiement
         if answer.payment_result is None or self._pay_denied:
             await self._finish("paiement non effectué", "-")
             raise PaymentDenied(
@@ -529,6 +600,7 @@ class ShoppingAgent:
             self.order_id = str(uuid.uuid4())
         self.last_payment_message = None
         self.last_denial_reason = None
+        self.last_card_saved = None
         self._paying, self._pay_denied = True, False
         try:
             answer = await self._send(prompts.buy_message(self._chosen), "buy")
@@ -539,16 +611,19 @@ class ShoppingAgent:
             raise PaymentDenied(str(blocked)) from blocked
         finally:
             self._paying = False
+            self._forget_card()  # la carte dictée n'est gardée que le temps du paiement
         if answer.payment_result is None or self._pay_denied:
             await self._finish("achat non effectué", "-")
             raise PaymentDenied(
                 self.last_denial_reason or answer.blocked_reason or "L'agent n'a pas pu acheter."
             )
         self.last_payment_message = answer.payment_message
+        self.last_card_saved = answer.card_saved_on_site
         await self._finish("achat direct", answer.payment_result, answer)
         return answer.payment_result
 
     async def cancel(self) -> None:
+        self._forget_card()
         if self._session is not None:
             try:
                 await self._session.cancel()

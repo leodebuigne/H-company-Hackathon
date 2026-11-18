@@ -140,6 +140,10 @@ class AgentAnswer(BaseModel):
     )
     payment_message: str | None = Field(default=None, description="Message exact du site ou de la banque")
     blocked_reason: str | None = Field(default=None, description="Raison si tu n'as pas pu continuer")
+    card_saved_on_site: bool | None = Field(
+        default=None,
+        description="Carte dictée : true si l'enregistrement sur le site est coché, sinon false",
+    )
     site_notes: SiteNotes | str | None = None
 
     @field_validator("order_summary", "site_notes", mode="before")

@@ -439,3 +439,71 @@ async def test_direct_buy_never_asks_a_relative_only_the_code():
         await h.text("un deux trois")
         await h.wait_said("C'est acheté")
         assert "awaiting_relative" not in h.states() and "J'ai envoyé un message" not in h.said()
+
+
+# --- carte dictée quand le site n'en a pas d'enregistrée ------------------------------
+
+VISA_TEST = "4111111111111111"  # numéro de test public
+
+
+async def _dictate_card(h: Harness, save: bool) -> None:
+    await h.text("Un train de Paris pour Lille demain après 14 h")
+    await h.wait("proposing")
+    await h.text("La deuxième")
+    await h.wait("confirm_1")
+    await h.confirm(True)  # « J'achète bien … ? »
+    await h.wait_said("Dites le numéro de la carte")
+    await h.wait("confirm_1")
+    await h.text("4111 1111 1111 1111")
+    await h.wait_said("La date d'expiration")
+    await h.wait("confirm_1")
+    await h.text("zéro trois deux sept")
+    await h.wait_said("Le cryptogramme")
+    await h.wait("confirm_1")
+    await h.text("un deux trois")
+    await h.wait_said("C'est bien ça ?")
+    await h.wait("confirm_1")
+    assert "finit par 1 1 1 1" in h.said()
+    await h.confirm(True)
+    await h.wait_said("Voulez-vous enregistrer cette carte sur SNCF Connect")
+    await h.wait("confirm_1")
+    await h.confirm(save)
+
+
+async def test_dictated_card_pays_and_is_saved_on_the_site_only_if_asked(tmp_path):
+    journal = tmp_path / "journal.jsonl"
+    async with Harness(direct_buy=True, agent={"needs_card": True}, journal_path=str(journal)) as h:
+        await _dictate_card(h, save=True)
+        await h.wait_said("C'est acheté")
+        agent = h.agents[0]
+        assert agent.card_used.number == VISA_TEST and agent.card_used.expiry == "0327"
+        assert "Votre carte est maintenant enregistrée sur le site." in h.said()
+        import json
+
+        shown = json.dumps(h.messages, ensure_ascii=False)
+        assert VISA_TEST not in shown and "4111 1111" not in shown, "le numéro ne part vers aucun écran"
+        assert all("4111" not in turn["text"] for turn in h.session.history)
+        assert "4111" not in journal.read_text() and '"save_on_site": true' in journal.read_text()
+        typed = [m["text"] for m in h.of("transcript") if m["role"] == "user"]
+        assert typed.count("•••") >= 3
+
+
+async def test_dictated_card_not_saved_when_the_user_says_no():
+    async with Harness(direct_buy=True, agent={"needs_card": True}) as h:
+        await _dictate_card(h, save=False)
+        await h.wait_said("C'est acheté")
+        assert "La carte n'a pas été enregistrée sur le site." in h.said()
+
+
+async def test_saying_no_instead_of_the_card_number_buys_nothing():
+    async with Harness(direct_buy=True, agent={"needs_card": True}) as h:
+        await h.text("Un train de Paris pour Lille demain après 14 h")
+        await h.wait("proposing")
+        await h.text("La deuxième")
+        await h.wait("confirm_1")
+        await h.confirm(True)
+        await h.wait_said("Dites le numéro de la carte")
+        await h.wait("confirm_1")
+        await h.text("non")
+        await h.wait_said("Rien n'a été payé")
+        assert "C'est acheté" not in h.said()
