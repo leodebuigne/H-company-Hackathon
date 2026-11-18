@@ -71,6 +71,9 @@ OK_STATUSES = {"idle", "completed"}
 DEFAULT_SITES = {"train": "https://www.sncf-connect.com", "repas": "https://www.ubereats.com/fr"}
 
 
+NETWORK_RETRIES = 5  # coupures réseau tolérées d'affilée en attendant la réponse de l'agent
+
+
 def site_for(intent: Intent) -> str:
     """Adresse du site pour la demande, ou "" si l'agent doit le choisir ; AgentError sans catégorie."""
     category = intent.category
@@ -376,10 +379,21 @@ class ShoppingAgent:
 
     async def _wait_answer(self, phase: str) -> AgentAnswer:
         started = time.monotonic()
+        network_errors = 0
         for _ in range(30):
-            result = await self._session.wait_for_completion(
-                from_index=self._cursor, timeout_seconds=self._timeout
-            )
+            try:
+                result = await self._session.wait_for_completion(
+                    from_index=self._cursor, timeout_seconds=self._timeout
+                )
+            except httpx.TransportError:
+                # Coupure passagère avec H (ReadTimeout constaté le 18/11 pendant un achat) : l'agent
+                # continue de son côté, on reprend la lecture au même endroit au lieu d'abandonner.
+                network_errors += 1
+                if network_errors > NETWORK_RETRIES:
+                    raise
+                await asyncio.sleep(2 * network_errors)
+                continue
+            network_errors = 0
             fresh = result.next_from_index > self._cursor
             self._cursor = result.next_from_index
             if result.status not in OK_STATUSES:

@@ -74,6 +74,11 @@ INTRO = (
     "Paris pour Lille demain après 14 heures, ou une question comme « à quelle heure ferme la poste ? »."
 )
 NEXT = "Que puis-je faire d'autre pour vous ?"
+# Paiement autorisé puis contact perdu avec le site : on ne sait pas si l'achat est passé (test du 18/11).
+UNSURE = (
+    "Le paiement a été autorisé, mais j'ai perdu le contact avec le site avant de voir le résultat. "
+    "Je ne sais pas si l'achat est passé : vérifiez vos e-mails ou le site avant de recommencer."
+)
 # États où Pilote attend une réponse de la personne.
 WAITING: set[State] = {"listening", "proposing", "confirm_1", "confirm_2", "human_needed"}
 CLIENT_MESSAGE: TypeAdapter[ClientMessage] = TypeAdapter(ClientMessage)
@@ -338,6 +343,7 @@ class Session:
         self._summary: OrderSummary | None = None
         self._armed_hash: str | None = None
         self._direct_limit: int | None = None  # achat direct : prix maximal accepté (centimes)
+        self._payment_cleared = False  # le dernier verrou a autorisé le clic de paiement
         self._last_progress = 0.0
         self._secret_mode = False  # pendant la demande du code secret
         self._payment_refusal: str | None = None
@@ -573,7 +579,9 @@ class Session:
         self._intent = None
         self._summary = None
         await self._set_state(state)
-        await self._say(f"{message} {NEXT}")
+        # La personne doit savoir que Pilote a fini sa tâche : on le dit clairement à chaque fin.
+        done = " C'est terminé." if state == "done" else ""
+        await self._say(f"{message}{done} {NEXT}")
 
     # --- déroulé d'une commande ---------------------------------------------------------
 
@@ -592,10 +600,14 @@ class Session:
             except Exception:
                 log.exception("Erreur inattendue dans la commande")
                 await self._error("internal", "Erreur inattendue de l'orchestrateur.")
-                await self._end_order("cancelled", "Une erreur est survenue. Rien n'a été acheté.")
+                if self._payment_cleared:  # le clic de paiement a pu avoir lieu : ne jamais dire « rien »
+                    await self._end_order("done", UNSURE)
+                else:
+                    await self._end_order("cancelled", "Une erreur est survenue. Rien n'a été acheté.")
 
     async def _order(self) -> None:
         intent = await self._get_request()
+        self._payment_cleared = False
         for key in ("options", "summary", "agent_view"):
             self._snapshot.pop(key, None)
         self._intent = intent
@@ -657,10 +669,6 @@ class Session:
         """Une étape de l'agent H, avec délai maximum et erreurs traduites pour l'oral."""
         try:
             return await asyncio.wait_for(call, self.settings.step_timeouts[name])
-        except TimeoutError as error:
-            raise Abort(
-                "Le site met trop de temps à répondre. J'arrête, rien n'a été acheté.", "timeout"
-            ) from error
         except PaymentDenied:
             raise
         except UnapprovedPurchase as bought:
@@ -673,11 +681,18 @@ class Session:
             said = outcomes.get(bought.result, "Attention : un paiement a peut-être été lancé sur le site.")
             check = "Vérifiez la commande sur le site, et annulez-la si besoin."
             raise Purchased(f"{said} {site + ' ' if site else ''}{check}") from bought
-        except NeedsHuman as error:
-            raise Abort(
-                f"Je suis bloqué sur le site : {error}. Rien n'a été acheté.", "agent_failed"
-            ) from error
-        except AgentError as error:
+        except (TimeoutError, NeedsHuman, AgentError) as error:
+            if self._payment_cleared:  # le clic de paiement a pu avoir lieu : ne jamais dire « rien »
+                self._journal("payment", result="unknown", lost_contact=True)
+                raise Purchased(UNSURE) from error
+            if isinstance(error, TimeoutError):
+                raise Abort(
+                    "Le site met trop de temps à répondre. J'arrête, rien n'a été acheté.", "timeout"
+                ) from error
+            if isinstance(error, NeedsHuman):
+                raise Abort(
+                    f"Je suis bloqué sur le site : {error}. Rien n'a été acheté.", "agent_failed"
+                ) from error
             raise Abort(
                 "L'agent n'a pas pu continuer sur le site. Rien n'a été acheté.", "agent_failed"
             ) from error
@@ -913,6 +928,7 @@ class Session:
                     f"le panier affichait {euros(summary.total_cents)} au lieu de {euros(self._direct_limit)}"
                 )
             self._journal("payment_approval", decision="approved" if approved else "denied", direct=True)
+            self._payment_cleared = self._payment_cleared or approved
             return "approved" if approved else "denied"
         approved = (
             self.state == "paying"
@@ -927,6 +943,7 @@ class Session:
                 f"au lieu de {euros(self._summary.total_cents)}"
             )
         self._journal("payment_approval", decision="approved" if approved else "denied")
+        self._payment_cleared = self._payment_cleared or approved
         return "approved" if approved else "denied"
 
     async def need_human(self, reason: str) -> NeedHumanDecision:

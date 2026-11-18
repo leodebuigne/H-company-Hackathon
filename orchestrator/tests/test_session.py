@@ -511,3 +511,30 @@ async def test_a_correction_updates_the_whole_request_sent_to_the_agent():
         assert h.agents[0]._intent.when.date == TODAY + dt.timedelta(days=1), "l'agent a la demande à jour"
         assert "demain, jeudi 19 novembre" in h.said()
         await h.session.receive({"type": "cancel"})
+
+
+async def test_pilote_says_clearly_that_the_order_is_finished():
+    async with Harness(direct_buy=True, purchase_code="472") as h:
+        await _to_code_prompt(h)
+        await h.text("472")
+        await h.wait_said("C'est terminé.")
+        assert "C'est acheté" in h.said()
+
+
+async def test_lost_contact_after_payment_approval_never_says_nothing_was_bought():
+    from orchestrator.agent_h.base import AgentError
+    from orchestrator.session import UNSURE
+
+    async with Harness(direct_buy=True, purchase_code="472") as h:
+        await _to_code_prompt(h)
+        agent = h.agents[-1]
+
+        async def buy_then_lose_contact():
+            summary = await agent.checkout()
+            assert await h.session.approve_payment(summary) == "approved"
+            raise AgentError("coupure réseau avec H")
+
+        agent.buy = buy_then_lose_contact  # type: ignore[method-assign]
+        await h.text("472")
+        await h.wait_said("Je ne sais pas si l'achat est passé")
+        assert UNSURE in h.said() and "Rien n'a été acheté" not in h.said()

@@ -45,3 +45,4 @@ Une ligne par commande, ajoutée automatiquement par orchestrator/agent_h/metric
 | 2026-11-18 16:57 | www.sncf-connect.com | inline | annulée | 38 | 4 | - |
 | 2026-11-18 17:02 | www.sncf-connect.com | inline | annulée | 171 | 2 | - |
 | 2026-11-18 17:05 | www.sncf-connect.com | inline | annulée | 80 | 12 | - |
+| 2026-11-18 21:07 | www.sncf-connect.com | inline | annulée | 586 | ? | - |
