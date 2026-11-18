@@ -5,12 +5,10 @@ Une « astuce » est un chemin ou un piège décrit de façon générale (« Tap
 publicité »). Elle a un compteur de réussites et d'échecs, rapportés par l'agent après chaque étape.
 
 - Active : envoyée à l'agent à chaque visite, les plus fiables d'abord.
-- Écartée après ECHECS_AVANT_MISE_DE_COTE échecs de suite : plus proposée d'office.
-- Réessayée quand elle est « due » : une panne passagère (page lente, bandeau, CAPTCHA, version de test du
-  site) ne doit pas l'écarter pour toujours. L'écart entre deux réessais double à chaque nouvel échec
-  (3, 6, 12, 24 visites, au plus 50) : un chemin revenu marche de nouveau vite, un chemin mort ne coûte
-  presque plus rien. Une seule réussite la remet en service.
-- Toujours proposée en secours quand l'agent est bloqué et n'a plus d'autre chemin.
+- Écartée (jugée inutile) après ECHECS_AVANT_MISE_DE_COTE échecs de suite : plus proposée d'office, et pas
+  de réessai programmé.
+- Toujours proposée en secours quand l'agent est bloqué et n'a plus d'autre chemin. Si elle marche alors,
+  cette réussite est enregistrée et la remet en service.
 
 Jamais de donnée personnelle : les textes passent par un filtre (e-mail, adresse, numéros, prix, dates,
 heures) ; l'agent doit écrire <ville>, <date>, <plat>… à la place des vraies valeurs.
@@ -32,9 +30,7 @@ Kind = Literal["raccourci", "étape", "piège"]
 Phase = Literal["recherche", "achat"]
 
 DEFAULT_FILE = Path.home() / ".pilote" / "memoire-sites.json"
-ECHECS_AVANT_MISE_DE_COTE = 2
-PREMIER_REESSAI = 3  # visites avant le premier réessai d'une astuce écartée
-REESSAI_MAX = 50
+ECHECS_AVANT_MISE_DE_COTE = 3
 MAX_ASTUCES = 30  # par site
 MAX_ENVOYEES = 8  # astuces actives envoyées par phase
 
@@ -68,8 +64,6 @@ class Tip:
     failures: int = 0
     streak: int = 0  # échecs de suite
     status: Literal["active", "écartée"] = "active"
-    retry_at: int | None = None  # numéro de visite à partir duquel la réessayer
-    retry_gap: int = PREMIER_REESSAI
     last_visit: int = 0
 
     @property
@@ -90,16 +84,15 @@ class Briefing:
 
     visit: int
     active: list[Tip]
-    retry_now: list[Tip]  # écartées et dues : à réessayer en premier
-    fallback: list[Tip]  # écartées, pas encore dues : seulement si l'agent est bloqué
+    fallback: list[Tip]  # écartées : seulement si l'agent est bloqué
 
     @property
     def empty(self) -> bool:
-        return not (self.active or self.retry_now or self.fallback)
+        return not (self.active or self.fallback)
 
     @property
     def ids(self) -> set[str]:
-        return {t.id for t in self.active + self.retry_now + self.fallback}
+        return {t.id for t in self.active + self.fallback}
 
 
 class PathMemory:
@@ -123,9 +116,10 @@ class PathMemory:
             return  # pas encore de mémoire, ou fichier abîmé : on repart de zéro
         for domain, site in (raw.get("sites") or {}).items():
             tips = {}
+            known = set(Tip.__dataclass_fields__)
             for data in (site.get("tips") or {}).values():
                 try:
-                    tip = Tip(**data)
+                    tip = Tip(**{k: v for k, v in data.items() if k in known})  # anciens champs ignorés
                 except TypeError:
                     continue
                 tips[tip.id] = tip
@@ -159,9 +153,7 @@ class PathMemory:
         for phase in ("recherche", "achat"):
             active += [t for t in tips if t.status == "active" and t.phase == phase][:MAX_ENVOYEES]
         parked = [t for t in tips if t.status == "écartée"]
-        due = [t for t in parked if t.retry_at is not None and site.visits >= t.retry_at]
-        rest = [t for t in parked if t not in due]
-        return Briefing(visit=site.visits, active=active, retry_now=due, fallback=rest)
+        return Briefing(visit=site.visits, active=active, fallback=parked)
 
     def record(
         self,
@@ -195,19 +187,15 @@ class PathMemory:
     @staticmethod
     def _score(site: SiteRecord, tip: Tip, worked: bool) -> None:
         tip.last_visit = site.visits
-        if worked:
+        if worked:  # y compris un chemin écarté essayé en secours : il revient en service
             tip.successes += 1
             tip.streak = 0
-            tip.status, tip.retry_at, tip.retry_gap = "active", None, PREMIER_REESSAI
+            tip.status = "active"
             return
         tip.failures += 1
         tip.streak += 1
-        if tip.status == "écartée":  # réessai raté : on attend deux fois plus longtemps
-            tip.retry_gap = min(tip.retry_gap * 2, REESSAI_MAX)
-            tip.retry_at = site.visits + tip.retry_gap
-        elif tip.streak >= ECHECS_AVANT_MISE_DE_COTE:
-            tip.status, tip.retry_gap = "écartée", PREMIER_REESSAI
-            tip.retry_at = site.visits + PREMIER_REESSAI
+        if tip.streak >= ECHECS_AVANT_MISE_DE_COTE:
+            tip.status = "écartée"
 
     @staticmethod
     def _trim(site: SiteRecord) -> None:
@@ -234,15 +222,10 @@ def briefing_text(b: Briefing | None) -> str:
     if b.active:
         lines.append("Chemins et pièges qui marchent : préfère-les au guide quand ils s'appliquent.")
         lines += [show(t) for t in b.active]
-    if b.retry_now:
-        lines.append(
-            "À RÉESSAYER cette fois (mis de côté après des échecs, peut-être passagers) : essaie-les en premier ; "
-            "si l'un ne mène à rien en 3 actions, reviens au chemin normal et rapporte l'échec."
-        )
-        lines += [show(t) for t in b.retry_now]
     if b.fallback:
         lines.append(
-            "SI TU ES BLOQUÉ (plus aucun autre chemin ne marche), essaie aussi ces chemins mis de côté :"
+            "SI TU ES BLOQUÉ (plus aucun autre chemin ne marche), essaie aussi ces chemins mis de côté après "
+            "des échecs ; ne les essaie pas sinon. Rapporte le résultat dans tips_feedback :"
         )
         lines += [show(t) for t in b.fallback]
     lines.append(

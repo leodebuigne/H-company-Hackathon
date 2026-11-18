@@ -44,42 +44,54 @@ def test_a_tip_is_learned_only_after_a_step_that_worked(tmp_path):
     assert PathMemory(tmp_path / "memoire.json").sites[SITE].tips[tid].text == QUICK
 
 
-def test_failing_path_is_parked_then_retried_with_growing_gaps_and_offered_when_stuck(tmp_path):
+def test_path_is_judged_useless_after_three_failures_and_only_offered_when_stuck(tmp_path):
     mem = _memory(tmp_path)
     tid = _learn_quick(mem)  # visite 1
-    mem.begin_visit(SITE)  # visite 2 : raté
-    mem.record(SITE, [(tid, False)], [], phase_ok=True)
-    assert mem.sites[SITE].tips[tid].status == "active", "un seul échec ne suffit pas"
-    mem.begin_visit(SITE)  # visite 3 : raté encore -> écarté, réessai à la visite 6
-    mem.record(SITE, [(tid, False)], [], phase_ok=True)
-    tip = mem.sites[SITE].tips[tid]
-    assert tip.status == "écartée" and tip.retry_at == 6
-
-    b4 = mem.begin_visit(SITE)  # visite 4 : pas encore dû -> seulement en secours
-    assert tid not in {t.id for t in b4.active + b4.retry_now} and tid in {t.id for t in b4.fallback}
-    assert "SI TU ES BLOQUÉ" in briefing_text(b4)
-    mem.begin_visit(SITE)  # visite 5
-    b6 = mem.begin_visit(SITE)  # visite 6 : dû -> à réessayer en premier
-    assert tid in {t.id for t in b6.retry_now} and "À RÉESSAYER" in briefing_text(b6)
-
-    mem.record(SITE, [(tid, False)], [], phase_ok=True)  # réessai raté : écart doublé (6)
-    assert mem.sites[SITE].tips[tid].retry_gap == 6 and mem.sites[SITE].tips[tid].retry_at == 12
-
-    for _ in range(6):  # jusqu'à la visite 12
-        b = mem.begin_visit(SITE)
-    assert tid in {t.id for t in b.retry_now}
-    mem.record(SITE, [(tid, True)], [], phase_ok=True)  # il remarche : remis en service
-    tip = mem.sites[SITE].tips[tid]
-    assert tip.status == "active" and tip.retry_at is None and tip.retry_gap == 3
-
-
-def test_retry_gap_is_capped(tmp_path):
-    mem = _memory(tmp_path)
-    tid = _learn_quick(mem)
-    for _ in range(12):
+    for visit in (2, 3):  # deux échecs : toujours en service
         mem.begin_visit(SITE)
         mem.record(SITE, [(tid, False)], [], phase_ok=True)
-    assert mem.sites[SITE].tips[tid].retry_gap == 50
+        assert mem.sites[SITE].tips[tid].status == "active", f"visite {visit}"
+    mem.begin_visit(SITE)  # visite 4 : troisième échec de suite -> écarté
+    mem.record(SITE, [(tid, False)], [], phase_ok=True)
+    assert mem.sites[SITE].tips[tid].status == "écartée"
+
+    for _ in range(60):  # aucune visite ne le repropose d'office : pas de réessai programmé
+        b = mem.begin_visit(SITE)
+        assert tid not in {t.id for t in b.active} and tid in {t.id for t in b.fallback}
+    text = briefing_text(b)
+    assert "SI TU ES BLOQUÉ" in text and "ne les essaie pas sinon" in text and "RÉESSAYER" not in text
+
+
+def test_a_parked_path_that_works_when_stuck_is_saved_and_back_in_use(tmp_path):
+    mem = _memory(tmp_path)
+    tid = _learn_quick(mem)
+    for _ in range(3):
+        mem.begin_visit(SITE)
+        mem.record(SITE, [(tid, False)], [], phase_ok=True)
+    assert mem.sites[SITE].tips[tid].status == "écartée"
+    mem.begin_visit(SITE)
+    mem.record(SITE, [(tid, True)], [], phase_ok=True)  # essayé en secours : il marche
+    tip = PathMemory(tmp_path / "memoire.json").sites[SITE].tips[tid]  # relu depuis le disque
+    assert tip.status == "active" and tip.streak == 0 and tip.successes == 2
+    assert tid in {t.id for t in mem.begin_visit(SITE).active}
+
+
+def test_a_success_resets_the_failure_count(tmp_path):
+    mem = _memory(tmp_path)
+    tid = _learn_quick(mem)
+    for worked in (False, False, True, False, False):  # jamais 3 échecs de suite
+        mem.begin_visit(SITE)
+        mem.record(SITE, [(tid, worked)], [], phase_ok=True)
+    assert mem.sites[SITE].tips[tid].status == "active"
+
+
+def test_old_memory_files_still_load(tmp_path):
+    old = {"version": 1, "sites": {SITE: {"visits": 3, "tips": {"T1": {
+        "id": "T1", "text": QUICK, "kind": "raccourci", "phase": "recherche", "successes": 2,
+        "failures": 0, "streak": 0, "status": "active", "retry_at": None, "retry_gap": 3, "last_visit": 3,
+    }}}}}  # fmt: skip
+    (tmp_path / "memoire.json").write_text(json.dumps(old))
+    assert PathMemory(tmp_path / "memoire.json").sites[SITE].tips["T1"].successes == 2
 
 
 def test_feedback_on_an_unknown_tip_is_ignored(tmp_path):
