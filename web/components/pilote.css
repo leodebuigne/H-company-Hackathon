@@ -38,7 +38,8 @@ body {
 
 /* ───────── Interface utilisateur ───────── */
 
-.pilote { position: relative; max-width: 720px; margin: 0 auto; padding: 22px 16px 72px; display: grid; gap: 28px; }
+.pilote { position: relative; max-width: 1180px; margin: 0 auto; padding: 22px 24px 72px; display: grid; gap: 30px; }
+.pilote-main > *, .pilote-header { max-width: 720px; width: 100%; justify-self: center; }
 
 /* Fond : deux nappes de lumière bleue très douces qui dérivent lentement */
 .pilote-backdrop { position: fixed; inset: 0; z-index: -1; overflow: hidden; pointer-events: none; background: #fff; }
@@ -54,35 +55,39 @@ body {
 }
 @keyframes drift { to { transform: translate(6vmax, 4vmax) scale(1.08); } }
 
-/* Barre du haut */
-.pilote-nav { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
-.pilote-wordmark { margin: 0; font-size: 1.35rem; font-weight: 700; letter-spacing: -0.04em; }
+/* En-tête : « Pilote. » en très grand, phrase sociale en dessous */
+.pilote-header { position: relative; text-align: center; display: grid; justify-items: center; gap: 10px; padding-top: 28px; }
+.pilote-title {
+  margin: 0; font-size: clamp(4.2rem, 13vw, 8.5rem); font-weight: 600; letter-spacing: -0.065em; line-height: 0.9;
+  color: var(--text); animation: rise 1s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+.pilote-title span {
+  background: linear-gradient(135deg, #0a7cff, #4fe3ff); -webkit-background-clip: text; background-clip: text; color: transparent;
+  text-shadow: 0 0 40px rgba(79, 227, 255, 0.35);
+}
+.pilote-tagline {
+  margin: 0; max-width: 30em; font-size: 1.08rem; font-weight: 400; color: var(--muted); line-height: 1.55;
+  letter-spacing: -0.005em; animation: rise 1s 0.15s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+@keyframes rise { from { opacity: 0; transform: translateY(14px); filter: blur(6px); } }
 .pilote-connection {
-  margin: 0; display: inline-flex; align-items: center; gap: 8px; padding: 6px 12px; border-radius: 999px;
-  font-size: 0.82rem; font-weight: 500; color: var(--muted); white-space: nowrap;
-  background: rgba(255, 255, 255, 0.7); border: 1px solid var(--line); backdrop-filter: blur(10px);
+  position: absolute; top: 0; right: 0;
+  margin: 0; display: inline-flex; align-items: center; gap: 8px; padding: 5px 11px; border-radius: 999px;
+  font-size: 0.78rem; font-weight: 500; color: var(--muted); white-space: nowrap;
+  background: rgba(255, 255, 255, 0.6); border: 1px solid var(--line); backdrop-filter: blur(10px);
 }
 .pilote-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--ok); box-shadow: 0 0 0 3px rgba(31, 157, 85, 0.15); }
 .pilote-connection.is-off .pilote-dot { background: var(--warn); animation: blink 1s infinite; }
 @keyframes blink { 50% { opacity: 0.25; } }
 
-/* Accroche */
-.pilote-intro { text-align: center; display: grid; justify-items: center; gap: 12px; padding-top: 4px; }
-.pilote-eyebrow {
-  margin: 0; font-size: 0.78rem; font-weight: 600; letter-spacing: 0.14em; text-transform: uppercase; color: var(--blue);
-}
-.pilote-intro h1 {
-  margin: 0; font-size: clamp(2.3rem, 6vw, 3.6rem); font-weight: 650; letter-spacing: -0.045em; line-height: 1.02;
-}
-.pilote-intro h1 span {
-  background: linear-gradient(92deg, #0a7cff 0%, #22c3ee 55%, #4fe3ff 100%);
-  -webkit-background-clip: text; background-clip: text; color: transparent;
-}
-.pilote-lede { margin: 0; max-width: 34em; font-size: 1.1rem; color: var(--muted); line-height: 1.5; }
-.pilote-chips { list-style: none; margin: 4px 0 0; padding: 0; display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; }
-.pilote-chips li {
-  padding: 7px 14px; border-radius: 999px; font-size: 0.88rem; font-weight: 500; color: var(--text);
-  background: rgba(255, 255, 255, 0.75); border: 1px solid var(--line); backdrop-filter: blur(10px);
+/* Mise en page : la conversation au centre, les propositions de Pilote à droite */
+.pilote-layout { display: grid; gap: 28px; }
+.pilote-main { display: grid; gap: 26px; min-width: 0; }
+.pilote-aside { display: grid; gap: 14px; align-content: start; animation: slide-in 0.6s cubic-bezier(0.2, 0.8, 0.2, 1) both; }
+@keyframes slide-in { from { opacity: 0; transform: translateX(24px); filter: blur(4px); } }
+@media (min-width: 1000px) {
+  .pilote-layout.has-aside { grid-template-columns: minmax(0, 1fr) 400px; align-items: start; }
+  .pilote-layout.has-aside .pilote-aside { position: sticky; top: 24px; }
 }
 
 /* Étapes : une ligne fine et des points */
@@ -99,7 +104,7 @@ body {
 .pilote-steps li.is-current .pilote-step-label { color: var(--text); font-weight: 600; }
 
 /* La conscience : l'orbe est le bouton */
-.pilote-hero { display: grid; justify-items: center; gap: 6px; margin-top: -18px; }
+.pilote-hero { display: grid; justify-items: center; gap: 6px; margin-top: -10px; }
 .pilote-halo { position: relative; display: grid; place-items: center; }
 .pilote-talk {
   position: relative; display: grid; place-items: center; padding: 0; border: 0; border-radius: 50%;
@@ -136,8 +141,9 @@ kbd {
 }
 .pilote-bubble {
   margin: 0; max-width: 78%; padding: 10px 15px; border-radius: 20px; font-size: 1.08rem; line-height: 1.38;
-  word-wrap: break-word; position: relative;
+  word-wrap: break-word; position: relative; animation: bubble-in 0.45s cubic-bezier(0.2, 0.8, 0.2, 1) both;
 }
+@keyframes bubble-in { from { opacity: 0; transform: translateY(8px) scale(0.98); } }
 .pilote-bubble.is-pilote { align-self: flex-start; background: var(--bubble-in); color: var(--text); border-bottom-left-radius: 6px; }
 .pilote-bubble.is-user { align-self: flex-end; background: var(--blue); color: #fff; border-bottom-right-radius: 6px; }
 .pilote-bubble.is-system {
@@ -269,7 +275,7 @@ kbd {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .pilote-backdrop span, .pilote-bubble.is-typing i, .pilote-connection.is-off .pilote-dot { animation: none !important; }
+  .pilote-backdrop span, .pilote-bubble.is-typing i, .pilote-title, .pilote-tagline, .pilote-aside, .pilote-bubble, .pilote-connection.is-off .pilote-dot { animation: none !important; }
 }
 
 /* ───────── Écran spectateur (jury) ───────── */

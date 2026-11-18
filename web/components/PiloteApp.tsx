@@ -156,16 +156,20 @@ export default function PiloteApp() {
     return () => channel.close();
   }, []);
 
-  const tell = useCallback((text: string, audio?: string | null, mime?: string | null) => {
-    if (voiceModeRef.current === "voice") {
-      if (mutedRef.current) return;
-      speakerRef.current?.enqueue(text, audio, mime);
-    } else setAnnounce((prev) => (prev === text ? `${text} ` : text)); // force la relecture d'un texte identique
-  }, []);
+  const tell = useCallback(
+    (text: string, audio?: string | null, mime?: string | null) => {
+      if (voiceModeRef.current === "voice") {
+        if (mutedRef.current) return;
+        speakerRef.current?.enqueue(text, audio, mime);
+      } else setAnnounce((prev) => (prev === text ? `${text} ` : text)); // force la relecture d'un texte identique
+    },
+    [],
+  );
 
   const onMessage = useCallback(
     (msg: ServerMessage) => {
-      if (msg.type === "state") setBusySince(BUSY_STATES.includes(msg.state) ? Date.now() : null);
+      if (msg.type === "state")
+        setBusySince(BUSY_STATES.includes(msg.state) ? Date.now() : null);
       // Avant le premier geste, le navigateur bloque le son : on gardera la phrase pour le démarrage.
       if (!startedRef.current) return;
       if (msg.type === "say") tell(msg.text, msg.audio, msg.mime);
@@ -175,12 +179,15 @@ export default function PiloteApp() {
       }
       if (msg.type === "error") playEarcon("error"); // l'explication arrive dans le say suivant
     },
-    [tell]
+    [tell],
   );
 
-  const { connected, state, options, summary, lastSay, log, send } = usePilote(onMessage);
+  const { connected, state, options, summary, lastSay, log, send } =
+    usePilote(onMessage);
   // Pilote demande le code secret à 3 chiffres (même état que la confirmation, voir session._check_code)
-  const askingCode = state === "confirm_1" && /code à 3 chiffres|bon code|votre code/i.test(lastSay);
+  const askingCode =
+    state === "confirm_1" &&
+    /code à 3 chiffres|bon code|votre code/i.test(lastSay);
   const awaitingConfirm = CONFIRM_STATES.includes(state) && !askingCode;
   const busy = BUSY_STATES.includes(state);
   const currentStep = STEPS.findIndex((s) => s.states.includes(state));
@@ -191,7 +198,8 @@ export default function PiloteApp() {
     const timer = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(timer);
   }, [busySince]);
-  const elapsed = busySince !== null ? Math.max(0, Math.round((now - busySince) / 1000)) : 0;
+  const elapsed =
+    busySince !== null ? Math.max(0, Math.round((now - busySince) / 1000)) : 0;
 
   const start = useCallback(() => {
     if (startedRef.current) return;
@@ -200,7 +208,10 @@ export default function PiloteApp() {
     mutedRef.current = false;
     channelRef.current?.postMessage("je-parle"); // les autres pages Pilote se taisent
     setStarted(true);
-    const greeting = lastSay && lastSay.includes("assistant automatique") ? lastSay : `${AI_DISCLOSURE} ${lastSay}`;
+    const greeting =
+      lastSay && lastSay.includes("assistant automatique")
+        ? lastSay
+        : `${AI_DISCLOSURE} ${lastSay}`;
     tell(greeting.trim());
     tell(KEYBOARD_HELP);
   }, [lastSay, tell]);
@@ -215,14 +226,18 @@ export default function PiloteApp() {
       setRecording(false);
       if (reason === "no_speech") {
         rec.discard();
-        return tell("Je n'ai rien entendu. Appuyez et parlez quand vous voulez.");
+        return tell(
+          "Je n'ai rien entendu. Appuyez et parlez quand vous voulez.",
+        );
       }
       const recording = await rec.stop();
-      if (!recording) return tell("C'était trop court. Appuyez une fois, puis parlez.");
+      if (!recording)
+        return tell("C'était trop court. Appuyez une fois, puis parlez.");
       playEarcon("thinking");
-      if (!send({ type: "audio", data: recording.data, mime: recording.mime })) tell("Je ne suis pas connecté à Pilote pour le moment.");
+      if (!send({ type: "audio", data: recording.data, mime: recording.mime }))
+        tell("Je ne suis pas connecté à Pilote pour le moment.");
     },
-    [send, tell]
+    [send, tell],
   );
 
   // Appui (barre d'espace ou bouton)
@@ -243,8 +258,12 @@ export default function PiloteApp() {
       setRecording(true);
       playEarcon("listening");
     } catch {
-      setMicError("Le micro n'est pas accessible. Autorisez-le dans le navigateur, ou utilisez le mode texte.");
-      tell("Je n'ai pas accès au micro. Vérifiez l'autorisation du navigateur, ou utilisez le champ de texte.");
+      setMicError(
+        "Le micro n'est pas accessible. Autorisez-le dans le navigateur, ou utilisez le mode texte.",
+      );
+      tell(
+        "Je n'ai pas accès au micro. Vérifiez l'autorisation du navigateur, ou utilisez le champ de texte.",
+      );
     }
   }, [tell, finishTalking]);
 
@@ -255,7 +274,10 @@ export default function PiloteApp() {
     if (performance.now() - pressedAtRef.current < TAP_MS) {
       handsFreeRef.current = true;
       setHandsFree(true);
-      rec.watchSilence({ ...HANDS_FREE, onStop: (reason) => void finishTalking(reason) });
+      rec.watchSilence({
+        ...HANDS_FREE,
+        onStop: (reason) => void finishTalking(reason),
+      });
       return;
     }
     setRecording(false);
@@ -266,7 +288,10 @@ export default function PiloteApp() {
   // Niveau du micro pour l'anneau du bouton
   useEffect(() => {
     if (!recording) return;
-    const timer = setInterval(() => setMicLevel(recorderRef.current?.level ?? 0), 80);
+    const timer = setInterval(
+      () => setMicLevel(recorderRef.current?.level ?? 0),
+      80,
+    );
     return () => {
       clearInterval(timer);
       setMicLevel(0);
@@ -289,7 +314,7 @@ export default function PiloteApp() {
       speakerRef.current?.stop();
       send({ type: "confirm", value });
     },
-    [send]
+    [send],
   );
 
   const repeat = useCallback(() => {
@@ -305,14 +330,20 @@ export default function PiloteApp() {
       if (/^\s*annul/i.test(text)) cancel();
       else send({ type: "text", text });
     },
-    [start, cancel, send]
+    [start, cancel, send],
   );
 
   // Raccourcis clavier globaux
   useEffect(() => {
     const isTyping = (e: KeyboardEvent) => {
       const el = e.target as HTMLElement | null;
-      return !!el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.tagName === "SELECT" || el.isContentEditable);
+      return (
+        !!el &&
+        (el.tagName === "INPUT" ||
+          el.tagName === "TEXTAREA" ||
+          el.tagName === "SELECT" ||
+          el.isContentEditable)
+      );
     };
     const down = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
@@ -350,14 +381,25 @@ export default function PiloteApp() {
       window.removeEventListener("keydown", down);
       window.removeEventListener("keyup", up);
     };
-  }, [started, awaitingConfirm, start, startTalking, stopTalking, cancel, confirm, repeat]);
+  }, [
+    started,
+    awaitingConfirm,
+    start,
+    startTalking,
+    stopTalking,
+    cancel,
+    confirm,
+    repeat,
+  ]);
 
   // Annonce de la perte et du retour de la connexion
   const wasConnected = useRef<boolean | null>(null);
   useEffect(() => {
     if (startedRef.current && wasConnected.current === true && !connected) {
       playEarcon("error");
-      speakerRef.current?.enqueue("La connexion avec Pilote est coupée. Je réessaie.");
+      speakerRef.current?.enqueue(
+        "La connexion avec Pilote est coupée. Je réessaie.",
+      );
     }
     if (startedRef.current && wasConnected.current === false && connected) {
       speakerRef.current?.enqueue("La connexion est rétablie.");
@@ -383,13 +425,34 @@ export default function PiloteApp() {
 
   const showOptions = state === "proposing" && options.length > 0 && !summary;
   const showSummary = !!summary && BUY_STATES.includes(state);
+  const hasAside = awaitingConfirm || askingCode || showOptions || showSummary;
   const recentLog = log.slice(-8);
   const tone =
-    state === "done" ? "is-done" : state === "cancelled" ? "is-cancelled" : state === "human_needed" ? "is-alert" : "";
+    state === "done"
+      ? "is-done"
+      : state === "cancelled"
+        ? "is-cancelled"
+        : state === "human_needed"
+          ? "is-alert"
+          : "";
   const listening = recording || handsFree;
-  const haloClass = listening ? "is-listening" : speaking ? "is-speaking" : busy ? "is-busy" : started ? "" : "is-idle";
+  const haloClass = listening
+    ? "is-listening"
+    : speaking
+      ? "is-speaking"
+      : busy
+        ? "is-busy"
+        : started
+          ? ""
+          : "is-idle";
   const orbSize = 360;
-  const orbMode: OrbMode = listening ? "listening" : speaking ? "speaking" : busy ? "thinking" : "idle";
+  const orbMode: OrbMode = listening
+    ? "listening"
+    : speaking
+      ? "speaking"
+      : busy
+        ? "thinking"
+        : "idle";
 
   return (
     <main className="pilote">
@@ -398,262 +461,371 @@ export default function PiloteApp() {
         <span />
       </div>
 
-      <header className="pilote-nav">
-        <p className="pilote-wordmark">Pilote</p>
+      <header className="pilote-header">
         <p className={`pilote-connection ${connected ? "is-on" : "is-off"}`}>
           <span className="pilote-dot" aria-hidden="true" />
           {connected ? "En ligne" : "Connexion…"}
         </p>
-      </header>
-
-      <section className="pilote-intro">
-        <p className="pilote-eyebrow">Assistant vocal · H Company × Hugging Face</p>
-        <h1>
-          Achetez en ligne,
-          <br />
-          <span>simplement en parlant.</span>
+        <h1 className="pilote-title">
+          Pilote<span aria-hidden="true">.</span>
         </h1>
-        <p className="pilote-lede">
-          Pilote cherche, compare et commande pour vous sur les vrais sites. Pensé pour les personnes aveugles et
-          malvoyantes.
+        <p className="pilote-tagline">
+          Internet, à portée de voix. Pour que chacun puisse faire ses démarches
+          en toute autonomie.
         </p>
-        <ul className="pilote-chips" aria-label="Ce que Pilote sait faire">
-          <li>Billets de train</li>
-          <li>Repas livrés</li>
-          <li>Réponses aux questions</li>
-          <li>Paiement par code secret</li>
-        </ul>
-      </section>
+      </header>
 
       {/* Ce qui est annoncé au lecteur d'écran (mode lecteur d'écran uniquement) */}
       <div className="sr-only" aria-live="polite" aria-atomic="true">
         {voiceMode === "screenreader" ? announce : ""}
       </div>
 
-
-      <section className={`pilote-hero ${tone}`} aria-label="Où en est la commande">
-        <div className={`pilote-halo ${haloClass}`}>
-          <button
-            type="button"
-            className={`pilote-talk ${listening ? "is-recording" : ""}`}
-            aria-pressed={started ? listening : undefined}
-            aria-label={talkLabel}
-            aria-describedby="pilote-help"
-            onClick={() => {
-              if (!started) start();
-            }}
-            onPointerDown={(e) => {
-              if (!started) return;
-              e.preventDefault();
-              // Le doigt ou la souris peut glisser hors du bouton sans couper l'enregistrement
-              e.currentTarget.setPointerCapture(e.pointerId);
-              void startTalking();
-            }}
-            onPointerUp={() => void stopTalking()}
-            onPointerCancel={() => void stopTalking()}
-            onKeyDown={(e) => {
-              // La barre d'espace est gérée globalement ; on évite le double déclenchement du bouton
-              if (e.code === "Space") e.preventDefault();
-            }}
-            autoFocus
+      <div className={`pilote-layout ${hasAside ? "has-aside" : ""}`}>
+        <div className="pilote-main">
+          <section
+            className={`pilote-hero ${tone}`}
+            aria-label="Où en est la commande"
           >
-            <Orb mode={orbMode} level={micLevel} size={orbSize} />
-            {!started && <span className="pilote-orb-hint">Touchez pour commencer</span>}
-          </button>
-        </div>
-        <p className="pilote-state">
-          {STATE_LABELS[state]}
-          {busy && elapsed >= 3 && <span className="pilote-elapsed"> · {elapsed} s</span>}
-        </p>
-        <p className="pilote-talk-label" aria-hidden="true">
-          {talkLabel}
-        </p>
-        <p id="pilote-help" className="pilote-help">
-          <kbd>Espace</kbd> pour parler · <kbd>Échap</kbd> pour annuler
-          {lastSay && started && (
-            <>
-              {" · "}
-              <button type="button" className="pilote-link" onClick={repeat}>
-                Répéter
+            <div className={`pilote-halo ${haloClass}`}>
+              <button
+                type="button"
+                className={`pilote-talk ${listening ? "is-recording" : ""}`}
+                aria-pressed={started ? listening : undefined}
+                aria-label={talkLabel}
+                aria-describedby="pilote-help"
+                onClick={() => {
+                  if (!started) start();
+                }}
+                onPointerDown={(e) => {
+                  if (!started) return;
+                  e.preventDefault();
+                  // Le doigt ou la souris peut glisser hors du bouton sans couper l'enregistrement
+                  e.currentTarget.setPointerCapture(e.pointerId);
+                  void startTalking();
+                }}
+                onPointerUp={() => void stopTalking()}
+                onPointerCancel={() => void stopTalking()}
+                onKeyDown={(e) => {
+                  // La barre d'espace est gérée globalement ; on évite le double déclenchement du bouton
+                  if (e.code === "Space") e.preventDefault();
+                }}
+                autoFocus
+              >
+                <Orb mode={orbMode} level={micLevel} size={orbSize} />
+                {!started && (
+                  <span className="pilote-orb-hint">
+                    Touchez pour commencer
+                  </span>
+                )}
               </button>
-            </>
-          )}
-        </p>
-      </section>
-
-      <ol className="pilote-steps" aria-label="Étapes de la commande">
-        {STEPS.map((step, i) => (
-          <li
-            key={step.label}
-            className={i < currentStep || state === "done" ? "is-past" : i === currentStep ? "is-current" : ""}
-            aria-current={i === currentStep ? "step" : undefined}
-          >
-            <span className="pilote-step-dot" aria-hidden="true" />
-            <span className="pilote-step-label">{step.label}</span>
-          </li>
-        ))}
-      </ol>
-
-      <section className="pilote-thread" aria-label="Conversation">
-        {recentLog.length === 0 && (
-          <p className="pilote-bubble is-pilote">
-            {lastSay || "Bonjour, je suis Pilote. Dites-moi ce que vous voulez acheter, ou posez-moi une question."}
-          </p>
-        )}
-        {recentLog.map((entry) => (
-          <p key={entry.id} className={`pilote-bubble is-${entry.who}`}>
-            <span className="sr-only">{entry.who === "user" ? "Vous : " : entry.who === "pilote" ? "Pilote : " : "Système : "}</span>
-            {entry.text}
-          </p>
-        ))}
-        {busy && (
-          <p className="pilote-bubble is-pilote is-typing" aria-hidden="true">
-            <i />
-            <i />
-            <i />
-          </p>
-        )}
-      </section>
-
-      {awaitingConfirm && (
-        <div className="pilote-confirm" role="group" aria-label="Répondre à Pilote">
-          <button type="button" className="pilote-yes" onClick={() => confirm(true)}>
-            Oui <kbd>Entrée</kbd>
-          </button>
-          <button type="button" className="pilote-no" onClick={() => confirm(false)}>
-            Non <kbd>N</kbd>
-          </button>
-        </div>
-      )}
-
-      {askingCode && (
-        <form
-          className="pilote-code"
-          aria-label="Code secret"
-          onSubmit={(e) => {
-            e.preventDefault();
-            if (codeInput.length !== 3) return;
-            sendText(codeInput);
-            setCodeInput("");
-          }}
-        >
-          <label htmlFor="pilote-code-input">Votre code à 3 chiffres</label>
-          <div>
-            <input
-              id="pilote-code-input"
-              type="password"
-              inputMode="numeric"
-              pattern="[0-9]{3}"
-              maxLength={3}
-              autoComplete="off"
-              autoFocus
-              value={codeInput}
-              onChange={(e) => setCodeInput(e.target.value.replace(/\D/g, "").slice(0, 3))}
-              aria-describedby="pilote-code-help"
-            />
-            <button type="submit" disabled={codeInput.length !== 3}>
-              Valider
-            </button>
-          </div>
-          <p id="pilote-code-help" className="pilote-muted">
-            Ou dites-le à voix haute. Il n&apos;est ni affiché ni enregistré.
-          </p>
-        </form>
-      )}
-
-      {showOptions && (
-        <section className="pilote-card" aria-label="Options proposées">
-          <h2>
-            Options <span className="pilote-muted">Touchez, ou dites « la première »</span>
-          </h2>
-          <ol className="pilote-options">
-            {options.slice(0, 3).map((o, i) => {
-              const time = o.details.departure && o.details.arrival ? `${o.details.departure} → ${o.details.arrival}` : null;
-              const facts = [o.details.duration, o.details.via, o.details.delivery, o.details.restaurant]
-                .filter(Boolean)
-                .join(" · ");
-              return (
-                <li key={o.id}>
-                  <button type="button" className="pilote-option" onClick={() => sendText(`la ${ORDINALS[i] ?? `numéro ${i + 1}`}`)}>
-                    <span className="pilote-option-rank" aria-hidden="true">
-                      {i + 1}
-                    </span>
-                    <span className="pilote-option-body">
-                      {time && <span className="pilote-option-time">{time}</span>}
-                      <span className="pilote-option-title">{o.title}</span>
-                      {facts && <span className="pilote-option-facts">{facts}</span>}
-                      {o.rating != null && <span className="pilote-option-facts">★ {o.rating.toLocaleString("fr-FR")} / 5</span>}
-                    </span>
-                    <span className={`pilote-option-price ${o.price_cents === 0 ? "is-free" : ""}`}>
-                      {formatCents(o.price_cents)}
-                    </span>
+            </div>
+            <p className="pilote-state">
+              {STATE_LABELS[state]}
+              {busy && elapsed >= 3 && (
+                <span className="pilote-elapsed"> · {elapsed} s</span>
+              )}
+            </p>
+            <p className="pilote-talk-label" aria-hidden="true">
+              {talkLabel}
+            </p>
+            <p id="pilote-help" className="pilote-help">
+              <kbd>Espace</kbd> pour parler · <kbd>Échap</kbd> pour annuler
+              {lastSay && started && (
+                <>
+                  {" · "}
+                  <button
+                    type="button"
+                    className="pilote-link"
+                    onClick={repeat}
+                  >
+                    Répéter
                   </button>
-                </li>
-              );
-            })}
+                </>
+              )}
+            </p>
+          </section>
+
+          <ol className="pilote-steps" aria-label="Étapes de la commande">
+            {STEPS.map((step, i) => (
+              <li
+                key={step.label}
+                className={
+                  i < currentStep || state === "done"
+                    ? "is-past"
+                    : i === currentStep
+                      ? "is-current"
+                      : ""
+                }
+                aria-current={i === currentStep ? "step" : undefined}
+              >
+                <span className="pilote-step-dot" aria-hidden="true" />
+                <span className="pilote-step-label">{step.label}</span>
+              </li>
+            ))}
           </ol>
-        </section>
-      )}
 
-      {showSummary && summary && (
-        <section className="pilote-card pilote-summary" aria-label="Récapitulatif de la commande">
-          <h2>Récapitulatif</h2>
-          <ul>
-            {summary.items.map((item, i) => (
-              <li key={i}>
-                <span>
-                  {item.quantity} × {item.name}
-                  {item.options.length > 0 && ` (${item.options.join(", ")})`}
+          <section className="pilote-thread" aria-label="Conversation">
+            {recentLog.length === 0 && (
+              <p className="pilote-bubble is-pilote">
+                {lastSay ||
+                  "Bonjour, je suis Pilote. Dites-moi ce que vous voulez acheter, ou posez-moi une question."}
+              </p>
+            )}
+            {recentLog.map((entry) => (
+              <p key={entry.id} className={`pilote-bubble is-${entry.who}`}>
+                <span className="sr-only">
+                  {entry.who === "user"
+                    ? "Vous : "
+                    : entry.who === "pilote"
+                      ? "Pilote : "
+                      : "Système : "}
                 </span>
-                <span>{formatCents(item.total_cents)}</span>
-              </li>
+                {entry.text}
+              </p>
             ))}
-            {summary.fees.map((fee, i) => (
-              <li key={`fee-${i}`} className="is-fee">
-                <span>{fee.label}</span>
-                <span>{formatCents(fee.amount_cents)}</span>
-              </li>
-            ))}
-          </ul>
-          <p className="pilote-total">
-            <span>Total</span>
-            <strong>{formatCents(summary.total_cents)}</strong>
-          </p>
-          {summary.when_label && <p className="pilote-muted">{summary.when_label}</p>}
-          {summary.conditions && <p className="pilote-muted">{summary.conditions}</p>}
-        </section>
-      )}
+            {busy && (
+              <p
+                className="pilote-bubble is-pilote is-typing"
+                aria-hidden="true"
+              >
+                <i />
+                <i />
+                <i />
+              </p>
+            )}
+          </section>
 
-      <form className="pilote-text" onSubmit={submitText} aria-label="Écrire au lieu de parler">
-        <label htmlFor="pilote-text-input" className="sr-only">
-          Écrire au lieu de parler
-        </label>
-        <input
-          id="pilote-text-input"
-          value={textInput}
-          onChange={(e) => setTextInput(e.target.value)}
-          placeholder="Écrire à Pilote…"
-          autoComplete="off"
-        />
-        <button type="submit" aria-label="Envoyer" disabled={!textInput.trim()}>
-          <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" focusable="false">
-            <path d="M12 19V5M6 11l6-6 6 6" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" />
-          </svg>
-        </button>
-      </form>
+          <form
+            className="pilote-text"
+            onSubmit={submitText}
+            aria-label="Écrire au lieu de parler"
+          >
+            <label htmlFor="pilote-text-input" className="sr-only">
+              Écrire au lieu de parler
+            </label>
+            <input
+              id="pilote-text-input"
+              value={textInput}
+              onChange={(e) => setTextInput(e.target.value)}
+              placeholder="Écrire à Pilote…"
+              autoComplete="off"
+            />
+            <button
+              type="submit"
+              aria-label="Envoyer"
+              disabled={!textInput.trim()}
+            >
+              <svg
+                viewBox="0 0 24 24"
+                width="18"
+                height="18"
+                aria-hidden="true"
+                focusable="false"
+              >
+                <path
+                  d="M12 19V5M6 11l6-6 6 6"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2.4"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+              </svg>
+            </button>
+          </form>
 
-      {micError && (
-        <p className="pilote-alert" role="alert">
-          {micError}
-        </p>
-      )}
+          {micError && (
+            <p className="pilote-alert" role="alert">
+              {micError}
+            </p>
+          )}
+        </div>
+        {hasAside && (
+          <aside className="pilote-aside" aria-label="Propositions de Pilote">
+            {awaitingConfirm && (
+              <div
+                className="pilote-confirm"
+                role="group"
+                aria-label="Répondre à Pilote"
+              >
+                <button
+                  type="button"
+                  className="pilote-yes"
+                  onClick={() => confirm(true)}
+                >
+                  Oui <kbd>Entrée</kbd>
+                </button>
+                <button
+                  type="button"
+                  className="pilote-no"
+                  onClick={() => confirm(false)}
+                >
+                  Non <kbd>N</kbd>
+                </button>
+              </div>
+            )}
+
+            {askingCode && (
+              <form
+                className="pilote-code"
+                aria-label="Code secret"
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  if (codeInput.length !== 3) return;
+                  sendText(codeInput);
+                  setCodeInput("");
+                }}
+              >
+                <label htmlFor="pilote-code-input">
+                  Votre code à 3 chiffres
+                </label>
+                <div>
+                  <input
+                    id="pilote-code-input"
+                    type="password"
+                    inputMode="numeric"
+                    pattern="[0-9]{3}"
+                    maxLength={3}
+                    autoComplete="off"
+                    autoFocus
+                    value={codeInput}
+                    onChange={(e) =>
+                      setCodeInput(
+                        e.target.value.replace(/\D/g, "").slice(0, 3),
+                      )
+                    }
+                    aria-describedby="pilote-code-help"
+                  />
+                  <button type="submit" disabled={codeInput.length !== 3}>
+                    Valider
+                  </button>
+                </div>
+                <p id="pilote-code-help" className="pilote-muted">
+                  Ou dites-le à voix haute. Il n&apos;est ni affiché ni
+                  enregistré.
+                </p>
+              </form>
+            )}
+
+            {showOptions && (
+              <section className="pilote-card" aria-label="Options proposées">
+                <h2>
+                  Options{" "}
+                  <span className="pilote-muted">
+                    Touchez, ou dites « la première »
+                  </span>
+                </h2>
+                <ol className="pilote-options">
+                  {options.slice(0, 3).map((o, i) => {
+                    const time =
+                      o.details.departure && o.details.arrival
+                        ? `${o.details.departure} → ${o.details.arrival}`
+                        : null;
+                    const facts = [
+                      o.details.duration,
+                      o.details.via,
+                      o.details.delivery,
+                      o.details.restaurant,
+                    ]
+                      .filter(Boolean)
+                      .join(" · ");
+                    return (
+                      <li key={o.id}>
+                        <button
+                          type="button"
+                          className="pilote-option"
+                          onClick={() =>
+                            sendText(`la ${ORDINALS[i] ?? `numéro ${i + 1}`}`)
+                          }
+                        >
+                          <span
+                            className="pilote-option-rank"
+                            aria-hidden="true"
+                          >
+                            {i + 1}
+                          </span>
+                          <span className="pilote-option-body">
+                            {time && (
+                              <span className="pilote-option-time">{time}</span>
+                            )}
+                            <span className="pilote-option-title">
+                              {o.title}
+                            </span>
+                            {facts && (
+                              <span className="pilote-option-facts">
+                                {facts}
+                              </span>
+                            )}
+                            {o.rating != null && (
+                              <span className="pilote-option-facts">
+                                ★ {o.rating.toLocaleString("fr-FR")} / 5
+                              </span>
+                            )}
+                          </span>
+                          <span
+                            className={`pilote-option-price ${o.price_cents === 0 ? "is-free" : ""}`}
+                          >
+                            {formatCents(o.price_cents)}
+                          </span>
+                        </button>
+                      </li>
+                    );
+                  })}
+                </ol>
+              </section>
+            )}
+
+            {showSummary && summary && (
+              <section
+                className="pilote-card pilote-summary"
+                aria-label="Récapitulatif de la commande"
+              >
+                <h2>Récapitulatif</h2>
+                <ul>
+                  {summary.items.map((item, i) => (
+                    <li key={i}>
+                      <span>
+                        {item.quantity} × {item.name}
+                        {item.options.length > 0 &&
+                          ` (${item.options.join(", ")})`}
+                      </span>
+                      <span>{formatCents(item.total_cents)}</span>
+                    </li>
+                  ))}
+                  {summary.fees.map((fee, i) => (
+                    <li key={`fee-${i}`} className="is-fee">
+                      <span>{fee.label}</span>
+                      <span>{formatCents(fee.amount_cents)}</span>
+                    </li>
+                  ))}
+                </ul>
+                <p className="pilote-total">
+                  <span>Total</span>
+                  <strong>{formatCents(summary.total_cents)}</strong>
+                </p>
+                {summary.when_label && (
+                  <p className="pilote-muted">{summary.when_label}</p>
+                )}
+                {summary.conditions && (
+                  <p className="pilote-muted">{summary.conditions}</p>
+                )}
+              </section>
+            )}
+          </aside>
+        )}
+      </div>
 
       <details className="pilote-panel">
         <summary>Réglages et raccourcis</summary>
         <fieldset className="pilote-settings">
           <legend>Qui lit les réponses ?</legend>
           <label>
-            <input type="radio" name="voice-mode" checked={voiceMode === "voice"} onChange={() => setVoiceMode("voice")} />
+            <input
+              type="radio"
+              name="voice-mode"
+              checked={voiceMode === "voice"}
+              onChange={() => setVoiceMode("voice")}
+            />
             La voix de Pilote
           </label>
           <label>
@@ -672,7 +844,11 @@ export default function PiloteApp() {
 
         <div className="pilote-setting">
           <label htmlFor="pilote-rate">
-            Vitesse de la voix : <strong>{prefs.rate.toLocaleString("fr-FR", { minimumFractionDigits: 1 })}×</strong>
+            Vitesse de la voix :{" "}
+            <strong>
+              {prefs.rate.toLocaleString("fr-FR", { minimumFractionDigits: 1 })}
+              ×
+            </strong>
           </label>
           <input
             id="pilote-rate"
@@ -687,11 +863,15 @@ export default function PiloteApp() {
         </div>
 
         <div className="pilote-setting">
-          <label htmlFor="pilote-browser-voice">Voix de secours du navigateur</label>
+          <label htmlFor="pilote-browser-voice">
+            Voix de secours du navigateur
+          </label>
           <select
             id="pilote-browser-voice"
             value={prefs.browserVoice ?? ""}
-            onChange={(e) => updatePrefs({ browserVoice: e.target.value || null })}
+            onChange={(e) =>
+              updatePrefs({ browserVoice: e.target.value || null })
+            }
           >
             <option value="">Automatique (la plus naturelle)</option>
             {voices.map((name) => (
@@ -700,14 +880,19 @@ export default function PiloteApp() {
               </option>
             ))}
           </select>
-          <p className="pilote-muted">Utilisée seulement si la voix de Pilote ne répond pas à temps.</p>
+          <p className="pilote-muted">
+            Utilisée seulement si la voix de Pilote ne répond pas à temps.
+          </p>
         </div>
 
         <dl className="pilote-shortcuts">
           <dt>
             <kbd>Espace</kbd>
           </dt>
-          <dd>Une fois puis parlez (Pilote répond quand vous vous taisez), ou maintenue pendant que vous parlez</dd>
+          <dd>
+            Une fois puis parlez (Pilote répond quand vous vous taisez), ou
+            maintenue pendant que vous parlez
+          </dd>
           <dt>
             <kbd>Entrée</kbd> / <kbd>N</kbd>
           </dt>
@@ -722,7 +907,12 @@ export default function PiloteApp() {
           <dd>Répéter la dernière phrase</dd>
         </dl>
 
-        <Link href="/spectateur" target="_blank" rel="noreferrer" className="pilote-spectator-link">
+        <Link
+          href="/spectateur"
+          target="_blank"
+          rel="noreferrer"
+          className="pilote-spectator-link"
+        >
           Ouvrir l&apos;écran spectateur ↗
         </Link>
       </details>

@@ -83,11 +83,11 @@ export default function Orb({ mode, level = 0, size = 320 }: Props) {
       ctx.fill();
 
       // Anneaux qui ondulent (plusieurs couches décalées = matière lumineuse)
+      // Bande lumineuse large et floue, sans trait net (pièce jointe : anneau doux et granuleux)
       const layers = [
-        { color: "79, 227, 255", width: 30, alpha: 0.14, seed: 0.0, amp: 1.2, blur: 46 },
-        { color: "79, 227, 255", width: 16, alpha: 0.26, seed: 1.7, amp: 1.0, blur: 30 },
-        { color: "120, 236, 255", width: 7, alpha: 0.45, seed: 3.1, amp: 0.8, blur: 18 },
-        { color: "79, 227, 255", width: 2.5, alpha: 0.75, seed: 4.6, amp: 1.3, blur: 10 },
+        { color: "79, 227, 255", width: 34, alpha: 0.1, seed: 0.0, amp: 1.2, blur: 50 },
+        { color: "79, 227, 255", width: 20, alpha: 0.2, seed: 1.7, amp: 1.0, blur: 34 },
+        { color: "110, 234, 255", width: 10, alpha: 0.28, seed: 3.1, amp: 0.9, blur: 22 },
       ];
       ctx.lineJoin = "round";
       for (const layer of layers) {
@@ -110,13 +110,15 @@ export default function Orb({ mode, level = 0, size = 320 }: Props) {
       }
       ctx.shadowBlur = 0;
 
-      // Poussière lumineuse le long de l'anneau (grain de la pièce jointe)
-      const dust = 420 + Math.round(energy * 380);
+      // Grain lumineux autour de l'anneau, plus dense au bord extérieur (comme la pièce jointe)
+      const dust = 900 + Math.round(energy * 600);
       for (let i = 0; i < dust; i++) {
         const a = Math.random() * Math.PI * 2;
-        const r = base * breath + wobble(a + spin, t, 1.7) * base * 0.09 * energy + (Math.random() - 0.5) * (16 + energy * 26);
-        ctx.fillStyle = `rgba(${Math.random() < 0.7 ? "79, 227, 255" : "10, 124, 255"}, ${0.15 + Math.random() * 0.55})`;
-        ctx.fillRect(c + Math.cos(a) * r, c + Math.sin(a) * r, 1.6, 1.6);
+        const spread = (Math.random() + Math.random() + Math.random() - 1.5) / 1.5; // presque gaussien
+        const r = base * breath + wobble(a + spin, t, 1.7) * base * 0.13 * energy + spread * (14 + energy * 22) + 4;
+        const outer = spread > 0 ? 0.35 : 0;
+        ctx.fillStyle = `rgba(79, 227, 255, ${0.12 + outer + Math.random() * 0.4})`;
+        ctx.fillRect(c + Math.cos(a) * r, c + Math.sin(a) * r, 1.3, 1.3);
       }
 
       if (!reduce) raf = requestAnimationFrame(draw);
