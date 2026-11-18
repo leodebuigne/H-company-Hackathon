@@ -869,3 +869,12 @@ def test_sncf_quick_search_is_the_default(monkeypatch):
     card = starter_card("www.sncf-connect.com")
     assert card is not None and any("Tout rechercher" in step for step in card.steps)
     assert any("Valider et payer" in pitfall for pitfall in card.pitfalls)  # garde-fou toujours là
+
+
+def test_option_with_null_details_is_accepted():
+    from orchestrator.agent_h.models import AgentAnswer
+
+    answer = AgentAnswer.model_validate(
+        {"options": [{"id": "o1", "title": "Carmelo", "price_eur": 0, "details": None}]}
+    )
+    assert answer.options[0].details.address is None

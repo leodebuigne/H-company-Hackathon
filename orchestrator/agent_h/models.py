@@ -52,6 +52,12 @@ class AgentOption(BaseModel):
     details: OptionDetails = Field(default_factory=OptionDetails)
     url: str | None = None
 
+    @field_validator("details", mode="before")
+    @classmethod
+    def _empty_details(cls, value: object) -> object:
+        """L'agent renvoie parfois « details: null » : c'est une fiche vide, pas une erreur (19/11)."""
+        return {} if value is None else value
+
 
 class AgentOrderItem(BaseModel):
     name: str
