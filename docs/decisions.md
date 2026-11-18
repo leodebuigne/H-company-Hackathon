@@ -174,3 +174,9 @@ Test à la voix sur SNCF : code bon, paiement autorisé, l'agent clique, puis un
 - **Après l'autorisation du paiement**, une erreur, un délai dépassé ou une coupure ne disent plus jamais « rien n'a été acheté » : Pilote dit qu'il ne sait pas si l'achat est passé et demande de vérifier les e-mails ou le site (`session.UNSURE`).
 - **Coupure passagère avec H** : l'attente de la réponse de l'agent réessaie jusqu'à 5 fois (`NETWORK_RETRIES`) au lieu d'abandonner.
 - **Sous-agents du portail** (`h/web-surfer-flash`, `h/web-scraper-pro`, `h/web-scraper-flash`, ajoutés à `pilote-shopper`) : pas recopiés sur le Chrome local par `_mirrored_spec`, donc pas encore utilisés. Ils tournent sur les navigateurs de H et portent `h/planning` et `h/answering`, qui cassaient l'enchaînement des étapes le 18/11.
+
+## 2026-11-18 : pilote-shopper essayé en local puis dans le cloud H (sans paiement)
+
+- **Chrome local** (agent du portail recopié, sous-agents compris) : recherche 115 s, 3 options justes (dont 0 € avec MAX JEUNE) ; panier bloqué par des coupures du lien local avec H. Aucun sous-agent appelé.
+- **Navigateur cloud H** (`PILOTE_BROWSER_HOST=cloud`, agent du portail tel quel) : démarrage 2 s, recherche 76 s, page de paiement 136 s (« Valider et payer », 71 €), relecture identique 146 s. Pas de CAPTCHA jusqu'au paiement, sans être connecté : prix plein tarif (71 € au lieu de 49 € ou 0 € avec l'abonnement du compte). Aucun sous-agent appelé.
+- Les sous-agents ne servent pas sur ce parcours : le modèle ne délègue pas une navigation sur une page déjà ouverte.
