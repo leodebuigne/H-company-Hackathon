@@ -93,7 +93,11 @@ def intent_text(intent: Intent, site: str) -> str:
     what = " ".join(part for part in (intent.category, intent.object) if part) or "achat"
     if intent.quantity and intent.quantity > 1:
         what += f" (quantité : {intent.quantity})"
-    parts = [f"Site : {site}", f"Demande : {what}"]
+    where = site or (
+        "aucun site imposé : choisis le site marchand français le plus adapté, "
+        "en cherchant avec un moteur de recherche (https://duckduckgo.com) si besoin"
+    )
+    parts = [f"Site : {where}", f"Demande : {what}"]
     parts += [f"{key} : {value}" for key, value in intent.details.items()]
     when = intent.when
     if when.date:
@@ -199,4 +203,17 @@ def pay_message() -> str:
         "validation dans son application, attends jusqu'à 5 minutes que le titulaire valide sur son "
         "téléphone. Renvoie ensuite payment_result (refused, accepted ou unknown), le message exact "
         "affiché dans payment_message, et site_notes."
+    )
+
+
+def question_message(question: str, with_instructions: bool) -> str:
+    """Demande libre : chercher une information sur le web, sans rien acheter."""
+    head = GENERIC_INSTRUCTIONS + "\n" if with_instructions else ""
+    return (
+        f"{head}Étape : question. La personne demande : « {question} »\n"
+        "Trouve la réponse sur le web. Commence par un moteur de recherche (https://duckduckgo.com), "
+        "puis ouvre le site le plus fiable (le site officiel de préférence). Ne remplis aucun formulaire "
+        "d'achat, ne te connecte à rien, ne paie rien. Renvoie la réponse dans reply : 1 à 3 phrases "
+        "courtes en français simple, à dire à voix haute, avec les chiffres utiles (horaires, prix). "
+        "Mets le nom du site dans reply_source. Si tu ne trouves pas, dis-le simplement dans reply."
     )

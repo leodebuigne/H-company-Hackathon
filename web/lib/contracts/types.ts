@@ -6,9 +6,9 @@
  */
 export interface Intent {
   /**
-   * Type de phrase. new_request : nouvelle demande d'achat. refine : préciser ou changer la recherche en cours. choose : choisir une option proposée. details : demander plus d'infos sur une option. confirm : « oui ». deny : « non ». cancel : « annule ». other : hors sujet ou incompris.
+   * Type de phrase. new_request : nouvelle demande d'achat. refine : préciser ou changer la recherche en cours. choose : choisir une option proposée. details : demander plus d'infos sur une option. confirm : « oui ». deny : « non ». cancel : « annule ». question : demande d'information ou de recherche sans achat (« à quelle heure ferme la pharmacie ? ») ; text porte la question. other : hors sujet ou incompris.
    */
-  kind: "new_request" | "refine" | "choose" | "details" | "confirm" | "deny" | "cancel" | "other";
+  kind: "new_request" | "refine" | "choose" | "details" | "confirm" | "deny" | "cancel" | "question" | "other";
   /**
    * Transcription brute de la phrase.
    */

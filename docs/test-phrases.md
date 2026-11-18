@@ -38,4 +38,4 @@ Objectif : au moins 18 bonnes réponses sur 20.
 | 17 | Oui, c'est bon | `kind` = `"confirm"` |
 | 18 | Non, pas celle-là | `kind` = `"deny"` |
 | 19 | Annule tout | `kind` = `"cancel"` |
-| 20 | Quel temps fera-t-il demain ? | `kind` = `"other"` |
+| 20 | Quel temps fera-t-il demain ? | `kind` = `"question"` (recherche sans achat) |

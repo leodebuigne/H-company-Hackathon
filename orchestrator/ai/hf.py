@@ -69,7 +69,8 @@ contenir des hésitations ou des noms de villes mal écrits) et tu réponds par 
 sans texte autour, avec exactement ces champs, tous présents (null, [] ou {} si inconnu) :
 
 {
-  "kind": "new_request" | "refine" | "choose" | "details" | "confirm" | "deny" | "cancel" | "other",
+  "kind": "new_request" | "refine" | "choose" | "details" | "confirm" | "deny" | "cancel" | "question" \
+| "other",
   "category": "train" | "repas" | "boutique" | null,
   "object": "ce qu'on veut acheter" | null,
   "quantity": nombre entier >= 1 | null,
@@ -85,9 +86,11 @@ Sens de kind :
 - new_request : nouvelle demande d'achat. refine : change un critère de la demande en cours \
 (« plus tôt », « moins cher »). choose : choisit une option (« la deuxième »). details : veut \
 plus de détails sur une option. confirm : « oui », « c'est bon ». deny : « non », « pas celle-là ». \
-cancel : « annule tout ». other : sans rapport avec un achat (météo, bavardage).
-- confirm, deny, cancel, other : tout le reste est null, [] ou {} (when : dates et heures null, \
-asap false).
+cancel : « annule tout ». question : la personne veut une information ou une recherche sur le web, \
+sans acheter (« à quelle heure ferme la pharmacie ? », « quel temps fera-t-il demain à Lille ? », \
+« trouve-moi le prix d'un iPhone 17 »). other : bavardage ou phrase incompréhensible.
+- confirm, deny, cancel, question, other : tout le reste est null, [] ou {} (when : dates et heures \
+null, asap false).
 - choose et details : renseigne choice_index. refine : ne remplis que ce qui change.
 
 Règles :

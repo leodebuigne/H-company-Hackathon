@@ -68,8 +68,11 @@ from orchestrator.ports import (
 log = logging.getLogger(__name__)
 T = TypeVar("T")
 
-INTRO = "Je suis Pilote, un assistant automatique. Que voulez-vous commander ?"
-NEXT = "Que voulez-vous commander ?"
+INTRO = (
+    "Je suis Pilote, un assistant automatique. Que puis-je faire pour vous ? Par exemple : un train de "
+    "Paris pour Lille demain après 14 heures, ou une question comme « à quelle heure ferme la poste ? »."
+)
+NEXT = "Que puis-je faire d'autre pour vous ?"
 # États où Pilote attend une réponse de la personne.
 WAITING: set[State] = {"listening", "proposing", "confirm_1", "confirm_2", "human_needed"}
 CLIENT_MESSAGE: TypeAdapter[ClientMessage] = TypeAdapter(ClientMessage)
@@ -481,6 +484,9 @@ class Session:
         for key in ("options", "summary", "agent_view"):
             self._snapshot.pop(key, None)
         self._intent = intent
+        if intent.kind == "question":
+            await self._answer_question(intent)
+            return
         options = await self._search(intent)
         option = await self._propose(options)
         if self.settings.direct_buy:
@@ -496,10 +502,25 @@ class Session:
             raise Abort("D'accord, je ne paie pas.")
         await self._pay(summary)
 
+    async def _answer_question(self, intent: Intent) -> None:
+        """Demande libre : l'agent cherche la réponse sur le web, Pilote la dit. Rien n'est acheté."""
+        await self._set_state("searching")
+        self._agent = self.agent_factory(self.approve_payment, self.need_human)
+        if hasattr(self._agent, "on_progress"):
+            self._agent.on_progress = self._progress  # type: ignore[attr-defined]
+        if hasattr(self._agent, "on_stuck"):
+            self._agent.on_stuck = self._stuck  # type: ignore[attr-defined]
+        await self._say("Je cherche la réponse sur le web, cela peut prendre une minute.")
+        reply = await self._step("search", self._agent.ask(intent.text))
+        self._journal("question_answered")
+        await self._end_order("done", reply)
+
     async def _get_request(self) -> Intent:
         pending: Intent | None = None
         while True:
             answer = await self._ask("listening")
+            if answer.kind == "question":
+                return answer
             if answer.kind == "new_request" and (
                 pending is None or (answer.category and answer.category != pending.category)
             ):
@@ -507,9 +528,7 @@ class Session:
             elif pending is not None and answer.kind in ("new_request", "refine", "other"):
                 intent = merge_answer(pending, answer)
             else:
-                await self._say(
-                    "Dites-moi ce que vous voulez commander, par exemple un train pour Lille demain."
-                )
+                await self._say("Dites-moi ce que vous voulez commander, ou posez-moi une question.")
                 continue
             if intent.missing:
                 pending = intent
@@ -723,6 +742,36 @@ class Session:
         await self._end_order("done", messages.get(result, messages["unknown"]))
 
     # --- callbacks donnés à l'agent H ----------------------------------------------------
+
+    def _goal(self) -> str:
+        """Le but de l'étape en cours, en clair, pour le modèle qui lit la page."""
+        request = self._intent.text if self._intent else "la demande de la personne"
+        if self._intent is not None and self._intent.kind == "question":
+            return f"trouver sur le web la réponse à : {request}"
+        goals = {
+            "searching": f"trouver sur ce site les options correspondant à : {request}",
+            "cart": "mettre l'option choisie dans le panier et aller jusqu'à la page de paiement, sans payer",
+            "recheck": "relire le récapitulatif de la page de paiement, sans rien cliquer",
+            "paying": "payer une seule fois avec la carte enregistrée, puis lire le résultat",
+        }
+        return goals.get(self.state, request)
+
+    async def _stuck(self, image: bytes, reason: str) -> str | None:
+        """Le surveillant de l'agent signale un blocage (ou un long silence) : un modèle de vision
+        Hugging Face lit la capture. La description rassure la personne ; le conseil guide l'agent."""
+        if self.state not in ("searching", "cart", "recheck", "paying"):
+            return None
+        try:
+            reading = await self.ai.read_page(image, self._goal())
+        except Exception:
+            log.info("lecture de la page impossible (%s)", reason)
+            return None
+        self._journal("page_reading", reason=reason)
+        description = readable_progress(reading.get("description", ""))
+        if description:
+            prefix = "Je regarde la page : " if reason != "silence" else ""
+            await self._say(f"{prefix}{description}")
+        return reading.get("hint") or None
 
     async def approve_payment(self, summary: OrderSummary) -> ApprovalDecision:
         """Outil request_payment_approval. Dernier verrou avant le clic qui engage de l'argent."""

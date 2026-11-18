@@ -42,6 +42,11 @@ class ShoppingAgent(Protocol):
 
     async def start(self, intent: Intent, site_card: SiteCard | None) -> None: ...
 
+    async def ask(self, question: str) -> str:
+        """Demande libre (Intent.kind = "question") : cherche la réponse sur le web, sans rien acheter,
+        et renvoie 1 à 3 phrases à dire, avec la source."""
+        ...
+
     async def search(self) -> list[Option]:
         """8 options au maximum."""
         ...

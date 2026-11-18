@@ -125,6 +125,10 @@ class FakeShoppingAgent:
         self._chosen = None
         await self._wait(1.0, "start")
 
+    async def ask(self, question: str) -> str:
+        await self._wait(3, "question")
+        return "D'après le site de la pharmacie, elle ferme à 20 heures ce soir. (Source : site officiel.)"
+
     async def search(self) -> list[Option]:
         await self._wait(6.0, "search")
         self._options = to_options(TRAIN_OPTIONS if self._is_train() else FOOD_OPTIONS)

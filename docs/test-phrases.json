@@ -216,7 +216,7 @@
       "id": 20,
       "text": "Quel temps fera-t-il demain ?",
       "expected": {
-        "kind": "other"
+        "kind": "question"
       }
     }
   ]

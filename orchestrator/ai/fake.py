@@ -45,6 +45,12 @@ def _empty_intent(kind: str, text: str) -> Intent:
     )
 
 
+_QUESTION = re.compile(
+    r"\?\s*$|^(quel|quelle|quels|quelles|combien|est-ce|a quelle heure|ou se trouve|cherche"
+    r"|trouve-moi|dis-moi)\b"
+)
+
+
 class FakeAI:
     """Réponses déterministes. `delay` simule la latence d'un vrai modèle (secondes)."""
 
@@ -75,6 +81,9 @@ class FakeAI:
                 intent = _empty_intent("details" if "detail" in plain else "choose", text)
                 intent.choice_index = index
                 return intent
+
+        if _QUESTION.search(plain) and "acheter" not in plain and "commande" not in plain:
+            return _empty_intent("question", text)
 
         category = "train" if "train" in plain or "billet" in plain else None
         if category is None and any(meal in plain for meal in _MEALS):

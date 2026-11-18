@@ -56,7 +56,9 @@ class When(_Strict):
 
 
 class Intent(_Strict):
-    kind: Literal["new_request", "refine", "choose", "details", "confirm", "deny", "cancel", "other"]
+    kind: Literal[
+        "new_request", "refine", "choose", "details", "confirm", "deny", "cancel", "question", "other"
+    ]
     text: str
     category: Category | None
     object: str | None

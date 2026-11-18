@@ -40,7 +40,8 @@ async def test_speak_falls_back_to_browser_voice():
         ("Oui, c'est bon", "confirm", {}),
         ("Non, pas celle-là", "deny", {}),
         ("Annule tout", "cancel", {}),
-        ("Quel temps fera-t-il demain ?", "other", {}),
+        ("Quel temps fera-t-il demain ?", "question", {}),
+        ("Bonjour, comment ça va", "other", {}),
     ],
 )
 async def test_parse_intent_returns_valid_intent(text, kind, extra):

@@ -70,14 +70,12 @@ DEFAULT_SITES = {"train": "https://www.sncf-connect.com", "repas": "https://www.
 
 
 def site_for(intent: Intent) -> str:
-    """Adresse du site pour la demande ; AgentError si la catégorie n'est pas prise en charge."""
+    """Adresse du site pour la demande, ou "" si l'agent doit le choisir ; AgentError sans catégorie."""
     category = intent.category
     if category is None:
         raise AgentError("Catégorie d'achat inconnue : l'orchestrateur doit la demander d'abord.")
-    site = os.getenv(f"PILOTE_SITE_{category.upper()}") or DEFAULT_SITES.get(category)
-    if site is None:
-        raise AgentError(f"Aucun site configuré pour la catégorie « {category} ».")
-    return site
+    # Sans site configuré (une boutique, par exemple), l'agent choisit lui-même le site : "".
+    return os.getenv(f"PILOTE_SITE_{category.upper()}") or DEFAULT_SITES.get(category) or ""
 
 
 def _fit_effort(spec: dict[str, Any]) -> dict[str, Any]:
@@ -462,6 +460,36 @@ class ShoppingAgent:
         except Exception:
             self.agent_view_url = None
 
+    async def ask(self, question: str) -> str:
+        """Demande libre : l'agent cherche la réponse sur le web, sans rien acheter."""
+        client = await self._ensure_client()
+        self._site, self.order_id, self._intent = "", "", None
+        self._tool_cache.clear()
+        self._paying = False  # le garde-fou refuse tout paiement
+        self._metrics = RunMetrics(
+            site="question", agent=self._agent_name or "inline", started=time.monotonic()
+        )
+        self._session = await client.start_session(
+            agent=self._agent_spec(),
+            messages=prompts.question_message(question, with_instructions=bool(self._agent_name)),
+            answer_schema=AgentAnswer,
+            tools=self._tools(),
+            idempotency_key=uuid.uuid4().hex,
+            timezone="Europe/Paris",
+        )
+        self._cursor = 0
+        try:
+            self.agent_view_url = getattr(await self._session.get(), "agent_view_url", None)
+        except Exception:
+            self.agent_view_url = None
+        answer = await self._wait("question")
+        await self._finish("question", "-")
+        reply = " ".join((answer.reply or "").split())
+        if not reply:
+            raise AgentError("L'agent n'a pas trouvé de réponse.")
+        source = " ".join((answer.reply_source or "").split())
+        return f"{reply} (Source : {source}.)" if source else reply
+
     async def search(self) -> list[Option]:
         answer = await self._wait("search")
         self._options = to_options(answer.options)
@@ -482,7 +510,8 @@ class ShoppingAgent:
         if answer.order_summary is None:
             raise AgentError(f"Étape {phase} : pas de récapitulatif renvoyé")
         try:
-            return to_order_summary(answer.order_summary, order_id=self.order_id, site=domain_of(self._site))
+            site = domain_of(self._site) or domain_of(answer.order_summary.page_url or "") or "site choisi"
+            return to_order_summary(answer.order_summary, order_id=self.order_id, site=site)
         except ValueError as error:
             raise AgentError(f"Étape {phase} : récapitulatif inutilisable ({error})") from error
 

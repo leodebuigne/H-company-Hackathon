@@ -1,0 +1,19 @@
+{
+  "kind": "question",
+  "text": "À quelle heure ferme la pharmacie de la gare de Lille ?",
+  "category": null,
+  "object": null,
+  "quantity": null,
+  "when": {
+    "date": null,
+    "after": null,
+    "before": null,
+    "asap": false
+  },
+  "budget_cents": null,
+  "details": {},
+  "constraints": [],
+  "choice_index": null,
+  "missing": [],
+  "question": null
+}

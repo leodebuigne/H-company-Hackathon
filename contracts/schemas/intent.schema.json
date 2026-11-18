@@ -8,8 +8,8 @@
   "required": ["kind", "text", "category", "object", "quantity", "when", "budget_cents", "details", "constraints", "choice_index", "missing", "question"],
   "properties": {
     "kind": {
-      "description": "Type de phrase. new_request : nouvelle demande d'achat. refine : préciser ou changer la recherche en cours. choose : choisir une option proposée. details : demander plus d'infos sur une option. confirm : « oui ». deny : « non ». cancel : « annule ». other : hors sujet ou incompris.",
-      "enum": ["new_request", "refine", "choose", "details", "confirm", "deny", "cancel", "other"]
+      "description": "Type de phrase. new_request : nouvelle demande d'achat. refine : préciser ou changer la recherche en cours. choose : choisir une option proposée. details : demander plus d'infos sur une option. confirm : « oui ». deny : « non ». cancel : « annule ». question : demande d'information ou de recherche sans achat (« à quelle heure ferme la pharmacie ? ») ; text porte la question. other : hors sujet ou incompris.",
+      "enum": ["new_request", "refine", "choose", "details", "confirm", "deny", "cancel", "question", "other"]
     },
     "text": {
       "description": "Transcription brute de la phrase.",

@@ -141,6 +141,10 @@ class AgentAnswer(BaseModel):
     payment_message: str | None = Field(default=None, description="Message exact du site ou de la banque")
     blocked_reason: str | None = Field(default=None, description="Raison si tu n'as pas pu continuer")
     site_notes: SiteNotes | str | None = None
+    reply: str | None = Field(
+        default=None, description="Réponse à une question : 1 à 3 phrases simples, à dire à voix haute"
+    )
+    reply_source: str | None = Field(default=None, description="Nom du site où la réponse a été trouvée")
 
     @field_validator("order_summary", "site_notes", mode="before")
     @classmethod
