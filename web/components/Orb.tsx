@@ -17,12 +17,15 @@ type Props = { mode: OrbMode; level?: number; size?: number };
 
 // Voiles : rubans de soie qui traversent la sphère. angle = direction, shift = décalage du centre.
 const VEILS = [
-  { angle: -0.9, shift: -0.18, width: 0.34, color: "70, 170, 255", seed: 0.0 },
-  { angle: 0.5, shift: 0.12, width: 0.3, color: "60, 210, 255", seed: 1.6 },
-  { angle: 1.4, shift: -0.05, width: 0.26, color: "120, 140, 255", seed: 3.1 },
-  { angle: -0.2, shift: 0.3, width: 0.22, color: "90, 190, 255", seed: 4.4 },
-  { angle: 2.3, shift: -0.32, width: 0.24, color: "150, 150, 255", seed: 5.7 },
-];
+  { angle: -0.9, shift: -0.16, width: 0.3, color: "60, 165, 255", seed: 0.0 },
+  { angle: 0.55, shift: 0.1, width: 0.26, color: "40, 205, 255", seed: 1.6 },
+  { angle: 1.45, shift: -0.04, width: 0.22, color: "125, 135, 255", seed: 3.1 },
+  { angle: -0.25, shift: 0.3, width: 0.18, color: "80, 190, 255", seed: 4.4 },
+  { angle: 2.3, shift: -0.34, width: 0.2, color: "150, 150, 255", seed: 5.7 },
+  { angle: 0.95, shift: 0.36, width: 0.16, color: "0, 190, 250", seed: 7.2 },
+  { angle: -1.6, shift: 0.22, width: 0.17, color: "110, 170, 255", seed: 8.5 },
+  { angle: 2.9, shift: 0.02, width: 0.14, color: "170, 140, 255", seed: 9.9 },
+]
 
 export default function Orb({ mode, level = 0, size = 320 }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -61,14 +64,14 @@ export default function Orb({ mode, level = 0, size = 320 }: Props) {
       const ny = ux;
       const ox = c + nx * v.shift * R;
       const oy = c + ny * v.shift * R;
-      const steps = 48;
+      const steps = 72;
       const top: [number, number][] = [];
       const bottom: [number, number][] = [];
       for (let i = 0; i <= steps; i++) {
         const s = i / steps; // 0 → 1 le long du ruban
-        const along = (s - 0.5) * 2.3 * R;
+        const along = (s - 0.5) * 2.0 * R;
         const fold =
-          Math.sin(s * 5 + flow * 1.1 + v.seed) * 0.16 * amp + Math.sin(s * 9 - flow * 1.6 + v.seed * 2) * 0.06 * amp;
+          Math.sin(s * 4 + flow * 1.1 + v.seed) * 0.3 * amp + Math.sin(s * 7.5 - flow * 1.6 + v.seed * 2) * 0.09 * amp;
         const twist = Math.sin(s * 3.2 + flow * 0.8 + v.seed * 1.3); // la soie se retourne
         const half = v.width * R * (0.25 + 0.75 * Math.sin(Math.PI * s)) * (0.35 + 0.65 * Math.abs(twist));
         const mx = ox + ux * along + nx * fold * R;
@@ -108,7 +111,7 @@ export default function Orb({ mode, level = 0, size = 320 }: Props) {
               : 0.15;
       energy += (target - energy) * 0.12;
       flow += dt * (0.35 + energy * 2);
-      const amp = 0.6 + energy * 1.1;
+      const amp = 0.55 + energy * 0.9;
       const R = R0 * (1 + Math.sin(t * 1.3) * 0.006 + energy * 0.012);
 
       ctx.clearRect(0, 0, size, size);
@@ -143,29 +146,66 @@ export default function Orb({ mode, level = 0, size = 320 }: Props) {
       ctx.fillStyle = heart;
       ctx.fillRect(c - R, c - R, R * 2, R * 2);
 
-      // Voiles de soie : translucides, liseré blanc d'un côté, bleu plus franc de l'autre
+      // Nuages de couleur en profondeur, derrière les voiles
+      for (let k = 0; k < 3; k++) {
+        const a = flow * (0.12 + k * 0.05) + k * 2.1;
+        const x = c + Math.cos(a) * R * 0.35;
+        const y = c + Math.sin(a * 1.2) * R * 0.3;
+        const cloud = ctx.createRadialGradient(x, y, 0, x, y, R * 0.55);
+        cloud.addColorStop(0, `rgba(${k === 1 ? "140, 120, 255" : "40, 200, 255"}, ${0.16 + energy * 0.06})`);
+        cloud.addColorStop(1, "rgba(40, 200, 255, 0)");
+        ctx.fillStyle = cloud;
+        ctx.fillRect(c - R, c - R, R * 2, R * 2);
+      }
+
+      // Voiles de soie : voile translucide, fibres fines, pli brillant, liseré blanc lumineux
+      const lerp = (p: [number, number], q: [number, number], f: number): [number, number] => [
+        p[0] + (q[0] - p[0]) * f,
+        p[1] + (q[1] - p[1]) * f,
+      ];
       for (const v of VEILS) {
         const { top, bottom, ux, uy, ox, oy } = ribbon(v, R, amp);
+        // voile
         ctx.beginPath();
         trace(top);
         trace([...bottom].reverse(), false);
         ctx.closePath();
         const fill = ctx.createLinearGradient(ox - ux * R, oy - uy * R, ox + ux * R, oy + uy * R);
-        fill.addColorStop(0, `rgba(${v.color}, 0.05)`);
-        fill.addColorStop(0.45, `rgba(${v.color}, ${0.3 + energy * 0.08})`);
-        fill.addColorStop(1, `rgba(${v.color}, 0.08)`);
+        fill.addColorStop(0, `rgba(${v.color}, 0.02)`);
+        fill.addColorStop(0.5, `rgba(${v.color}, ${0.2 + energy * 0.06})`);
+        fill.addColorStop(1, `rgba(${v.color}, 0.04)`);
         ctx.fillStyle = fill;
         ctx.fill();
-
+        // fibres : fines lignes entre les deux bords, plus visibles près des bords (effet soie)
+        const fibers = 9;
+        for (let k = 1; k < fibers; k++) {
+          const f = k / fibers;
+          ctx.beginPath();
+          trace(top.map((p, i) => lerp(p, bottom[i], f)));
+          ctx.strokeStyle = `rgba(${v.color}, ${0.06 + 0.16 * Math.abs(f - 0.5) * 2})`;
+          ctx.lineWidth = 0.5;
+          ctx.stroke();
+        }
+        // pli brillant au milieu du ruban
+        ctx.beginPath();
+        trace(top.map((p, i) => lerp(p, bottom[i], 0.35)));
+        ctx.strokeStyle = "rgba(255, 255, 255, 0.28)";
+        ctx.lineWidth = 5;
+        ctx.shadowColor = "rgba(255, 255, 255, 0.9)";
+        ctx.shadowBlur = 8;
+        ctx.stroke();
+        // liseré blanc lumineux et bord coloré
         ctx.beginPath();
         trace(top);
-        ctx.strokeStyle = "rgba(255, 255, 255, 0.75)";
-        ctx.lineWidth = 1.1;
+        ctx.strokeStyle = "rgba(255, 255, 255, 0.95)";
+        ctx.lineWidth = 0.9;
+        ctx.shadowBlur = 6;
         ctx.stroke();
+        ctx.shadowBlur = 0;
         ctx.beginPath();
         trace(bottom);
-        ctx.strokeStyle = `rgba(${v.color}, 0.45)`;
-        ctx.lineWidth = 0.8;
+        ctx.strokeStyle = `rgba(${v.color}, 0.55)`;
+        ctx.lineWidth = 0.6;
         ctx.stroke();
       }
 
