@@ -1,16 +1,16 @@
 # Décisions
 
-Une entrée par décision : date, décision, raison, conséquence. Les écarts constatés avec une API externe (H, Hugging Face, Twilio, Upstash) se notent aussi ici, avec le lien vers la doc officielle lue.
+Une entrée par décision : date, décision, raison, conséquence. Les écarts constatés avec une API externe (H, Hugging Face, Upstash) se notent aussi ici, avec le lien vers la doc officielle lue.
 
 ## 2026-11-17 : vrais sites, faux sites en plan B (équipe, plan de Léo)
 
 **Décision.** La démo se fait sur Uber Eats et SNCF Connect, avec une carte virtuelle éphémère à 0 € enregistrée à la main dans le compte marchand du Chrome dédié. Les deux faux sites (Rail Démo, Miam Démo) restent le plan B. Détail des conditions d'utilisation et des limites dans `docs/plan-pilote.md` et `docs/sites.md`.
 **Conséquence.** Leur code a été retiré de `main` le 17/11 ; il reste récupérable dans l'historique (commit `7cc62bb`). Vérifier que leurs déploiements Vercel répondent encore avant de compter dessus.
-**Fin de démo.** L'agent clique sur le bouton de paiement après la triple vérification, la banque refuse (carte à 0 €), `pay()` lit le message affiché et renvoie `refused`. La validation bancaire forte éventuelle se fait sur le téléphone du titulaire, jamais par l'agent.
+**Fin de démo.** L'agent clique sur le bouton de paiement après la double confirmation, la banque refuse (carte à 0 €), `pay()` lit le message affiché et renvoie `refused`. La validation bancaire forte éventuelle se fait sur le téléphone du titulaire, jamais par l'agent.
 
 ## 2026-11-17 : Python 3.12 pour l'orchestrateur, l'agent H et l'IA (plan)
 
-Le SDK Python de H se connecte directement au Chrome local en mode « votre navigateur », et une commande peut attendre plusieurs minutes un proche : un processus FastAPI qui tourne en continu sur l'ordinateur de démo. Le web reste en Next.js / TypeScript.
+Le SDK Python de H se connecte directement au Chrome local en mode « votre navigateur », et une commande peut durer plusieurs minutes : un processus FastAPI qui tourne en continu sur l'ordinateur de démo. Le web reste en Next.js / TypeScript.
 
 ## 2026-11-17 : forme des contrats (membre 5)
 
@@ -26,7 +26,7 @@ Le SDK Python de H se connecte directement au Chrome local en mode « votre navi
 ## 2026-11-17 : variables d'environnement (membre 5)
 
 Noms du plan, plus ceux dont l'orchestrateur a besoin. `HAI_API_KEY` confirmé : c'est le nom que lisent le SDK `hai-agents` et la CLI `hai` d'après la doc H actuelle (https://hub.hcompany.ai/computer-use-agents/authentication). Certaines pages plus anciennes de la doc parlent encore de `H_API_KEY`.
-Ajouts : `USE_FAKE_AGENT`, `USE_FAKE_AI`, `USE_FAKE_APPROVALS`, `PILOTE_USER_FIRST_NAME`, `PILOTE_RELATIVES`, `APPROVAL_TIMEOUT_SECONDS(_REPAS)`, `APPROVALS_API_URL`, `VALIDATION_LINK_SECRET`, `DEMO_APPROVALS_CODE`, `NEXT_PUBLIC_ORCHESTRATOR_WS_URL`, et `RAIL_DEMO_URL` / `REPAS_DEMO_URL` pour le plan B.
+Ajouts : `USE_FAKE_AGENT`, `USE_FAKE_AI`, `NEXT_PUBLIC_ORCHESTRATOR_WS_URL`, et `RAIL_DEMO_URL` / `REPAS_DEMO_URL` pour le plan B.
 
 ## 2026-11-17 : outillage (membre 5)
 
@@ -57,7 +57,7 @@ Détail des mesures dans `docs/benchmark-llm.md` (relançable : `python -m orche
 
 ## 2026-11-17 : fusion des branches partie-1, 2, 4, 5 (intégration)
 
-Base : `partie-5` (contrats et squelette), puis `partie-2` (IA), `partie-4` (interface), `partie-1` (agent H). `partie-3` (validation des proches) n'existe pas.
+Base : `partie-5` (contrats et squelette), puis `partie-2` (IA), `partie-4` (interface), `partie-1` (agent H).
 
 - **`agent_h` alignée sur les contrats.** Son `models.py` était une copie de l'ancien plan (euros à virgule, `Intent.site/item`, hash différent). L'agent H lit toujours en euros, le code convertit vers `orchestrator.contracts` (centimes, `rank`, UUID `order_id` créé par `checkout()`, `read_at`, `summary_hash` officiel). Un montant illisible fait refuser, jamais deviner. `SiteCard` est le contrat (`successful_runs`, `avg_duration_s`, `avg_steps`, `useful_buttons`, `updated_at`).
 - **Interface `ports.py` respectée** : `agent_view_url`, `make_agent_factory()` au format `AgentFactory`, `NeedHumanCallback` qui rend la main sans valeur.
@@ -69,22 +69,20 @@ Base : `partie-5` (contrats et squelette), puis `partie-2` (IA), `partie-4` (int
 ## À vérifier
 
 - **Membre 1** : pendant que l'outil `request_payment_approval` attend sa réponse, l'orchestrateur appelle `recheck()` (relire la page). Vérifier dans la doc H (https://hub.hcompany.ai/agents-api/custom-tools.md) qu'on peut envoyer un message à une session dont un appel d'outil est en attente. Sinon, le recheck doit se faire autrement (par exemple dans le même outil, ou avec une seconde lecture après la réponse) : ouvrir une issue.
-- **Sécurité du paiement : à confirmer en équipe.** Le README et le code initiaux de `agent_h` disaient « pas de vérification supplémentaire côté Pilote, la carte est la vraie », ce qui contredit le plan (triple vérification, carte à 0 €) et la règle de `CLAUDE.md` (jamais de clic d'argent sans approbation). Par défaut l'agent refuse maintenant de payer sans `approval_callback` de l'orchestrateur ; payer sans passe par `PILOTE_AUTO_APPROVE=1`. Si l'équipe a bien décidé de supprimer la triple vérification, le dire ici.
-- **Membre 3** : noms exacts des variables injectées par l'intégration Upstash de Vercel, à reporter dans `.env.example`.
+- **Sécurité du paiement : à confirmer en équipe.** Le README et le code initiaux de `agent_h` disaient « pas de vérification supplémentaire côté Pilote, la carte est la vraie », ce qui contredit le plan (double confirmation, carte à 0 €) et la règle de `CLAUDE.md` (jamais de clic d'argent sans approbation). Par défaut l'agent refuse maintenant de payer sans `approval_callback` de l'orchestrateur ; payer sans passe par `PILOTE_AUTO_APPROVE=1`. Si l'équipe a bien décidé de supprimer la double confirmation, le dire ici.
 
 ## 2026-11-17 : orchestrateur (membre 5)
 
-`python -m orchestrator` lance FastAPI sur `ws://localhost:8000/ws`. Code : `orchestrator/session.py` (machine à états), `app.py` (serveur), `approvals.py` (client de validation, vrai et factice), `config.py`.
+`python -m orchestrator` lance FastAPI sur `ws://localhost:8000/ws`. Code : `orchestrator/session.py` (machine à états), `app.py` (serveur), `config.py`.
 
 - **Une seule session pour tous les écrans.** L'interface et l'écran du jury ouvrent chacun leur WebSocket : ils reçoivent les mêmes messages. Un écran qui arrive en cours de commande reçoit l'état, l'intention, les options, le récapitulatif et la validation en cours. La phrase d'accueil n'est dite qu'à l'écran qui se connecte, et seulement hors commande.
-- **Triple vérification avant `pay()`**, puis dernier verrou dans `request_payment_approval` (même hash qu'au moment de la validation). Cela répond au point ouvert du membre 1 : `recheck()` n'est plus appelé pendant un appel d'outil en attente.
+- **Double confirmation avant `pay()`**, puis dernier verrou dans `request_payment_approval` (même hash qu'au moment de la validation). Cela répond au point ouvert du membre 1 : `recheck()` n'est plus appelé pendant un appel d'outil en attente.
 - **« Annule » marche à tout moment**, à la voix comme avec Échap : chaque message est transcrit et compris dès qu'il arrive, même pendant une recherche longue. Une autre phrase pendant une étape longue reçoit « Un instant ».
 - **Information manquante** : Pilote pose la question rédigée du membre 2 (`orchestrator.ai.hf.QUESTIONS`) et complète la demande avec la réponse. Si le modèle n'extrait rien d'une réponse courte (« Paris »), la phrase remplit directement le champ demandé.
 - **Délais** : chaque étape de l'agent a un délai maximum (`config.DEFAULT_STEP_TIMEOUTS`, 3 à 10 minutes car une étape peut contenir un CAPTCHA ou la validation bancaire), chaque oui ou non 3 minutes, un geste humain 10 minutes. Au-delà : rien n'est acheté et Pilote le dit.
-- **Refus par défaut** : refus du proche, personne qui répond, service de validation injoignable 5 fois de suite, prix changé, erreur de l'agent ou erreur inattendue donnent `cancelled` et « rien n'a été acheté ».
+- **Refus par défaut** : absence de réponse de la personne, prix changé, erreur de l'agent ou erreur inattendue donnent `cancelled` et « rien n'a été acheté ».
 - **Journal** : `logs/journal.jsonl`, une ligne par étape (état, `order_id`, total, décision), jamais d'audio ni de texte de phrase.
 - **Contrat** : `NeedHumanCallback` peut renvoyer `"resolved"` ou `"abort"` (le code du membre 1 le gérait déjà), `pay()` documenté dans `ports.py`.
-- **Partie 3 absente** : la validation factice (`USE_FAKE_APPROVALS=1`) répond seule au bout de `PILOTE_FAKE_APPROVAL_DELAY_S` secondes, avec `PILOTE_FAKE_APPROVAL_DECISION` (approved, denied, expired) pour répéter les scénarios de refus.
 
 ## Agent H : vitesse, voix et connexion aux sites (2026-11-18)
 
@@ -96,7 +94,8 @@ Base : `partie-5` (contrats et squelette), puis `partie-2` (IA), `partie-4` (int
 - **Connexion au compte** : le CAPTCHA SNCF bloque la connexion par coffre-fort dans le navigateur cloud. Pour la démo : Chrome local, connexion faite une fois à la main dans le Chrome dédié.
 - **Agent du portail sur le Chrome local** : avec `PILOTE_H_AGENT` et `PILOTE_BROWSER_HOST=user_device`, Pilote lit la configuration de l'agent du portail H (consignes, skills, modèle, réflexion, mode de l'environnement) et la lance sur le Chrome dédié, car un agent du portail emporte son environnement cloud, où la connexion SNCF bloque sur un CAPTCHA. Mesuré : Paris → Nantes, 82 s, 3 options aux prix du compte connecté.
 - **Achat validé à l'étape panier (2026-11-18)** : sur SNCF Connect, le panier d'un billet à 0 € porte directement « Valider et payer » ; l'agent a cliqué sans appeler `request_payment_approval` (billet réellement réservé). Corrigé dans les consignes (code, fiche SNCF, agent du portail : ne jamais cliquer sur un bouton qui valide l'achat hors de l'étape paiement, même à 0 €). Filet de sécurité : un `payment_result` reçu hors de `pay()` lève `UnapprovedPurchase`, et Pilote annonce à l'oral que l'achat a eu lieu (au lieu de « rien n'a été acheté »). La consigne reste une consigne : le clic n'est pas bloqué techniquement.
-- **Achat direct (décision de l'équipe, 2026-11-18)** : avec `PILOTE_DIRECT_BUY=1`, choisir une option vaut ordre d'achat. Pilote dit « J'achète … », l'agent fait panier et paiement en une étape (`buy()`), puis Pilote annonce le résultat à l'oral. **Écart assumé avec la triple vérification du plan et la règle de `CLAUDE.md`** : plus de « oui » oral, ni de validation du proche, ni de relecture. Seul garde-fou gardé : `request_payment_approval` refuse si le total affiché dépasse le prix de l'option choisie (pas d'option ou d'assurance ajoutée). Sans la variable, le parcours complet reste celui du plan.
+- **Achat direct (décision de l'équipe, 2026-11-18)** : avec `PILOTE_DIRECT_BUY=1`, choisir une option vaut ordre d'achat. Pilote dit « J'achète … », l'agent fait panier et paiement en une étape (`buy()`), puis Pilote annonce le résultat à l'oral. **Écart assumé avec la double confirmation du plan et la règle de `CLAUDE.md`** : plus de « oui » oral ni de relecture. Seul garde-fou gardé : `request_payment_approval` refuse si le total affiché dépasse le prix de l'option choisie (pas d'option ou d'assurance ajoutée). Sans la variable, le parcours complet reste celui du plan.
 - **Sessions H gardées ouvertes (`idle_timeout_s`, 2026-11-18)** : sans ce réglage, une session H se termine dès que l'agent répond (doc H, `SessionRequest.idle_timeout_s`) ; en Chrome local, le SDK débranche alors le navigateur et l'étape suivante échoue, et l'agent perd sa mémoire. Pilote passe maintenant `idle_timeout_s=900` (`PILOTE_H_IDLE_TIMEOUT_S`, 0 = ancien comportement, une session par étape). Mesuré : recherche Paris → Nantes 39 s, puis « après 17 h » 42 s dans la même session, trajet et date retenus. Comparatif de modèles : holo4-35b-a3b 88 s contre 82 s pour holo4-27b sur la même recherche : le modèle n'est pas le goulot, on garde holo4-27b.
 - **Commentaire en direct (2026-11-18)** : pendant la recherche et l'achat, Pilote suit le flux d'événements H (`session.changes`, actions annoncées par l'agent) et dit une phrase courte (`agent_h/narration.py`, règles fixes, sans modèle ni donnée personnelle), au plus une toutes les 6 s, hors de l'historique de conversation. Chaque commande en Chrome local ouvre aussi un onglet neuf et ferme les anciens (`local_chrome.fresh_page`) : l'agent s'accrochait sinon à l'onglet de la commande précédente, fermé en retard par H.
 - **Code secret d'achat (2026-11-18)** : avec `PILOTE_PURCHASE_CODE` (3 chiffres) et l'achat direct, Pilote demande le code à l'oral avant chaque achat, même à 0 €, puis l'agent clique lui-même sur « Valider et payer ». Trois essais. Le code ne passe jamais par le modèle de langage, n'entre pas dans l'historique et s'affiche « ••• » (transcription et écran jury) ; seul le résultat (bon / mauvais) va au journal. L'interface reconnaît la demande au texte dit par Pilote (même état `confirm_1`, sans toucher au contrat) et affiche un champ masqué. Réflexion de l'agent H repassée à `low` pour la vitesse. Ce n'est pas le cryptogramme de la carte : l'agent ne le tape jamais (règle de l'équipe, et un cryptogramme ne doit jamais être enregistré).
+- **Parcours sans validation par un tiers (2026-11-18, à la demande de l'utilisateur)** : les schémas `approval-request` et `approval-status`, le message `approval`, l'état `awaiting_relative`, le code d'erreur `approval_failed`, `approvals.py` et les variables associées sont supprimés. Le parcours complet devient : oui, relecture de la page, deuxième oui. L'outil H `request_payment_approval` reste : c'est le verrou de paiement, il n'a rien à voir avec ce retrait. Contrats modifiés, à relire par le membre 5.

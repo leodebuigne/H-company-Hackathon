@@ -7,8 +7,6 @@ import { validate, type ContractName } from "./validate";
 const EXAMPLES = join(__dirname, "..", "..", "..", "contracts", "examples");
 
 const PREFIXES: [string, ContractName][] = [
-  ["approval-request-", "ApprovalRequest"],
-  ["approval-status-", "ApprovalStatus"],
   ["order-summary-", "OrderSummary"],
   ["site-card-", "SiteCard"],
   ["intent-", "Intent"],

@@ -1,7 +1,7 @@
 """Interfaces des briques branchées sur l'orchestrateur.
 
 Chaque brique fournit une vraie version et une version factice (Fake...) qui respectent
-ces Protocols. L'orchestrateur choisit avec USE_FAKE_AGENT, USE_FAKE_AI, USE_FAKE_APPROVALS.
+ces Protocols. L'orchestrateur choisit avec USE_FAKE_AGENT et USE_FAKE_AI.
 Changer une signature ici = changer un contrat : issue GitHub, le membre 5 tranche.
 """
 
@@ -12,8 +12,6 @@ from collections.abc import Awaitable, Callable
 from typing import Literal, Protocol, TypedDict
 
 from orchestrator.contracts import (
-    ApprovalRequest,
-    ApprovalStatus,
     Intent,
     Option,
     OrderSummary,
@@ -23,7 +21,8 @@ from orchestrator.contracts import (
 ApprovalDecision = Literal["approved", "denied"]
 PaymentResult = Literal["refused", "accepted", "unknown"]
 
-# Appelé par l'outil H request_payment_approval. Ne répond qu'après la triple vérification.
+# Appelé par l'outil H request_payment_approval. Ne répond "approved" que si le récapitulatif
+# de la page est celui que la personne a accepté.
 # Toute erreur, tout délai dépassé ou tout écart donne "denied".
 ApprovalCallback = Callable[[OrderSummary], Awaitable[ApprovalDecision]]
 
@@ -61,7 +60,7 @@ class ShoppingAgent(Protocol):
         ...
 
     async def pay(self) -> PaymentResult:
-        """Appelé par l'orchestrateur seulement après la triple vérification (oui, proche, relecture, oui).
+        """Appelé par l'orchestrateur seulement après le premier oui, la relecture et le deuxième oui.
         Avant de cliquer, l'agent appelle request_payment_approval : l'orchestrateur répond "approved"
         seulement si la page montre toujours le récapitulatif validé (même hash). Puis l'agent lit le
         résultat affiché. Lève PaymentDenied si rien n'a été cliqué."""
@@ -99,11 +98,3 @@ class AI(Protocol):
     async def speak(self, text: str) -> bytes | None:
         """Audio prêt à jouer, ou None si trop lent : l'interface utilise alors la voix du navigateur."""
         ...
-
-
-class Approvals(Protocol):
-    """Client de l'API web/app/api/approvals (membre 3), côté orchestrateur (membre 5)."""
-
-    async def create(self, request: ApprovalRequest) -> ApprovalStatus: ...
-
-    async def get(self, order_id: str) -> ApprovalStatus: ...

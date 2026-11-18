@@ -1,79 +1,5 @@
 /* Fichier GÉNÉRÉ par web/scripts/gen-contracts.mjs depuis contracts/schemas/. Ne pas éditer. */
 
-// approval-request.schema.json
-/**
- * Corps de POST /api/approvals, envoyé par l'orchestrateur à web/ (en-tête Authorization: Bearer PILOTE_SHARED_SECRET).
- */
-export interface ApprovalRequest {
-  /**
-   * Même valeur que summary.order_id.
-   */
-  order_id: string;
-  /**
-   * Prénom de l'utilisateur, affiché dans le SMS.
-   */
-  user_first_name: string;
-  /**
-   * Nom du site lisible par un humain (« SNCF Connect »).
-   */
-  site_name: string;
-  category: "train" | "repas" | "boutique";
-  summary: OrderSummary;
-  /**
-   * Proches à contacter, dans l'ordre. Le n° 1 reçoit le SMS tout de suite, les suivants seulement si le précédent ne répond pas à temps.
-   *
-   * @minItems 1
-   * @maxItems 3
-   */
-  relatives: [
-    {
-      first_name: string;
-      /**
-       * Format E.164 (+336...)
-       */
-      phone: string;
-    },
-    ...{
-      first_name: string;
-      /**
-       * Format E.164 (+336...)
-       */
-      phone: string;
-    }[]
-  ];
-  /**
-   * Délai laissé à chaque proche avant de passer au suivant. 300 au maximum, plus court pour un repas.
-   */
-  timeout_seconds: number;
-}
-
-// approval-status.schema.json
-/**
- * Réponse de POST /api/approvals et de GET /api/approvals/{order_id}. L'orchestrateur relit toutes les 2 secondes jusqu'à un statut final. Par défaut on refuse : tout ce qui n'est pas approved empêche le paiement.
- */
-export interface ApprovalStatus {
-  order_id: string;
-  /**
-   * pending : en attente. approved : un proche a validé. denied : un proche a refusé. expired : aucun proche n'a répondu à temps.
-   */
-  status: "pending" | "approved" | "denied" | "expired";
-  /**
-   * Rang (à partir de 1) du proche qui a le lien en ce moment. null quand le statut est final.
-   */
-  current_relative: number | null;
-  relatives_count: number;
-  /**
-   * Prénom du proche qui a validé ou refusé. null sinon.
-   */
-  decided_by: string | null;
-  decided_at: string | null;
-  /**
-   * Fin du délai du proche actuel. null quand le statut est final.
-   */
-  expires_at: string | null;
-  updated_at: string;
-}
-
 // intent.schema.json
 /**
  * Ce que la personne vient de dire, compris par le modèle de langage (orchestrator/ai, parse_intent). Une phrase = un Intent. Le modèle ne devine jamais : ce qui manque va dans missing[] et question propose la question à poser.
@@ -196,7 +122,7 @@ export interface Option {
 
 // order-summary.schema.json
 /**
- * Récapitulatif lu par l'agent H sur la page de paiement. Renvoyé par checkout() puis par recheck(). C'est ce qui est lu à l'utilisateur et envoyé au proche.
+ * Récapitulatif lu par l'agent H sur la page de paiement. Renvoyé par checkout() puis par recheck(). C'est ce qui est lu à l'utilisateur.
  */
 export interface OrderSummary {
   /**
@@ -329,7 +255,6 @@ export type WsMessage =
   | ServerIntent
   | ServerOptions
   | ServerSummary
-  | ServerApproval
   | ServerAgentView
   | ServerError;
 export type State =
@@ -339,7 +264,6 @@ export type State =
   | "proposing"
   | "cart"
   | "confirm_1"
-  | "awaiting_relative"
   | "recheck"
   | "confirm_2"
   | "paying"
@@ -434,13 +358,6 @@ export interface ServerSummary {
   summary: OrderSummary;
 }
 /**
- * Orchestrateur → interface. Statut de la validation du proche, à chaque changement.
- */
-export interface ServerApproval {
-  type: "approval";
-  status: ApprovalStatus;
-}
-/**
  * Orchestrateur → interface. Lien vers la vue en direct de l'agent H, pour l'écran spectateur.
  */
 export interface ServerAgentView {
@@ -452,13 +369,6 @@ export interface ServerAgentView {
  */
 export interface ServerError {
   type: "error";
-  code:
-    | "transcription_failed"
-    | "not_understood"
-    | "agent_failed"
-    | "approval_failed"
-    | "price_changed"
-    | "timeout"
-    | "internal";
+  code: "transcription_failed" | "not_understood" | "agent_failed" | "price_changed" | "timeout" | "internal";
   message: string;
 }

@@ -1,20 +1,16 @@
 // Validation à l'exécution contre les schémas de contracts/ (copiés dans ./schemas par contracts:gen).
-// Exemple (membre 3) :
-//   const check = validate("ApprovalRequest", await req.json());
+// Exemple :
+//   const check = validate("WsMessage", await req.json());
 //   if (!check.ok) return Response.json({ error: check.errors }, { status: 400 });
 import Ajv2020 from "ajv/dist/2020.js";
 import addFormats from "ajv-formats";
 
-import approvalRequest from "./schemas/approval-request.schema.json";
-import approvalStatus from "./schemas/approval-status.schema.json";
 import intent from "./schemas/intent.schema.json";
 import option from "./schemas/option.schema.json";
 import orderSummary from "./schemas/order-summary.schema.json";
 import siteCard from "./schemas/site-card.schema.json";
 import wsMessage from "./schemas/ws-message.schema.json";
 import type {
-  ApprovalRequest,
-  ApprovalStatus,
   Intent,
   Option,
   OrderSummary,
@@ -23,8 +19,6 @@ import type {
 } from "./types";
 
 const SCHEMAS = {
-  ApprovalRequest: approvalRequest,
-  ApprovalStatus: approvalStatus,
   Intent: intent,
   Option: option,
   OrderSummary: orderSummary,
@@ -33,8 +27,6 @@ const SCHEMAS = {
 } as const;
 
 export interface ContractTypes {
-  ApprovalRequest: ApprovalRequest;
-  ApprovalStatus: ApprovalStatus;
   Intent: Intent;
   Option: Option;
   OrderSummary: OrderSummary;

@@ -11,8 +11,6 @@ Les fichiers de ce dossier font foi. Si votre code et un contrat ne disent pas l
 | `schemas/intent.schema.json` | `Intent` | IA (`parse_intent`) | orchestrateur, agent H |
 | `schemas/option.schema.json` | `Option` | agent H (`search`, `refine`) | orchestrateur, IA, interface |
 | `schemas/order-summary.schema.json` | `OrderSummary` | agent H (`checkout`, `recheck`) | orchestrateur, IA, validation, interface |
-| `schemas/approval-request.schema.json` | `ApprovalRequest` | orchestrateur | `POST /api/approvals` |
-| `schemas/approval-status.schema.json` | `ApprovalStatus` | `/api/approvals` | orchestrateur, interface |
 | `schemas/site-card.schema.json` | `SiteCard` | agent H (Redis `site:{domaine}`) | agent H |
 | `schemas/ws-message.schema.json` | messages WebSocket | interface et orchestrateur | les deux |
 | `examples/valid/*.json` | exemples à copier | | tests |
@@ -39,8 +37,6 @@ Le plan (`docs/plan-pilote.md`) donnait une première liste de champs. Les contr
 | `OrderSummary.total_eur` | `OrderSummary.total_cents` |
 | `OrderSummary.delivery` | `OrderSummary.when_label` |
 | `OrderSummary.refund_terms` | `OrderSummary.conditions` |
-| `ApprovalRequest.timeout_s` | `ApprovalRequest.timeout_seconds` |
-| `ApprovalStatus.state`, `by`, `at` | `ApprovalStatus.status`, `decided_by`, `decided_at` |
 | `SiteCard.avg_seconds` | `SiteCard.avg_duration_s` |
 | message `error {message}` | `error {code, message}` |
 
@@ -56,7 +52,7 @@ Pourquoi les centimes : un total en euros à virgule (14.5 contre 14.50) change 
 
 ## Hash du récapitulatif
 
-Sert à détecter qu'un prix ou un panier a changé entre la validation du proche et le paiement. Calcul (implémentation de référence : `orchestrator.contracts.summary_hash`, à utiliser telle quelle) :
+Sert à détecter qu'un prix ou un panier a changé entre la première confirmation et le paiement. Calcul (implémentation de référence : `orchestrator.contracts.summary_hash`, à utiliser telle quelle) :
 
 1. Normaliser chaque libellé : décomposition Unicode NFKD, suppression des accents, minuscules, tout caractère hors `a-z0-9` remplacé par une espace, espaces fusionnées, bords supprimés. « Crème  Brûlée ! » → `creme brulee`.
 2. Pour chaque article : `[nom normalisé, liste triée des options normalisées, quantité]`.
@@ -90,7 +86,6 @@ Adresse : `ws://localhost:8000/ws`. Chaque message est un objet JSON avec un cha
 | `intent` | `intent` | Intent compris, pour l'écran spectateur. |
 | `options` | `options` (8 max) | Après `search()` ou `refine()`. |
 | `summary` | `summary` | Après `checkout()` et après `recheck()`. |
-| `approval` | `status` | À chaque changement du statut de validation du proche. |
 | `agent_view` | `agent_view_url` | Dès que la vue en direct de l'agent H est connue. |
 | `error` | `code`, `message` | Erreur. Toujours suivie d'un `say` qui l'explique. |
 
@@ -104,7 +99,6 @@ Adresse : `ws://localhost:8000/ws`. Chaque message est un objet JSON avec un cha
 | `proposing` | les options sont lues, Pilote attend un choix | j'écoute |
 | `cart` | l'agent remplit le panier et va jusqu'au paiement | je réfléchis |
 | `confirm_1` | récapitulatif lu, Pilote attend le premier « oui » | j'écoute |
-| `awaiting_relative` | SMS envoyé, on attend le proche | j'attends votre proche |
 | `recheck` | l'agent relit la page de paiement | je réfléchis |
 | `confirm_2` | rien n'a changé, Pilote attend le deuxième « oui » | j'écoute |
 | `paying` | l'agent clique sur le bouton de paiement | je réfléchis |
@@ -125,8 +119,7 @@ Adresse : `ws://localhost:8000/ws`. Chaque message est un objet JSON avec un cha
 → audio « la deuxième »
 ← state cart, summary, say (affirmation du récapitulatif), state confirm_1
 → audio « oui »
-← state awaiting_relative, approval (pending) ... approval (approved)
-← state recheck, summary, state confirm_2, say « Léa a validé. Rien n'a changé. Je paie ? »
+← state recheck, summary, state confirm_2, say « Rien n'a changé. Je paie ? »
 → audio « oui »
 ← state paying, say « La banque a refusé le paiement. »  (ou accepté), state done
 ```
@@ -137,6 +130,5 @@ Adresse : `ws://localhost:8000/ws`. Chaque message est un objet JSON avec un cha
 
 Dans `orchestrator/ports.py` :
 - `ShoppingAgent` (membre 1) : `start`, `search`, `refine`, `choose`, `checkout`, `recheck`, `pay`, `cancel`, propriété `agent_view_url`. Construit avec deux callbacks : `request_payment_approval(summary) -> "approved" | "denied"` et `need_human(reason) -> "resolved" | "abort"`.
-- **Paiement** : l'orchestrateur n'appelle `pay()` qu'après le premier oui, la validation du proche, `recheck()` avec le même hash et le deuxième oui. Pendant `pay()`, l'outil `request_payment_approval` reçoit le récapitulatif lu au moment du clic : l'orchestrateur répond `approved` seulement s'il est dans l'état `paying` et si le hash est celui qui a été validé. Tout le reste répond `denied`.
+- **Paiement** : l'orchestrateur n'appelle `pay()` qu'après le premier oui, `recheck()` avec le même hash et le deuxième oui. Pendant `pay()`, l'outil `request_payment_approval` reçoit le récapitulatif lu au moment du clic : l'orchestrateur répond `approved` seulement s'il est dans l'état `paying` et si le hash est celui qui a été validé. Tout le reste répond `denied`.
 - `AI` (membre 2) : `transcribe`, `parse_intent`, `summarize_options`, `confirm_statement`, `describe_product`, `speak`. Toutes asynchrones.
-- `Approvals` : client de l'API de validation (membre 3), écrit par le membre 5.

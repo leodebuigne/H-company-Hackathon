@@ -6,7 +6,7 @@ Plan complet de l'équipe (benchmark, architecture, répartition, prompts par me
 
 Pilote est un assistant vocal en français qui fait des achats en ligne à la place d'une personne aveugle, sur de vrais sites marchands (Uber Eats et SNCF Connect pour le hackathon). Il utilise l'agent "computer use" de H Company (navigation) et des modèles Hugging Face (voix, langage, vision).
 
-Avant chaque paiement : un "oui" oral, la validation d'un proche par SMS, une relecture de la page, puis un deuxième "oui". La démo paie avec une carte virtuelle à 0 € : le paiement doit être refusé par la banque, ce qui prouve que le parcours marche.
+Avant chaque paiement : un "oui" oral, une relecture de la page, puis un deuxième "oui". La démo paie avec une carte virtuelle à 0 € : le paiement doit être refusé par la banque, ce qui prouve que le parcours marche.
 
 ## Dépôt
 
@@ -15,7 +15,7 @@ contracts/              schémas JSON partagés + README des messages WebSocket 
 orchestrator/           Python 3.12, FastAPI, machine à états (membre 5)
 orchestrator/agent_h/   agent H Company (membre 1)
 orchestrator/ai/        modèles Hugging Face (membre 2)
-web/                    Next.js : validation des proches (membre 3), interface vocale (membre 4)
+web/                    Next.js : interface vocale (membre 4)
 docs/                   décisions, sites, phrases de test, résultats
 ```
 

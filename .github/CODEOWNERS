@@ -15,11 +15,6 @@
 # Membre 2 : IA Hugging Face
 # /orchestrator/ai/             @TODO-membre-2
 
-# Membre 3 : validation des proches
-# /web/app/api/approvals/       @TODO-membre-3
-# /web/app/v/                   @TODO-membre-3
-# /web/lib/approvals/           @TODO-membre-3
-
 # Membre 4 : interface vocale
 # /web/app/(pilote)/            @TODO-membre-4
 # /web/components/              @TODO-membre-4

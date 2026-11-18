@@ -18,7 +18,6 @@ const empty: PiloteSnapshot = {
   intent: null,
   options: [],
   summary: null,
-  approval: null,
   log: [],
   agentViewUrl: null,
   lastSay: "",

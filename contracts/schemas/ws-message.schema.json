@@ -15,13 +15,12 @@
     { "$ref": "#/$defs/ServerIntent" },
     { "$ref": "#/$defs/ServerOptions" },
     { "$ref": "#/$defs/ServerSummary" },
-    { "$ref": "#/$defs/ServerApproval" },
     { "$ref": "#/$defs/ServerAgentView" },
     { "$ref": "#/$defs/ServerError" }
   ],
   "$defs": {
     "State": {
-      "enum": ["listening", "understanding", "searching", "proposing", "cart", "confirm_1", "awaiting_relative", "recheck", "confirm_2", "paying", "done", "cancelled", "human_needed"]
+      "enum": ["listening", "understanding", "searching", "proposing", "cart", "confirm_1", "recheck", "confirm_2", "paying", "done", "cancelled", "human_needed"]
     },
     "ClientAudio": {
       "description": "Interface → orchestrateur. Un enregistrement complet (bouton relâché). L'orchestrateur le supprime dès la transcription.",
@@ -136,16 +135,6 @@
         "summary": { "$ref": "order-summary.schema.json" }
       }
     },
-    "ServerApproval": {
-      "description": "Orchestrateur → interface. Statut de la validation du proche, à chaque changement.",
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["type", "status"],
-      "properties": {
-        "type": { "const": "approval" },
-        "status": { "$ref": "approval-status.schema.json" }
-      }
-    },
     "ServerAgentView": {
       "description": "Orchestrateur → interface. Lien vers la vue en direct de l'agent H, pour l'écran spectateur.",
       "type": "object",
@@ -163,7 +152,7 @@
       "required": ["type", "code", "message"],
       "properties": {
         "type": { "const": "error" },
-        "code": { "enum": ["transcription_failed", "not_understood", "agent_failed", "approval_failed", "price_changed", "timeout", "internal"] },
+        "code": { "enum": ["transcription_failed", "not_understood", "agent_failed", "price_changed", "timeout", "internal"] },
         "message": { "type": "string" }
       }
     }

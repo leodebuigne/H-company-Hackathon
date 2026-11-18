@@ -1,7 +1,7 @@
 """Serveur de l'orchestrateur : WebSocket /ws pour les écrans, /health pour vérifier qu'il tourne.
 
 Lancer : `python -m orchestrator` (port 8000, lit .env s'il existe).
-Les versions factices sont choisies par USE_FAKE_AGENT, USE_FAKE_AI, USE_FAKE_APPROVALS.
+Les versions factices sont choisies par USE_FAKE_AGENT et USE_FAKE_AI.
 """
 
 from __future__ import annotations
@@ -15,7 +15,6 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 
 from orchestrator.agent_h import make_agent_factory
 from orchestrator.ai import build_ai
-from orchestrator.approvals import build_approvals
 from orchestrator.config import Settings
 from orchestrator.session import Session
 
@@ -26,7 +25,6 @@ def build_session(settings: Settings) -> Session:
     return Session(
         ai=build_ai(),
         agent_factory=make_agent_factory(fake=settings.use_fake_agent),
-        approvals=build_approvals(settings),
         settings=settings,
     )
 
@@ -39,10 +37,9 @@ def create_app(session_factory: Callable[[], Session] | None = None) -> FastAPI:
         app.state.session = session
         app.state.settings = settings
         log.warning(
-            "Pilote prêt. Agent %s, IA %s, validation %s.",
+            "Pilote prêt. Agent %s, IA %s.",
             "FACTICE" if settings.use_fake_agent else "RÉEL (vrais sites)",
             "factice" if settings.use_fake_ai else "Hugging Face",
-            "factice" if settings.use_fake_approvals else settings.approvals_api_url,
         )
         await session.start()
         try:
@@ -60,7 +57,6 @@ def create_app(session_factory: Callable[[], Session] | None = None) -> FastAPI:
             "state": app.state.session.state,
             "fake_agent": settings.use_fake_agent,
             "fake_ai": settings.use_fake_ai,
-            "fake_approvals": settings.use_fake_approvals,
         }
 
     @app.websocket("/ws")

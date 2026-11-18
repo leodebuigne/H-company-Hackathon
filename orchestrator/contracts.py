@@ -32,7 +32,6 @@ State = Literal[
     "proposing",
     "cart",
     "confirm_1",
-    "awaiting_relative",
     "recheck",
     "confirm_2",
     "paying",
@@ -118,39 +117,6 @@ class OrderSummary(_Strict):
     read_at: dt.datetime
 
 
-# --- Approvals --------------------------------------------------------------
-
-
-class Relative(_Strict):
-    first_name: Annotated[str, Field(min_length=1)]
-    phone: Annotated[str, Field(pattern=r"^\+[1-9][0-9]{6,14}$")]
-
-
-class ApprovalRequest(_Strict):
-    order_id: OrderId
-    user_first_name: Annotated[str, Field(min_length=1)]
-    site_name: Annotated[str, Field(min_length=1)]
-    category: Category
-    summary: OrderSummary
-    relatives: Annotated[list[Relative], Field(min_length=1, max_length=3)]
-    timeout_seconds: Annotated[int, Field(ge=10, le=300)]
-
-
-class ApprovalStatus(_Strict):
-    order_id: OrderId
-    status: Literal["pending", "approved", "denied", "expired"]
-    current_relative: Annotated[int, Field(ge=1, le=3)] | None
-    relatives_count: Annotated[int, Field(ge=1, le=3)]
-    decided_by: str | None
-    decided_at: dt.datetime | None
-    expires_at: dt.datetime | None
-    updated_at: dt.datetime
-
-    @property
-    def is_final(self) -> bool:
-        return self.status != "pending"
-
-
 # --- SiteCard ---------------------------------------------------------------
 
 
@@ -232,11 +198,6 @@ class ServerSummary(_Strict):
     summary: OrderSummary
 
 
-class ServerApproval(_Strict):
-    type: Literal["approval"] = "approval"
-    status: ApprovalStatus
-
-
 class ServerAgentView(_Strict):
     type: Literal["agent_view"] = "agent_view"
     agent_view_url: HttpUrlStr
@@ -248,7 +209,6 @@ class ServerError(_Strict):
         "transcription_failed",
         "not_understood",
         "agent_failed",
-        "approval_failed",
         "price_changed",
         "timeout",
         "internal",
@@ -264,7 +224,6 @@ ServerMessage = Annotated[
     | ServerIntent
     | ServerOptions
     | ServerSummary
-    | ServerApproval
     | ServerAgentView
     | ServerError,
     Field(discriminator="type"),
