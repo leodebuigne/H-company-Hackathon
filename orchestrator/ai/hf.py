@@ -65,16 +65,17 @@ ASR_HALLUCINATIONS = (
 WEEKDAYS = ["lundi", "mardi", "mercredi", "jeudi", "vendredi", "samedi", "dimanche"]
 
 INTENT_SYSTEM_PROMPT = """\
-Tu es le module de compréhension de Pilote, un assistant vocal qui fait des achats en ligne \
-(trains, repas) pour une personne aveugle. Tu reçois une phrase transcrite à l'oral (elle peut \
-contenir des hésitations ou des noms de villes mal écrits) et tu réponds par UN SEUL objet JSON, \
-sans texte autour, avec exactement ces champs, tous présents (null, [] ou {} si inconnu) :
+Tu es le module de compréhension de Pilote, un assistant vocal qui aide une personne aveugle à \
+faire ses démarches en ligne : acheter (train, repas, n'importe quel produit), réserver (restaurant, \
+hôtel, rendez-vous, spectacle) ou chercher une information. Tu reçois une phrase transcrite à \
+l'oral (elle peut contenir des hésitations ou des noms de villes mal écrits) et tu réponds par \
+UN SEUL objet JSON, sans texte autour, avec exactement ces champs, tous présents (null, [] ou {} si inconnu) :
 
 {
   "kind": "new_request" | "refine" | "choose" | "details" | "confirm" | "deny" | "cancel" | "question" \
 | "other",
-  "category": "train" | "repas" | "boutique" | null,
-  "object": "ce qu'on veut acheter" | null,
+  "category": "train" | "repas" | "boutique" | "reservation" | null,
+  "object": "ce qu'on veut acheter ou réserver" | null,
   "quantity": nombre entier >= 1 | null,
   "when": {"date": "AAAA-MM-JJ" | null, "after": "HH:MM" | null, "before": "HH:MM" | null, \
 "asap": true | false},
@@ -85,15 +86,20 @@ sans texte autour, avec exactement ces champs, tous présents (null, [] ou {} si
 }
 
 Sens de kind :
-- new_request : nouvelle demande d'achat. refine : change un critère de la demande en cours \
-(« plus tôt », « moins cher »). choose : choisit une option (« la deuxième »). details : veut \
-plus de détails sur une option. confirm : « oui », « c'est bon ». deny : « non », « pas celle-là ». \
-cancel : « annule tout ». question : la personne veut une information ou une recherche sur le web, \
-sans acheter (« à quelle heure ferme la pharmacie ? », « quel temps fera-t-il demain à Lille ? », \
-« trouve-moi le prix d'un iPhone 17 »). other : bavardage ou phrase incompréhensible.
+- new_request : nouvelle demande d'achat ou de réservation. refine : change un critère de la demande \
+en cours (« plus tôt », « moins cher »). choose : choisit une option (« la deuxième »). details : \
+veut plus de détails sur une option. confirm : « oui », « c'est bon ». deny : « non », « pas celle- \
+là ». cancel : « annule tout ». question : la personne veut une information ou une recherche sur le \
+web, sans acheter (« à quelle heure ferme la pharmacie ? », « quel temps fera-t-il demain à Lille ? \
+», « trouve-moi le prix d'un iPhone 17 »). other : bavardage ou phrase incompréhensible.
 - confirm, deny, cancel, question, other : tout le reste est null, [] ou {} (when : dates et heures \
 null, asap false).
 - choose et details : renseigne choice_index. refine : ne remplis que ce qui change.
+
+Catégories :
+- train : un billet de train. repas : un repas livré (Uber Eats). boutique : un produit à acheter \
+en ligne (électronique, vêtements, livres, maison…). reservation : réserver une table au restaurant, \
+un hôtel, un rendez-vous (médecin, coiffeur…) ou une place de spectacle.
 
 Règles :
 - Ne devine jamais : une information absente de la phrase et de l'historique reste null. Le système \
@@ -106,7 +112,10 @@ catégorie). Pour un train, object vaut null.
 ville de gare la plus proche à l'oreille parmi : {cities}. Une ville absente de cette liste reste \
 telle quelle.
 - details : clés en anglais, villes et noms propres avec leur majuscule : origin, destination \
-(train), class (première classe, seconde), size, restaurant, cuisine (repas).
+(train), class (première classe, seconde), size, restaurant, cuisine (repas), brand, size, color \
+(boutique), place (ville ou quartier), people (nombre de personnes), kind (type de rendez-vous) \
+(reservation). Pour une réservation, object dit ce qu'on réserve (« table pour 2 », « rendez-vous \
+chez un dentiste », « chambre d'hôtel »).
 - constraints : contraintes libres en minuscules, par exemple « direct », « échangeable », \
 « remboursable ».
 - Heures : « matin » = before 12:00 ; « après-midi » = after 12:00 ; « ce soir » = after 18:00 \
@@ -133,14 +142,15 @@ REQUIRED = {
     "train": ["details.origin", "details.destination", "when.date"],
     "repas": ["object"],
     "boutique": ["object"],
+    "reservation": ["object", "when.date"],
     None: ["category", "object"],
 }
 QUESTIONS = {
-    "category": "Qu'est-ce que vous voulez acheter ?",
-    "object": "Qu'est-ce que vous voulez commander ?",
+    "category": "Que voulez-vous faire : acheter quelque chose, réserver, ou chercher une information ?",
+    "object": "Qu'est-ce qu'il vous faut exactement ?",
     "details.origin": "De quelle ville partez-vous ?",
     "details.destination": "Pour quelle ville voulez-vous un billet ?",
-    "when.date": "Quel jour voulez-vous partir ?",
+    "when.date": "Pour quel jour ?",
 }
 
 VISION_SYSTEM_PROMPT = (

@@ -39,11 +39,12 @@
       "type": "string"
     },
     "category": {
-      "description": "Type d'achat. Sert à choisir le site et le délai de validation.",
+      "description": "Type de demande. Sert à choisir le site et le délai de validation. boutique : un produit à acheter ; reservation : une table, un hôtel, un rendez-vous, une place de spectacle.",
       "enum": [
         "train",
         "repas",
         "boutique",
+        "reservation",
         null
       ]
     },
@@ -112,7 +113,7 @@
       "minimum": 0
     },
     "details": {
-      "description": "Précisions propres au type d'achat, en texte libre. Clés conseillées : train → origin, destination, class ; repas → restaurant, cuisine, size, options ; boutique → brand, size, color.",
+      "description": "Précisions propres au type d'achat, en texte libre. Clés conseillées : train → origin, destination, class ; repas → restaurant, cuisine, size, options ; boutique → brand, size, color ; reservation → place, people, kind.",
       "type": "object",
       "additionalProperties": {
         "type": "string"

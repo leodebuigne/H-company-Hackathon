@@ -14,9 +14,9 @@ export interface Intent {
    */
   text: string;
   /**
-   * Type d'achat. Sert à choisir le site et le délai de validation.
+   * Type de demande. Sert à choisir le site et le délai de validation. boutique : un produit à acheter ; reservation : une table, un hôtel, un rendez-vous, une place de spectacle.
    */
-  category: "train" | "repas" | "boutique" | null;
+  category: "train" | "repas" | "boutique" | "reservation" | null;
   /**
    * Ce que la personne veut, en quelques mots (« billet de train », « pizza margherita »).
    */
@@ -51,7 +51,7 @@ export interface Intent {
    */
   budget_cents: number | null;
   /**
-   * Précisions propres au type d'achat, en texte libre. Clés conseillées : train → origin, destination, class ; repas → restaurant, cuisine, size, options ; boutique → brand, size, color.
+   * Précisions propres au type d'achat, en texte libre. Clés conseillées : train → origin, destination, class ; repas → restaurant, cuisine, size, options ; boutique → brand, size, color ; reservation → place, people, kind.
    */
   details: {
     [k: string]: string | undefined;

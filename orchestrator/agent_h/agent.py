@@ -246,8 +246,8 @@ class ShoppingAgent:
         agent, mode = self._portal["agent"], dict(self._portal["mode"])
         # Texte de la page en plus de la capture : très lourd sur SNCF Connect (≈ 350 000 tokens par
         # commande), donc plus lent. PILOTE_H_PAGE_TEXT=0 le coupe.
-        if os.getenv("PILOTE_H_PAGE_TEXT", "").strip() == "0":
-            mode["markdown"] = False
+        # Texte de la page en plus de la capture, par défaut (lecture exacte sur n'importe quel site)
+        mode["markdown"] = os.getenv("PILOTE_H_PAGE_TEXT", "").strip() != "0"
         environment: dict[str, Any] = {"kind": "web", "id": "browser", "host": "user_device", "mode": mode}
         if self._site:
             environment["start_url"] = self._site

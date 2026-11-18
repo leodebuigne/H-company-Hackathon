@@ -23,7 +23,7 @@ OrderId = Annotated[str, Field(pattern=UUID_PATTERN)]
 Cents = Annotated[int, Field(ge=0)]
 # URL lue telle quelle sur la page, sans validation stricte (query parfois non encodée).
 HttpUrlStr = Annotated[str, Field(pattern=r"^https?://")]
-Category = Literal["train", "repas", "boutique"]
+Category = Literal["train", "repas", "boutique", "reservation"]
 
 State = Literal[
     "listening",

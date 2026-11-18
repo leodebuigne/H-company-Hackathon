@@ -154,9 +154,11 @@ _MONTHS = ("janvier", "février", "mars", "avril", "mai", "juin", "juillet", "ao
 
 def describe_request(intent: Intent, today: dt.date) -> str:
     """Ce que Pilote a compris, redit avant de chercher : la personne peut corriger tout de suite."""
-    what = {"train": "un train", "repas": intent.object or "un repas"}.get(
-        intent.category or "", intent.object or "ça"
-    )
+    what = {
+        "train": "un train",
+        "repas": intent.object or "un repas",
+        "reservation": f"une réservation : {intent.object}" if intent.object else "une réservation",
+    }.get(intent.category or "", intent.object or "ça")
     route = ""
     if intent.details.get("origin") or intent.details.get("destination"):
         route = f" de {intent.details.get('origin', '?')} à {intent.details.get('destination', '?')}"

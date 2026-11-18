@@ -221,3 +221,11 @@ Retour du test : « Tu pourrais regarder combien de temps je mets pour aller Mer
 
 La consigne était tournée vers SNCF et l'achat d'un train. Elle couvre maintenant achat, réservation, recherche et comparaison sur n'importe quel site ; sans site imposé, l'agent va directement sur le site le plus connu en France pour la tâche (SNCF Connect, Uber Eats, Amazon / Fnac / Darty, Doctolib, TheFork, Booking), sinon passe par un moteur de recherche. Ajouts : méthode pour lire une page (repérer la recherche du site, fermer les fenêtres gênantes, vérifier après chaque action, changer de méthode après 2 échecs), refus des options et assurances ajoutées, étapes panier et achat sans vocabulaire ferroviaire. Côté code : texte de la page envoyé avec la capture (`PILOTE_H_PAGE_TEXT=0` pour couper).
 Essai réel (Chrome local, agent du code, aucun site imposé, « casque Bluetooth Sony WH-1000XM5 ») : Amazon choisi, cookies fermés, 3 offres avec prix et livraison en 55 s, rien dans le panier. L'agent du portail `pilote-shopper` garde l'ancienne consigne tant qu'il n'est pas mis à jour.
+
+## 2026-11-19 : Pilote opérationnel pour toutes les démarches (v2 locale, membre 4, avec accord pour toucher les autres parties)
+
+- **Contrat** (membre 5, à relire) : nouvelle catégorie `reservation` (table, hôtel, rendez-vous, spectacle) dans `intent.schema.json`, `contracts.py` et les types web générés. Clés de `details` : place, people, kind.
+- **Compréhension** (membre 2) : consigne générale (acheter, réserver, chercher), définitions des catégories, informations obligatoires d'une réservation (objet et date), questions de relance générales (« Pour quel jour ? », « Qu'est-ce qu'il vous faut exactement ? »). Essai : « une table pour deux ce soir à Lyon, italien » → reservation ; « rendez-vous chez un dentiste à Paris » → reservation ; « écouteurs à moins de 50 € » → boutique, budget 5000.
+- **Orchestrateur** (membre 5) : la demande redite gère la réservation.
+- **Agent** (membre 1) : texte de la page aussi pour l'agent du portail recopié ; `pilote-shopper` mis à jour sur H avec la nouvelle consigne (sous-agents gardés).
+- **Sites** : sans site configuré (boutique, réservation), l'agent choisit le site le plus connu. `PILOTE_SITE_REPAS` vidé dans `.env` : les repas vont sur le vrai Uber Eats (connexion à faire dans le Chrome de l'agent).
