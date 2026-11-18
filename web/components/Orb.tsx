@@ -159,14 +159,14 @@ export default function Orb({ mode, level = 0, size = 320 }: Props) {
 
       // Grain : points fins, plus serrés vers le bord, qui débordent un peu et s'effacent : pas de contour net
       g.clearRect(0, 0, size, size);
-      const grains = 1600 + Math.round(energy * 900);
+      const grains = 650 + Math.round(energy * 450);
       for (let i = 0; i < grains; i++) {
         const a = Math.random() * Math.PI * 2;
         const edge = radius(a, amp) * swell;
         const u = Math.random();
         const r = edge * (1 - 0.5 * u * u) + (Math.random() - 0.35) * R * 0.16;
         const outside = Math.max(0, r - edge) / (R * 0.12);
-        const alpha = (0.18 + Math.random() * 0.45) * (1 - Math.min(1, outside)) * (0.35 + 0.65 * (1 - u));
+        const alpha = (0.1 + Math.random() * 0.3) * (1 - Math.min(1, outside)) * (0.35 + 0.65 * (1 - u));
         if (alpha <= 0.02) continue;
         // couleur de la tache la plus proche sur le bord
         let best = TINTS[0];
@@ -185,13 +185,22 @@ export default function Orb({ mode, level = 0, size = 320 }: Props) {
       // Seul détail net : un tout petit point de lumière au centre
       const cx = c + Math.cos(flow * 0.6) * R * 0.12;
       const cy = c + Math.sin(flow * 0.5) * R * 0.1;
-      const core = g.createRadialGradient(cx, cy, 0, cx, cy, 7 + energy * 4);
-      core.addColorStop(0, "rgba(255, 255, 255, 1)");
-      core.addColorStop(0.4, "rgba(200, 245, 255, 0.9)");
-      core.addColorStop(1, "rgba(200, 245, 255, 0)");
-      g.fillStyle = core;
+      // Perle de lumière : cœur blanc, auréole nacrée rose et cyan, sans bord net
+      const pr = 16 + energy * 6;
+      const pearl = g.createRadialGradient(cx, cy, 0, cx, cy, pr);
+      pearl.addColorStop(0, "rgba(255, 255, 255, 1)");
+      pearl.addColorStop(0.22, "rgba(255, 255, 255, 0.95)");
+      pearl.addColorStop(0.5, "rgba(235, 225, 255, 0.45)");
+      pearl.addColorStop(0.75, "rgba(190, 235, 255, 0.18)");
+      pearl.addColorStop(1, "rgba(190, 235, 255, 0)");
+      g.fillStyle = pearl;
       g.beginPath();
-      g.arc(cx, cy, 7 + energy * 4, 0, Math.PI * 2);
+      g.arc(cx, cy, pr, 0, Math.PI * 2);
+      g.fill();
+      // reflet minuscule
+      g.fillStyle = "rgba(255, 255, 255, 0.9)";
+      g.beginPath();
+      g.arc(cx - pr * 0.18, cy - pr * 0.2, 1.6, 0, Math.PI * 2);
       g.fill();
 
       if (!reduce) raf = requestAnimationFrame(draw);
