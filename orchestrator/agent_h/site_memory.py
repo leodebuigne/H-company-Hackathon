@@ -109,15 +109,17 @@ QUICK_SEARCH_SNCF: dict[str, list[str]] = {
         "Part de la page d'accueil https://www.sncf-connect.com, attends qu'elle soit chargée.",
         "Reste sur l'onglet « Tout rechercher ». Clique dans le champ « Entrez une destination, un trajet… » et "
         "tape d'un coup le trajet, la date et l'heure, par exemple « Paris Nantes 19 novembre 8h ».",
-        "Si une liste de suggestions apparaît, choisis la ligne qui correspond au trajet ; sinon appuie sur "
-        "Entrée ou clique sur « Rechercher ».",
+        "Puis clique tout de suite sur le bouton bleu « Rechercher » à droite du champ (ou tape avec Entrée).",
+        "La liste sous le champ (« Points d'intérêts », « Adresses ») est normale : n'y choisis rien, ce ne "
+        "sont pas des trajets, et ne passe pas à l'onglet « Trains ».",
         "Sur la page de résultats, vérifie les gares, la date et l'heure ; corrige seulement ce qui ne va pas.",
     ],
     "useful_buttons": ["Tout rechercher", "Rechercher", "Choisir ce tarif", "Passer l'étape"],
     "pitfalls": [
         "Le grand bandeau « Ouverture des ventes » sous le champ est une publicité : ne clique jamais dessus. "
         "S'il t'emmène sur une page /bons-plans/, retourne sur https://www.sncf-connect.com.",
-        "Si la recherche rapide ne mène pas aux trains, utilise l'onglet « Trains » et son formulaire.",
+        "Seulement si la page de résultats ne s'affiche pas après « Rechercher », utilise l'onglet « Trains » et son "
+        "formulaire.",
         "Sur le panier, « Valider et payer » est le bouton final, même pour un billet à 0 € : ne clique dessus "
         "qu'à l'étape « achat » ou « paiement », après approbation.",
     ],

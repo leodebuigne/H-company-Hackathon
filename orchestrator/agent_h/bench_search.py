@@ -54,7 +54,7 @@ def _intent(case: str) -> Intent:
     raise ValueError(f"Cas inconnu : {case}")
 
 
-async def run_case(case: str, label: str, prepare: bool = False) -> str:
+async def run_case(case: str, label: str, prepare: bool = False, warm: bool = False) -> str:
     from orchestrator.agent_h import make_agent
 
     async def never_pay(summary: object) -> str:
@@ -70,6 +70,11 @@ async def run_case(case: str, label: str, prepare: bool = False) -> str:
         return None
 
     agent.on_progress = quiet
+    if warm:  # comme pendant que la personne parle : session H démarrée et en attente
+        w0 = time.monotonic()
+        await agent.warm()
+        print(f"   session d'attente : {time.monotonic() - w0:.1f} s ({'prête' if agent._warm else 'échec'})")
+        await asyncio.sleep(2)
     if prepare:  # comme pendant une question de Pilote : page et configuration prêtes avant le lancement
         await agent.prepare(_intent(case))
         await asyncio.sleep(4)
@@ -112,7 +117,12 @@ async def run_case(case: str, label: str, prepare: bool = False) -> str:
 def _departure(timings: dict[str, float], t0: float) -> str:
     """Découpe le temps avant la première action : Chrome, session H (création + configuration), puis
     première réflexion du modèle (chargement de la page compris)."""
-    marks = [("Chrome prêt", "chrome"), ("session H créée", "session"), ("première action", "first_action")]
+    marks = [
+        ("Chrome prêt", "chrome"),
+        ("session H créée", "session"),
+        ("première capture", "first_screenshot"),
+        ("première action", "first_action"),
+    ]
     parts = [f"{label} {timings[key] - t0:.1f} s" for label, key in marks if key in timings]
     return "   départ : " + " → ".join(parts) + "\n" if parts else ""
 
@@ -135,7 +145,7 @@ async def main(argv: list[str]) -> int:
     cases = [a for a in argv if a in ("train", "produit", "restaurant")] or ["train", "produit", "restaurant"]
     for case in cases:
         print(f"→ {case}…", flush=True)
-        print(await run_case(case, label, "--prepare" in argv), end="", flush=True)
+        print(await run_case(case, label, "--prepare" in argv, "--warm" in argv), end="", flush=True)
     return 0
 
 

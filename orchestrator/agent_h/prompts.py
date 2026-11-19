@@ -190,6 +190,14 @@ STOP_AT_RESULTS = (
 )
 
 
+# Session H démarrée d'avance : le navigateur chez H met ≈ 7 s à démarrer (mesuré le 19/11), on le fait
+# pendant que la personne parle. L'agent ne doit rien faire tant que la demande n'est pas arrivée.
+WARM_MESSAGE = (
+    "Préparation : une demande va arriver dans un instant. Ne fais AUCUNE action sur la page et ne navigue "
+    "nulle part. Réponds immédiatement, avec un champ options vide."
+)
+
+
 def read_results_message() -> str:
     return (
         "Étape : recherche (suite). Lis maintenant les résultats affichés et renvoie au plus "

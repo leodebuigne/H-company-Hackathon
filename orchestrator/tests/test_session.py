@@ -577,3 +577,20 @@ async def test_agent_is_prepared_while_pilote_asks_and_reused_for_the_search(mon
         await h.wait("proposing")
         assert len(h.agents) == 1, "l'agent préparé fait la recherche"
         assert h.agents[0]._intent.details == {"destination": "Lille", "origin": "Paris"}
+
+
+async def test_a_waiting_h_session_is_started_before_the_request_and_reused(monkeypatch):
+    warmed: list[bool] = []
+
+    async def warm(self):
+        warmed.append(True)
+
+    monkeypatch.setattr(FakeShoppingAgent, "warm", warm, raising=False)
+    h = Harness()
+    h.session.agent_factory.can_warm = True  # type: ignore[attr-defined]
+    async with h:
+        await _until(lambda: warmed, 2)
+        assert len(h.agents) == 1, "agent préparé dès l'écoute, avant toute demande"
+        await h.text("Un train de Paris pour Lille demain après 14 h")
+        await h.wait("proposing")
+        assert len(h.agents) == 1, "la session d'attente fait la recherche"

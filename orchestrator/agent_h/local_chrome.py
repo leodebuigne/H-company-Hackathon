@@ -94,6 +94,23 @@ def fresh_page(url: str) -> None:
     time.sleep(1)
 
 
+def navigate(url: str) -> bool:
+    """Envoie l'onglet de l'agent à `url`, sans ouvrir d'onglet : une session H en attente, branchée sur cet
+    onglet, le reste. False si Chrome ou l'onglet manque (on ouvre alors un onglet neuf)."""
+    if not listening():
+        return False
+    targets = json.load(urllib.request.urlopen(f"http://127.0.0.1:{PORT}/json", timeout=3))
+    pages = [t for t in targets if t.get("type") == "page" and t.get("webSocketDebuggerUrl")]
+    if not pages:
+        return False
+    from websockets.sync.client import connect
+
+    with connect(pages[0]["webSocketDebuggerUrl"], max_size=None, open_timeout=3) as ws:
+        ws.send(json.dumps({"id": 1, "method": "Page.navigate", "params": {"url": url}}))
+        ws.recv(timeout=5)
+    return True
+
+
 def ensure(url: str | None = None) -> bool:
     """Lance le Chrome dédié s'il n'est pas déjà ouvert, avec au moins un onglet.
     Renvoie False si Chrome est introuvable."""

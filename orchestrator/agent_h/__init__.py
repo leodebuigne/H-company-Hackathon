@@ -51,6 +51,8 @@ def make_agent_factory(fake: bool | None = None, **kwargs: Any) -> AgentFactory:
     def factory(approval: ApprovalCallback, need_human: NeedHumanCallback) -> ShoppingAgentProtocol:
         return make_agent(fake, approval_callback=approval, need_human_callback=need_human, **kwargs)
 
+    # L'orchestrateur prépare d'avance un agent (session H en attente) seulement pour le vrai agent
+    factory.can_warm = not (fake if fake is not None else os.getenv("USE_FAKE_AGENT") == "1")  # type: ignore[attr-defined]
     return factory
 
 

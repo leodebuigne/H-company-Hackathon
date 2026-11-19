@@ -20,3 +20,8 @@ Mesures de `python -m orchestrator.agent_h.bench_search` : recherche seule, sans
 | 2026-11-19 13:23 | lecture directe v2 | restaurant | 7 | ? | 3 | ORTO LYON — 0.00 € |
 | 2026-11-19 13:34 | train partagé (H tape, code lit) | train | 72 | 2 | 3 | TGV inOui 09:00 → 10:56, Paris Gare de L — 69.00 € |
 | 2026-11-19 13:37 | train partagé v2 | train | 39 | 3 | 3 | TGV INOUI 09:00 → 10:56 — 69.00 € |
+| 2026-11-19 13:41 | H seul, réglage actuel | produit | 32 | 2 | 3 | Sony WH-1000XM5 Casque Bluetooth sans Fi — 237.83 € |
+| 2026-11-19 13:41 | H seul, réflexion low | produit | 26 | 2 | 3 | Sony WH-1000XM5 Casque Bluetooth sans fi — 237.83 € |
+| 2026-11-19 13:42 | H seul, réflexion disabled | produit | 33 | 1 | 2 | Sony WH-1000XM5 Casque Bluetooth sans Fi — 237.83 € |
+| 2026-11-19 13:42 | H seul, sans sous-agents | produit | 23 | 2 | 3 | Sony WH-1000XM5 Casque Bluetooth sans fi — 237.83 € |
+| 2026-11-19 13:45 | H seul, session d'attente | produit | 16 | 2 | 3 | Sony WH-1000XM5 Casque Bluetooth sans fi — 237.83 € |

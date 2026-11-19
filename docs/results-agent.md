@@ -85,3 +85,10 @@ Une ligne par commande, ajoutée automatiquement par orchestrator/agent_h/metric
 | 2026-11-19 13:27 | www.amazon.fr | pilote-shopper | annulée | 69 | 6 | - |
 | 2026-11-19 13:34 | www.sncf-connect.com | pilote-shopper | annulée | 71 | 2 | - |
 | 2026-11-19 13:37 | www.sncf-connect.com | pilote-shopper | annulée | 38 | 3 | - |
+| 2026-11-19 13:41 | www.amazon.fr | pilote-shopper | annulée | 31 | 2 | - |
+| 2026-11-19 13:41 | www.amazon.fr | pilote-shopper | annulée | 24 | 2 | - |
+| 2026-11-19 13:42 | www.amazon.fr | pilote-shopper | annulée | 28 | 1 | - |
+| 2026-11-19 13:42 | www.amazon.fr | pilote-shopper | annulée | 21 | 2 | - |
+| 2026-11-19 13:45 | www.amazon.fr | pilote-shopper | annulée | 25 | 2 | - |
+| 2026-11-19 13:48 | www.sncf-connect.com | pilote-shopper | annulée | 113 | 13 | - |
+| 2026-11-19 13:53 | www.sncf-connect.com | pilote-shopper | annulée | 39 | 4 | - |

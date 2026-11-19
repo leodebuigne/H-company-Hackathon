@@ -370,6 +370,10 @@ class Session:
                 with contextlib.suppress(asyncio.CancelledError, Exception):
                     await task
         await self._close_agent()
+        prepared, self._prepared_agent = self._prepared_agent, None
+        if prepared is not None:  # session H d'attente jamais utilisée
+            with contextlib.suppress(Exception):
+                await asyncio.wait_for(prepared.cancel(), self.settings.step_timeouts["cancel"])
 
     # --- connexions -------------------------------------------------------------------
 
@@ -634,6 +638,7 @@ class Session:
                     await self._end_order("cancelled", "Une erreur est survenue. Rien n'a été acheté.")
 
     async def _order(self) -> None:
+        self._warm_agent()  # session H démarrée pendant que la personne parle
         intent = await self._get_request()
         self._payment_cleared = False
         for key in ("options", "summary", "agent_view"):
@@ -777,6 +782,21 @@ class Session:
         if url and self._snapshot.get("agent_view", {}).get("agent_view_url") != url:
             await self._emit(ServerAgentView(agent_view_url=url))
 
+    def _warm_agent(self) -> None:
+        """Agent prêt d'avance, avec une session H qui attend la demande (≈ 7 s gagnées sur la première
+        action). Seulement avec le vrai agent ; jamais bloquant."""
+        if not getattr(self.agent_factory, "can_warm", False) or self._prepared_agent is not None:
+            return
+        self._prepared_agent = self.agent_factory(self.approve_payment, self.need_human)
+        warm = getattr(self._prepared_agent, "warm", None)
+        if warm is not None:
+
+            async def run() -> None:
+                with contextlib.suppress(Exception):
+                    await warm()
+
+            self._prepare_task = asyncio.create_task(run())
+
     def _prepare_agent(self, intent: Intent) -> None:
         """Prépare l'agent pendant que Pilote pose une question : 3 à 4 s de moins au lancement.
         Jamais bloquant : une préparation qui échoue est refaite par start()."""
@@ -785,9 +805,13 @@ class Session:
         if self._prepared_agent is None:
             self._prepared_agent = self.agent_factory(self.approve_payment, self.need_human)
         prepare = getattr(self._prepared_agent, "prepare", None)
-        if prepare is not None and (self._prepare_task is None or self._prepare_task.done()):
+        if prepare is not None:
+            previous = self._prepare_task  # la session d'attente d'abord, puis la page du site
 
             async def run() -> None:
+                if previous is not None:
+                    with contextlib.suppress(Exception):
+                        await previous
                 with contextlib.suppress(Exception):
                     await prepare(intent)
 
@@ -797,8 +821,9 @@ class Session:
         await self._set_state("searching")
         self._agent, self._prepared_agent = self._prepared_agent, None
         if self._prepare_task is not None:
+            # Session d'attente encore en démarrage : on l'attend (≤ 15 s), plus rapide qu'une neuve
             with contextlib.suppress(Exception):
-                await asyncio.wait_for(self._prepare_task, 10)
+                await asyncio.wait_for(asyncio.shield(self._prepare_task), 15)
             self._prepare_task = None
         self._agent = self._agent or self.agent_factory(self.approve_payment, self.need_human)
         if hasattr(self._agent, "on_progress"):

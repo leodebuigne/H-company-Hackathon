@@ -128,6 +128,7 @@ class ShoppingAgent:
         self._site = ""
         self.timings: dict[str, float] = {}  # instants (monotonic) du départ d'une commande, pour mesurer
         self._prepared_url = ""  # page de départ déjà ouverte par prepare()
+        self._warm: tuple[Any, int] | None = None  # session H démarrée d'avance (warm) et son curseur
         self._start_url = ""  # page ouverte au départ : l'accueil du site, ou ses résultats (adresse directe)
         self._query = ""  # recherche tapée par l'adresse directe, pour apprendre celle d'un nouveau site
         self._session: Any = None
@@ -269,7 +270,7 @@ class ShoppingAgent:
             spec["skills"] = agent["skills"]
         # Sous-agents du portail (lecture rapide du web) : ils gardent leurs propres navigateurs chez H,
         # l'agent principal reste sur le Chrome local (compte connecté, paiement).
-        if agent.get("subagents"):
+        if agent.get("subagents") and os.getenv("PILOTE_H_SUBAGENTS", "").strip() != "0":
             spec["subagents"] = agent["subagents"]
         model = (os.getenv("PILOTE_H_MODEL") or "").strip() or agent.get("model")
         if model:
@@ -338,6 +339,7 @@ class ShoppingAgent:
             index = (changes.first_index or index) + len(events) if changes is not None and events else index
             for event in events:
                 if url := screenshot_in(event):
+                    self.timings.setdefault("first_screenshot", now)
                     watch.saw_screenshot(url)
                 for name, args in actions_in(event):
                     self.timings.setdefault("first_action", now)
@@ -477,6 +479,9 @@ class ShoppingAgent:
         return self._browser_host == "user_device" and self._real_client and self._idle_timeout_s == 0
 
     async def _start_followup_session(self, step: str) -> None:
+        message = prompts.continue_message(self._intent, self._site, self._site_card, self._chosen, step)
+        if await self._use_warm(message):
+            return
         client = await self._ensure_client()
         spec = self._agent_spec()
         if isinstance(spec, dict):  # ne pas rouvrir l'accueil : on continue depuis la page de résultats
@@ -538,10 +543,60 @@ class ShoppingAgent:
 
     async def _open_start_page(self) -> None:
         self._real_client = self._real_client or self._client is None  # client simulé dans les tests
+        if self._warm is not None:
+            # Même onglet : la session H en attente y est branchée (un onglet neuf la débrancherait)
+            with contextlib.suppress(Exception):
+                if await asyncio.to_thread(local_chrome.navigate, self._start_url):
+                    return
+            self._warm = None  # onglet perdu : session d'attente inutilisable
         if self._browser_host == "user_device" and self._real_client:
             # Sinon le SDK lance Chrome sans --force-device-scale-factor=1 : clics décalés sur Retina
             await asyncio.to_thread(local_chrome.ensure, self._start_url)
             await asyncio.to_thread(local_chrome.fresh_page, self._start_url)
+
+    async def warm(self) -> None:
+        """Démarre d'avance une session H branchée sur le Chrome de l'agent, qui attend la demande : le
+        démarrage du navigateur chez H (≈ 7 s avant la première capture) se fait pendant que la personne
+        parle. Coût : une réponse courte de l'agent. La session se ferme seule après PILOTE_H_IDLE_TIMEOUT_S."""
+        self._real_client = self._real_client or self._client is None
+        if self._warm is not None or self._browser_host != "user_device" or not self._real_client:
+            return
+        if os.getenv("PILOTE_H_WARM", "").strip() == "0" or not self._idle_timeout_s:
+            return
+        await asyncio.to_thread(local_chrome.ensure, "about:blank")
+        await asyncio.to_thread(local_chrome.fresh_page, "about:blank")  # un seul onglet, celui de H
+        client = await self._ensure_client()
+        await self._load_portal_agent(client)
+        self._site = self._start_url = ""
+        session = await client.start_session(
+            agent=self._agent_spec(),
+            messages=prompts.WARM_MESSAGE,
+            answer_schema=AgentAnswer,
+            tools=self._tools(),
+            idempotency_key=uuid.uuid4().hex,
+            timezone="Europe/Paris",
+            idle_timeout_s=self._idle_timeout_s,
+        )
+        result = await session.wait_for_completion(from_index=0, timeout_seconds=90)
+        if result.status in OK_STATUSES:
+            self._warm = (session, result.next_from_index)
+
+    async def _use_warm(self, message: str) -> bool:
+        """Envoie le message à la session d'attente ; False si elle n'existe plus (expirée, coupée)."""
+        if self._warm is None:
+            return False
+        session, cursor = self._warm
+        self._warm = None
+        try:
+            await session.send_message(message)
+        except Exception:
+            with contextlib.suppress(Exception):
+                await session.cancel()
+            return False
+        self._session, self._cursor = session, cursor
+        with contextlib.suppress(Exception):
+            self.agent_view_url = getattr(await session.get(), "agent_view_url", None)
+        return True
 
     async def prepare(self, intent: Intent) -> None:
         """Pendant que Pilote pose ses questions : ouvre déjà la page de départ (résultats ou accueil du site)
@@ -598,17 +653,21 @@ class ShoppingAgent:
 
     async def _start_search_session(self, intent: Intent, site_card: SiteCard | None, shortcut: Any) -> None:
         client = await self._ensure_client()
+        message = prompts.search_message(
+            intent,
+            self._site,
+            site_card,
+            with_instructions=bool(self._agent_name) and not self._mirror_portal_agent,
+            with_vault=self._vault_id is not None,
+            shortcut=shortcut,
+            stop_at_results=self._shared_search,
+        )
+        if await self._use_warm(message):
+            self.timings["session"] = time.monotonic()
+            return
         self._session = await client.start_session(
             agent=self._agent_spec(),
-            messages=prompts.search_message(
-                intent,
-                self._site,
-                site_card,
-                with_instructions=bool(self._agent_name) and not self._mirror_portal_agent,
-                with_vault=self._vault_id is not None,
-                shortcut=shortcut,
-                stop_at_results=self._shared_search,
-            ),
+            messages=message,
             answer_schema=AgentAnswer,
             tools=self._tools(),
             idempotency_key=uuid.uuid4().hex,
@@ -798,6 +857,10 @@ class ShoppingAgent:
         return answer.payment_result
 
     async def cancel(self) -> None:
+        if self._warm is not None:  # session d'attente jamais utilisée
+            session, self._warm = self._warm[0], None
+            with contextlib.suppress(Exception):
+                await session.cancel()
         if self._session is None:
             await self._finish("annulée", "-")
         else:

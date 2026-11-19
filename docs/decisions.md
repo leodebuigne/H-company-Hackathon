@@ -247,3 +247,11 @@ Mesures dans `docs/bench-recherche.md` (`python -m orchestrator.agent_h.bench_se
 - **Train** : SNCF Connect n'a pas d'adresse de résultats ; l'agent H tape le trajet et s'arrête sur la liste, le code la lit. La saisie par le code a été écartée : SNCF a affiché sa vérification anti-robot pendant les essais (résolue à la main).
 - **Préparation pendant les questions** : l'orchestrateur ouvre déjà la page du site et lit la configuration de l'agent pendant que Pilote pose une question, et démarre l'agent pendant qu'il dit « Je cherche… ». Non mesuré en vrai.
 - Résultats (une mesure chacun) : train 268 s → 39 s, casque 43 s → 8 s, table au restaurant 244 s → 7 s. Couper le texte de la page n'a rien fait gagner. Héberger le modèle H en local n'a pas été retenu : le temps vient du calcul du modèle (≈ 10 s par action), pas du réseau.
+
+## 2026-11-19 : session H d'attente, fiche SNCF corrigée (v2 locale, membre 4)
+
+- **Où partait le temps avant la première action** (mesuré) : Chrome 1 s, création de la session H 1,5 s, **démarrage du navigateur chez H ≈ 7 s**, réflexion du modèle 3 à 4 s. Le niveau de réflexion ne change rien (`disabled` est pire) ; sans sous-agents, ≈ 1 s de moins (`PILOTE_H_SUBAGENTS=0`).
+- **Session H d'attente** (`ShoppingAgent.warm`) : dès que Pilote écoute, une session H est démarrée sur le Chrome de l'agent avec la consigne de ne rien faire ; la demande lui est envoyée comme message. Le code fait aller l'onglet existant à la bonne page (`local_chrome.navigate`) au lieu d'en ouvrir un neuf, qui débrancherait la session. Elle sert aussi au panier après une lecture directe. Coût : une réponse courte de l'agent par commande. `PILOTE_H_WARM=0` coupe. Mesuré : première action à 6,4 s au lieu de 13 à 15 s.
+- **Fiche SNCF** : après la saisie dans « Tout rechercher », SNCF affiche des suggestions d'adresses ; l'agent les prenait pour un échec et passait au formulaire (117 s). La fiche dit maintenant de cliquer tout de suite sur « Rechercher ». Mesuré dans Pilote complet : demande → 3 options en 41 s.
+- **Reste lent** : chaque clic ou saisie prend 6 à 11 s chez H (exécution sur le Chrome local), contre ≈ 2 s de réflexion. À voir dans la documentation H.
+- **Non vérifié** : lors du dernier essai, Pilote n'a rien dit pendant les 37 s de recherche.
