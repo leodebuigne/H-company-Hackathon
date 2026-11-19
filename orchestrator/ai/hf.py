@@ -20,6 +20,7 @@ import json
 import logging
 import os
 import re
+import time
 import wave
 from typing import Any
 
@@ -43,7 +44,9 @@ DEFAULT_TTS_VOICE = "ff_siwis"
 DEFAULT_TTS_PROVIDER = "deepinfra"
 
 DEFAULT_SPEAK_TIMEOUT_S = 6.0
-SPEAK_CHUNK_TIMEOUT_S = 3.5  # un morceau de phrase : 1 à 2 s en temps normal (mesuré le 2026-11-19)
+VOICE_PAUSE_S = 45  # panne du service de voix : durée pendant laquelle le navigateur parle seul
+SPEAK_HEDGE_S = 1.8  # un morceau prend 1 à 2 s : au-delà, une deuxième requête part en parallèle
+SPEAK_CHUNK_TIMEOUT_S = 3.5  # dernière attente quand toutes les requêtes d'un morceau traînent
 SPEAK_ATTEMPTS = 3  # Hugging Face renvoie parfois 503 : on réessaie avant la voix du navigateur
 SPEAK_CHUNK_CHARS = 60
 SPEAK_MIME = "audio/wav"
@@ -378,7 +381,8 @@ def complete_intent(data: dict[str, Any], text: str) -> dict[str, Any]:
             # Puis ce qui dépend de l'objet (taille, pointure…), et enfin ce que le modèle juge
             # indispensable pour bien choisir (« needs »), une question à la fois.
             for path, question in _object_needs(intent):
-                if path == "when.after" and (_is_filled(intent, "when.before") or intent["when"]["asap"]):
+                timed = _is_filled(intent, "when.before") or _is_filled(intent, "details.time")
+                if path == "when.after" and (timed or intent["when"]["asap"]):
                     continue
                 if not _is_filled(intent, path):
                     intent["missing"], intent["question"] = [path], question
@@ -386,6 +390,9 @@ def complete_intent(data: dict[str, Any], text: str) -> dict[str, Any]:
             needs = data.get("needs") if isinstance(data.get("needs"), dict) else None
             key = str((needs or {}).get("key") or "").strip()
             ask = str((needs or {}).get("question") or "").strip()
+            # Le plat est déjà dit (« pizza margherita ») : ne pas demander en plus le type de cuisine
+            if key == "cuisine" and _is_filled(intent, "object"):
+                key = ""
             if not intent["missing"] and re.fullmatch(r"[a-z_]{2,20}", key) and ask.endswith("?"):
                 if not _is_filled(intent, f"details.{key}"):
                     intent["missing"], intent["question"] = [f"details.{key}"], ask
@@ -417,6 +424,8 @@ class HFAI:
         self.tts_voice = _env("PILOTE_TTS_VOICE", DEFAULT_TTS_VOICE)
         self.tts_provider = _env("PILOTE_TTS_PROVIDER", DEFAULT_TTS_PROVIDER)
         self.speak_timeout = float(_env("PILOTE_TTS_TIMEOUT_S", str(DEFAULT_SPEAK_TIMEOUT_S)))
+        self._voice_failures = 0  # phrases de suite sans voix
+        self._voice_down_until = 0.0  # jusqu'à quand on ne demande plus la voix (panne du service)
         # PILOTE_VOICE=navigateur : pas de synthèse Hugging Face, la page parle avec la voix de
         # l'ordinateur (voix Premium du Mac), sans attente réseau.
         self.browser_voice = _env("PILOTE_VOICE", "huggingface").strip().lower() == "navigateur"
@@ -609,33 +618,56 @@ class HFAI:
         if self.browser_voice:
             return None
 
+        async def request(chunk: str) -> bytes:
+            return await self.tts_client.text_to_speech(
+                chunk, model=self.tts_model, extra_body={"voice": self.tts_voice, "lang_code": "f"}
+            )
+
         async def one(chunk: str) -> bytes:
-            for attempt in range(SPEAK_ATTEMPTS):
-                try:
-                    # Un morceau prend 1 à 2 s ; au-delà de SPEAK_CHUNK_TIMEOUT_S la requête traîne : on
-                    # la relance au lieu d'attendre (sinon toute la phrase partait en voix du navigateur)
-                    return await asyncio.wait_for(
-                        self.tts_client.text_to_speech(
-                            chunk,
-                            model=self.tts_model,
-                            extra_body={"voice": self.tts_voice, "lang_code": "f"},
-                        ),
-                        SPEAK_CHUNK_TIMEOUT_S,
-                    )
-                except Exception:
-                    if attempt == SPEAK_ATTEMPTS - 1:
-                        raise
-                    await asyncio.sleep(0.3 * (attempt + 1))
-            raise AssertionError("inaccessible")
+            """Un morceau de phrase. Le service répond en 1 à 2 s, mais parfois en 6 s ou par une
+            erreur 503 (mesuré le 2026-11-19). Si la requête traîne, une deuxième part en parallèle et
+            la première réponse gagne ; après une erreur, on réessaie après une courte pause. Le délai
+            global de speak() arrête le tout : la voix du navigateur prend alors le relais."""
+            tasks: list[asyncio.Future[bytes]] = []
+            sent = 0
+            try:
+                while True:
+                    if sent < SPEAK_ATTEMPTS * 3 and len(tasks) < 2:
+                        tasks.append(asyncio.ensure_future(request(chunk)))
+                        sent += 1
+                    elif not tasks:
+                        raise TimeoutError("voix indisponible")
+                    done, _ = await asyncio.wait(tasks, timeout=SPEAK_HEDGE_S, return_when="FIRST_COMPLETED")
+                    failed = False
+                    for task in done:
+                        tasks.remove(task)
+                        if task.exception() is None:
+                            return task.result()
+                        failed = True
+                    if failed:
+                        await asyncio.sleep(0.4)  # erreur du service (503) : courte pause avant de réessayer
+            finally:
+                for task in tasks:
+                    task.cancel()
 
         chunks = split_for_speech(for_speech(text))
         if not chunks:
             return None
+        if time.monotonic() < self._voice_down_until:
+            return None  # service de voix en panne : voix du navigateur tout de suite, sans attendre
         try:
             # Une longue phrase (lecture des options) a droit à un peu plus de temps qu'une courte
             limit = self.speak_timeout + min(4.0, 0.4 * max(0, len(chunks) - 2))
             parts = await asyncio.wait_for(asyncio.gather(*(one(c) for c in chunks)), limit)
+            self._voice_failures = 0
             return join_wav(list(parts))
         except Exception as error:
             log.info("synthèse vocale abandonnée (%s), voix du navigateur", type(error).__name__)
+            # Deux phrases de suite sans voix = service en panne (503 en série, mesuré le 2026-11-19) :
+            # pendant VOICE_PAUSE_S, la voix du navigateur parle tout de suite. Sinon chaque phrase
+            # attendait plusieurs secondes pour rien, et les deux voix se mélangeaient.
+            self._voice_failures += 1
+            if self._voice_failures >= 2:
+                self._voice_down_until = time.monotonic() + VOICE_PAUSE_S
+                log.warning("voix de Pilote indisponible : voix du navigateur pendant %d s", VOICE_PAUSE_S)
             return None

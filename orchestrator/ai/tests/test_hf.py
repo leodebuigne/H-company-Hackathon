@@ -390,3 +390,44 @@ def test_one_question_for_everything_missing_in_a_trip():
     assert question_for(["details.destination", "when.date"]) == "Pour quelle ville, et quel jour ?"
     assert question_for(["when.date"]) == "Pour quel jour ?"
     assert question_for(["object"]) == "Qu'est-ce qu'il vous faut exactement ?"
+
+
+async def test_a_slow_voice_request_is_doubled_and_the_fastest_answer_wins(monkeypatch):
+    import orchestrator.ai.hf as hf
+
+    monkeypatch.setattr(hf, "SPEAK_HEDGE_S", 0.05)
+
+    class SlowFirst(StubSpeech):
+        async def text_to_speech(self, text, **kwargs):
+            self.tts_calls.append(text)
+            if len(self.tts_calls) == 1:
+                await asyncio.sleep(5)  # la première requête traîne
+            return wav(100)
+
+    speech = SlowFirst()
+    started = asyncio.get_running_loop().time()
+    audio = await make_ai(speech=speech).speak("Bonjour")
+    assert audio is not None and audio[:4] == b"RIFF"
+    assert len(speech.tts_calls) == 2 and asyncio.get_running_loop().time() - started < 1
+
+
+def test_a_table_with_an_exact_time_does_not_ask_the_hour_again():
+    raw = {
+        "kind": "new_request",
+        "category": "reservation",
+        "object": "table pour 2",
+        "when": {"date": "2026-11-19"},
+        "details": {"time": "20:00", "people": "2", "place": "Paris"},
+    }
+    assert complete_intent(raw, "Une table pour deux à Paris ce soir à 20 heures")["missing"] == []
+
+
+async def test_after_two_silent_sentences_the_browser_voice_speaks_at_once():
+    speech = StubSpeech(error=RuntimeError("503"))
+    ai = make_ai(speech=speech)
+    ai.speak_timeout = 0.3
+    assert await ai.speak("Bonjour") is None
+    assert await ai.speak("Bonjour") is None
+    calls = len(speech.tts_calls)
+    assert await ai.speak("Bonjour") is None  # panne retenue : plus aucune requête, réponse immédiate
+    assert len(speech.tts_calls) == calls
