@@ -146,3 +146,23 @@ def test_train_hours_are_said_even_when_only_in_the_details():
     )
     assert "TGV INOUI, 45 euros, départ à 14 heures 44, arrivée à 15 heures 48." in text
     assert "16h12 → 17h20, 45 euros." in text  # déjà dans le titre : pas répété
+
+
+def test_numbers_are_written_out_for_a_voice_that_cannot_read_digits():
+    from orchestrator.ai.speech_text import number_words, spell_numbers
+
+    assert [number_words(n) for n in (21, 71, 80, 91, 200, 1280)] == [
+        "vingt et un",
+        "soixante et onze",
+        "quatre-vingts",
+        "quatre-vingt-onze",
+        "deux cents",
+        "mille deux cent quatre-vingts",
+    ]
+    said = spell_numbers(for_speech("Numéro 3 : TGV INOUI 07:26 → 09:22, 12,50 €. Dites « le 2 »."))
+    assert said == (
+        "Numéro trois : TGV Inoui sept heures vingt-six vers neuf heures vingt-deux, douze euros "
+        "cinquante. Dites le deux."
+    )
+    assert spell_numbers(for_speech("Le 1er train part à 01:00.")) == "Le premier train part à une heure."
+    assert not any(c.isdigit() for c in spell_numbers(for_speech("69 € le 20/11 à 14h05, noté 4,5 sur 5")))

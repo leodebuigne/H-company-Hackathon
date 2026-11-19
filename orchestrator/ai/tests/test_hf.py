@@ -431,3 +431,37 @@ async def test_after_two_silent_sentences_the_browser_voice_speaks_at_once():
     calls = len(speech.tts_calls)
     assert await ai.speak("Bonjour") is None  # panne retenue : plus aucune requête, réponse immédiate
     assert len(speech.tts_calls) == calls
+
+
+async def test_local_voice_speaks_first_and_the_online_voice_takes_over_when_it_fails(monkeypatch):
+    from orchestrator.ai.local_voice import LocalVoice, available_voices
+
+    assert "jerem" in available_voices()
+    with pytest.raises(ValueError):
+        LocalVoice("inconnue")
+
+    said: list[str] = []
+
+    class Stub:
+        name = "jerem"
+
+        def synthesize(self, text: str) -> bytes:
+            said.append(text)
+            return wav(50)
+
+    speech = StubSpeech()
+    ai = make_ai(speech=speech)
+    ai.local_voice = Stub()  # type: ignore[assignment]
+    audio = await ai.speak("Départ à 07:44, 69 €.")
+    assert audio is not None and audio[:4] == b"RIFF"
+    assert said == ["Départ à sept heures quarante-quatre, soixante-neuf euros."]  # chiffres en lettres
+    assert speech.tts_calls == []  # la voix en ligne n'est pas appelée
+
+    class Broken(Stub):
+        def synthesize(self, text: str) -> bytes:
+            raise ImportError("pocket_tts")
+
+    ai.local_voice = Broken()  # type: ignore[assignment]
+    assert await ai.speak("Bonjour") is not None and len(speech.tts_calls) == 1  # secours en ligne
+    await ai.speak("Bonjour")
+    assert ai._local_voice_broken is True

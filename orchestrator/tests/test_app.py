@@ -2,6 +2,7 @@
 
 import datetime as dt
 
+import pytest
 from fastapi.testclient import TestClient
 
 from orchestrator.agent_h.fake import FakeShoppingAgent
@@ -97,3 +98,27 @@ async def test_a_screen_closed_during_the_greeting_ends_quietly(caplog):
         await route.endpoint(ClosedScreen())
         assert not session._clients, "l'écran fermé est oublié"
     assert "Exception in ASGI application" not in caplog.text
+
+
+def test_voice_choice_is_empty_with_the_fake_ai_and_readable_from_the_interface():
+    with TestClient(create_app(_session)) as client:
+        answer = client.get("/voice", headers={"Origin": "http://localhost:3000"})
+        assert answer.json() == {"current": None, "available": []}
+        assert answer.headers["access-control-allow-origin"] == "http://localhost:3000"
+        assert client.post("/voice", json={"name": "jerem"}).status_code == 404
+        assert (
+            "access-control-allow-origin"
+            not in client.get("/voice", headers={"Origin": "https://ailleurs.example"}).headers
+        )
+
+
+def test_voice_can_be_changed_without_restarting():
+    from orchestrator.ai.hf import HFAI
+
+    ai = HFAI(token="x")
+    assert "jerem" in ai.voices()["available"]
+    assert ai.voices()["current"] is None  # voix en ligne tant qu'aucune voix locale n'est choisie
+    ai.set_voice("jerem")
+    assert ai.voices()["current"] == "jerem"
+    with pytest.raises(ValueError):
+        ai.set_voice("inconnue")
