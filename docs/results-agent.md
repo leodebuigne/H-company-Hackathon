@@ -67,3 +67,15 @@ Une ligne par commande, ajoutée automatiquement par orchestrator/agent_h/metric
 | 2026-11-19 00:44 |  | pilote-shopper | annulée | 91 | 9 | - |
 | 2026-11-19 00:49 |  | pilote-shopper | annulée | 208 | 9 | - |
 | 2026-11-19 09:18 |  | pilote-shopper | annulée | 247 | 22 | - |
+| 2026-11-19 09:42 | www.sncf-connect.com | pilote-shopper | annulée | 83 | 12 | - |
+| 2026-11-19 09:45 | www.sncf-connect.com | pilote-shopper | annulée | 69 | 12 | - |
+| 2026-11-19 09:50 | www.sncf-connect.com | pilote-shopper | annulée | 53 | 6 | - |
+| 2026-11-19 09:55 | question | pilote-shopper | question | 24 | 3 | - |
+| 2026-11-19 10:01 | www.sncf-connect.com | pilote-shopper | annulée | 73 | 5 | - |
+| 2026-11-19 10:04 | www.sncf-connect.com | pilote-shopper | annulée | 138 | 7 | - |
+| 2026-11-19 10:06 | www.ubereats.com | pilote-shopper | annulée | 140 | 19 | - |
+| 2026-11-19 10:08 | www.thefork.fr | pilote-shopper | annulée | 94 | 11 | - |
+| 2026-11-19 10:20 | question | pilote-shopper | question | 23 | 2 | - |
+| 2026-11-19 10:26 | www.sncf-connect.com | pilote-shopper | annulée | 135 | 5 | - |
+| 2026-11-19 10:28 | www.ubereats.com | pilote-shopper | annulée | 78 | 11 | - |
+| 2026-11-19 10:32 | www.thefork.fr | pilote-shopper | annulée | 143 | 23 | - |
