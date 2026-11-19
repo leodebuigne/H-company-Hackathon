@@ -43,6 +43,8 @@ type VoiceMode = "voice" | "screenreader";
 
 // Appui plus court que ça = « appuyer une fois puis parler » : Pilote écoute et s'arrête quand on se tait.
 const TAP_MS = 450;
+// Deux appuis sur espace à moins de ce délai = « tais-toi » : Pilote arrête de parler, rien n'est envoyé.
+const DOUBLE_SPACE_MS = 450;
 // 2 s de silence avant d'envoyer : on laisse le temps d'une petite pause (« pour aller… à Lyon »).
 const HANDS_FREE = { silenceMs: 2000, noSpeechMs: 7000, maxMs: 30000 };
 // Pause entre le son « je vous écoute » et l'ouverture du micro
@@ -128,6 +130,8 @@ export default function PiloteApp() {
   const voiceModeRef = useRef<VoiceMode>("voice");
   const startedRef = useRef(false);
   const pressedAtRef = useRef(0);
+  const lastSpaceRef = useRef(0);
+  const hushGenRef = useRef(0); // augmente à chaque « Stop » : périme un micro en train de s'ouvrir
   const handsFreeRef = useRef(false);
   const autoListenRef = useRef(false); // écoute lancée par Pilote (pas par un appui) : silence = rien à dire
   const awaitingReplyRef = useRef(false); // on a parlé, la réponse de Pilote n'est pas encore arrivée
@@ -309,13 +313,17 @@ export default function PiloteApp() {
     speakerRef.current?.stop(); // l'utilisateur peut couper la parole à Pilote
     setMicError(null);
     pressedAtRef.current = performance.now();
+    const gen = hushGenRef.current;
     try {
       // Le son d'abord, le micro ensuite : sinon la cloche est enregistrée et Whisper invente des mots
       playEarcon("listening");
       await new Promise((r) => setTimeout(r, EARCON_GAP_MS));
+      if (gen !== hushGenRef.current) return; // « Stop » pendant la cloche : on n'ouvre pas le micro
       await recorderRef.current?.start();
+      if (gen !== hushGenRef.current) return recorderRef.current?.discard(); // « Stop » pendant l'ouverture
       setRecording(true);
     } catch {
+      if (gen !== hushGenRef.current) return;
       setMicError(
         "Le micro n'est pas accessible. Autorisez-le dans le navigateur, ou utilisez le mode texte.",
       );
@@ -440,6 +448,18 @@ export default function PiloteApp() {
     };
   }, [recording]);
 
+  // Fait taire Pilote tout de suite (bouton Stop ou deux fois espace), sans annuler la commande
+  const hush = useCallback(() => {
+    hushGenRef.current += 1;
+    speakerRef.current?.stop();
+    if (recorderRef.current?.isRecording) {
+      recorderRef.current.discard();
+      handsFreeRef.current = false;
+      setHandsFree(false);
+      setRecording(false);
+    }
+  }, []);
+
   const cancel = useCallback(() => {
     speakerRef.current?.stop();
     if (recorderRef.current?.isRecording) {
@@ -501,6 +521,10 @@ export default function PiloteApp() {
         e.preventDefault();
         if (e.repeat) return;
         if (!started) return start();
+        const now = performance.now();
+        const double = now - lastSpaceRef.current < DOUBLE_SPACE_MS;
+        lastSpaceRef.current = double ? 0 : now;
+        if (double) return hush();
         void startTalking();
       } else if (!started) {
         return;
@@ -534,6 +558,7 @@ export default function PiloteApp() {
     startTalking,
     stopTalking,
     cancel,
+    hush,
     confirm,
     repeat,
   ]);
@@ -669,11 +694,22 @@ export default function PiloteApp() {
             <p className="pilote-talk-label" aria-hidden="true">
               {talkLabel}
             </p>
+            {speaking && (
+              <button
+                type="button"
+                className="pilote-stop"
+                onClick={hush}
+                aria-label="Faire taire Pilote"
+              >
+                <span aria-hidden="true">■</span> Stop
+              </button>
+            )}
             <p id="pilote-help" className="pilote-help">
               {started && wakeWordSupported() && (
                 <>Dites « Bonjour Pilote » · </>
               )}
-              <kbd>Espace</kbd> pour parler · <kbd>Échap</kbd> pour annuler
+              <kbd>Espace</kbd> pour parler · <kbd>Espace</kbd> ×2 pour faire
+              taire · <kbd>Échap</kbd> pour annuler
               {lastSay && started && (
                 <>
                   {" · "}
@@ -893,7 +929,8 @@ export default function PiloteApp() {
                       o.details.cuisine,
                       o.details.address,
                       o.details.slots && `Disponible à ${o.details.slots}`,
-                      o.details.avg_price && `Prix moyen ${o.details.avg_price}`,
+                      o.details.avg_price &&
+                        `Prix moyen ${o.details.avg_price}`,
                     ]
                       .filter(Boolean)
                       .join(" · ");
@@ -1063,6 +1100,10 @@ export default function PiloteApp() {
             Une fois puis parlez (Pilote répond quand vous vous taisez), ou
             maintenue pendant que vous parlez
           </dd>
+          <dt>
+            <kbd>Espace</kbd> ×2
+          </dt>
+          <dd>Faire taire Pilote quand il parle (la commande continue)</dd>
           <dt>
             <kbd>Entrée</kbd> / <kbd>N</kbd>
           </dt>

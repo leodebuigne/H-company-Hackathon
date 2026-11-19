@@ -136,6 +136,12 @@ body {
 .pilote-help { margin: 4px 0 0; text-align: center; color: var(--muted); font-size: 0.82rem; }
 .pilote-link { background: none; border: 0; padding: 0; color: var(--blue); font: inherit; font-weight: 600; cursor: pointer; }
 .pilote-link:hover { text-decoration: underline; text-underline-offset: 3px; }
+.pilote-stop {
+  display: inline-flex; align-items: center; gap: 8px; min-height: 44px; padding: 8px 20px; border-radius: 999px;
+  border: 0; background: var(--text); color: var(--bg); font: inherit; font-weight: 700; cursor: pointer;
+}
+.pilote-stop:hover { opacity: 0.85; }
+.pilote-stop:focus-visible { outline: 3px solid var(--focus); outline-offset: 3px; }
 kbd {
   display: inline-block; padding: 0 6px; border-radius: 6px; border: 1px solid var(--line); border-bottom-width: 2px;
   background: #fff; color: var(--text); font: 600 0.76rem/1.6 var(--font);
