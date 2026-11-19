@@ -3,16 +3,18 @@
 // Connexion à l'orchestrateur et état partagé de l'interface (utilisateur ou écran jury).
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { getServerConfig, wsProtocols } from "./serverConfig";
 import type { ClientMessage, Intent, Option, OrderSummary, ServerMessage, State } from "./protocol";
 
 export const ORCHESTRATOR_URL = process.env.NEXT_PUBLIC_ORCHESTRATOR_WS_URL ?? "ws://localhost:8000/ws";
-/** Adresse HTTP de l'orchestrateur, déduite de celle du WebSocket (ws://hôte/ws -> http://hôte). */
 export const ORCHESTRATOR_HTTP = ORCHESTRATOR_URL.replace(/^ws/, "http").replace(/\/ws\/?$/, "");
 
 export type LogEntry = { id: number; who: "pilote" | "user" | "system"; text: string };
 
 export interface PiloteSnapshot {
   connected: boolean;
+  /** Le serveur a refusé cet appareil (jeton faux ou page inconnue) : inutile de réessayer. */
+  refused: boolean;
   sessionId: string | null;
   state: State;
   intent: Intent | null;
@@ -29,6 +31,7 @@ export interface PiloteSnapshot {
 
 const INITIAL: PiloteSnapshot = {
   connected: false,
+  refused: false,
   sessionId: null,
   state: "listening",
   intent: null,
@@ -114,12 +117,16 @@ export function usePilote(onMessage?: (msg: ServerMessage) => void) {
     let retry: ReturnType<typeof setTimeout> | undefined;
 
     const connect = () => {
-      const ws = new WebSocket(ORCHESTRATOR_URL);
+      const server = getServerConfig(); // relu à chaque tentative : un appairage vient peut-être d'être fait
+      const ws = new WebSocket(server.wsUrl, wsProtocols(server.token));
       wsRef.current = ws;
-      ws.onopen = () => setSnap((s) => ({ ...s, connected: true }));
-      ws.onclose = () => {
-        setSnap((s) => ({ ...s, connected: false }));
-        if (!stopped) retry = setTimeout(connect, 2000);
+      ws.onopen = () => setSnap((s) => ({ ...s, connected: true, refused: false }));
+      ws.onclose = (event) => {
+        // 4401 jeton faux, 4403 page inconnue : réessayer ne sert à rien. 4429 : trop d'essais, on attend.
+        const refused = event.code === 4401 || event.code === 4403;
+        setSnap((s) => ({ ...s, connected: false, refused }));
+        if (stopped || refused) return;
+        retry = setTimeout(connect, event.code === 4429 ? 60000 : 2000);
       };
       ws.onmessage = (event) => {
         let msg: ServerMessage;

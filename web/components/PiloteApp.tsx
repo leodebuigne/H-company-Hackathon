@@ -28,6 +28,8 @@ import {
   type State,
 } from "./protocol";
 import { OverlapTracker, overlapMime } from "./echoGuard";
+import { registerHeadsetButton } from "./mediaSession";
+import { WakeLockKeeper } from "./wakelock";
 import {
   MIC_PROFILES,
   MIC_PROFILE_LABELS,
@@ -37,7 +39,14 @@ import {
 } from "./micProfile";
 import { PushToTalkRecorder, RELEASE_TAIL_MS } from "./recorder";
 import { Speaker, listFrenchVoices, setBrowserVoice } from "./speech";
-import { ORCHESTRATOR_HTTP, usePilote } from "./usePilote";
+import {
+  authHeaders,
+  browserStorage,
+  getServerConfig,
+  savePairing,
+  takePairingFromLocation,
+} from "./serverConfig";
+import { usePilote } from "./usePilote";
 import Orb, { type OrbMode } from "./Orb";
 import { WakeWordListener, wakeWordSupported } from "./wakeword";
 
@@ -273,14 +282,33 @@ export default function PiloteApp() {
     [tell],
   );
 
-  const { connected, state, options, summary, lastSay, log, question, send } =
+  const { connected, refused, state, options, summary, lastSay, log, question, send } =
     usePilote(onMessage);
+
+  // Lien d'appairage (« …/#server=…&token=… ») : l'adresse du serveur et le jeton sont gardés ici, puis le #
+  // est effacé de la barre d'adresse. Un lien piégé enverrait votre voix à un autre serveur : on dit où.
+  useEffect(() => {
+    const pairing = takePairingFromLocation(window.location, window.history);
+    if (!pairing) return;
+    const host = new URL(pairing.wsUrl).host;
+    if (!window.confirm(`Connecter Pilote au serveur ${host} ?`)) return;
+    if (savePairing(browserStorage(), pairing)) window.location.reload();
+    else window.alert("Impossible de garder l'appairage : désactivez la navigation privée et recommencez.");
+  }, []);
+
+  useEffect(() => {
+    if (refused)
+      tell(
+        "Ce téléphone n'est pas appairé à Pilote. Ouvrez à nouveau le lien d'appairage affiché sur l'ordinateur.",
+      );
+  }, [refused, tell]);
   const chooseVoice = async (name: string) => {
     setVoiceBusy(true);
     try {
-      const response = await fetch(`${ORCHESTRATOR_HTTP}/voice`, {
+      const server = getServerConfig();
+      const response = await fetch(`${server.httpUrl}/voice`, {
         method: "POST",
-        headers: { "content-type": "application/json" },
+        headers: { "content-type": "application/json", ...authHeaders(server.token) },
         body: JSON.stringify({ name }),
       });
       if (!response.ok) throw new Error(String(response.status));
@@ -301,7 +329,8 @@ export default function PiloteApp() {
   useEffect(() => {
     if (!connected) return;
     let cancelled = false;
-    fetch(`${ORCHESTRATOR_HTTP}/voice`)
+    const server = getServerConfig();
+    fetch(`${server.httpUrl}/voice`, { headers: authHeaders(server.token) })
       .then((r) => (r.ok ? r.json() : null))
       .then((data) => {
         if (data && !cancelled)
@@ -562,6 +591,25 @@ export default function PiloteApp() {
       setRecording(false);
     }
   }, []);
+
+  // Session en cours : l'écran reste allumé (sinon le téléphone se verrouille et coupe le micro), et le bouton
+  // du casque coupe Pilote ou lui donne la parole.
+  const wakeLockRef = useRef<WakeLockKeeper | null>(null);
+  useEffect(() => {
+    if (!started) return;
+    const keeper = (wakeLockRef.current ??= new WakeLockKeeper());
+    void keeper.acquire();
+    const unplug = registerHeadsetButton({
+      onPlayPause: () => {
+        if (speakerRef.current?.speaking) hush();
+        else void listenHandsFree(false, true);
+      },
+    });
+    return () => {
+      unplug();
+      void keeper.release();
+    };
+  }, [started, hush, listenHandsFree]);
 
   const cancel = useCallback(() => {
     speakerRef.current?.stop();

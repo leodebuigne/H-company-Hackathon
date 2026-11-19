@@ -23,6 +23,8 @@
 
 * { box-sizing: border-box; }
 html, body { margin: 0; background: var(--bg); color: var(--text); }
+/* iPhone : le contenu va jusqu'aux bords (viewport-fit=cover), les marges évitent l'encoche et la barre d'accueil */
+body { padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left); }
 body {
   font-family: var(--font); line-height: 1.45; -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale;
 }
@@ -318,7 +320,7 @@ kbd {
 
 /* ───────── Écran spectateur (jury) ───────── */
 
-.spectator { min-height: 100vh; padding: 32px 44px; display: flex; flex-direction: column; gap: 24px; background: #fff; }
+.spectator { min-height: 100vh; min-height: 100dvh; padding: 32px 44px; display: flex; flex-direction: column; gap: 24px; background: #fff; }
 .spectator-header { display: flex; justify-content: space-between; align-items: center; }
 .spectator-header h1 { margin: 0; font-size: 2.8rem; font-weight: 600; letter-spacing: -0.035em; }
 .spectator-header h1 span { color: var(--muted); font-weight: 400; }

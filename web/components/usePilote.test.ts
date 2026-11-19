@@ -13,6 +13,7 @@ const serverExamples = readdirSync(examplesDir)
 
 const empty: PiloteSnapshot = {
   connected: true,
+  refused: false,
   sessionId: null,
   state: "listening",
   intent: null,

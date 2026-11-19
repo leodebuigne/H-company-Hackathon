@@ -108,15 +108,18 @@ def test_too_many_wrong_tokens_are_refused_at_once_but_the_right_one_still_passe
 # --- le serveur ----------------------------------------------------------------------------------
 
 
-def test_a_phone_without_the_token_cannot_open_the_websocket():
+def _refusal_code(client: TestClient, protocols: list[str], headers: dict[str, str] | None = None) -> int:
+    """Le serveur accepte puis ferme avec un code : l'interface sait ainsi pourquoi elle est refusée."""
+    with client.websocket_connect("/ws", subprotocols=protocols, headers=headers or {}) as ws:
+        with pytest.raises(WebSocketDisconnect) as refused:
+            ws.receive_json()
+        return refused.value.code
+
+
+def test_a_phone_without_the_token_cannot_use_the_websocket():
     with _client() as client:
         for protocols in ([], ["pilote"], _protocols("x" * 32)):
-            with (
-                pytest.raises(WebSocketDisconnect) as refused,
-                client.websocket_connect("/ws", subprotocols=protocols),
-            ):
-                pass
-            assert refused.value.code == 4401
+            assert _refusal_code(client, protocols) == 4401
 
 
 def test_the_right_token_opens_the_websocket_and_the_page_is_welcomed():
@@ -127,16 +130,19 @@ def test_the_right_token_opens_the_websocket_and_the_page_is_welcomed():
 
 def test_a_page_from_an_unknown_site_is_refused_even_with_the_right_token():
     with _client() as client:
-        with (
-            pytest.raises(WebSocketDisconnect),
-            client.websocket_connect(
-                "/ws", subprotocols=_protocols(TOKEN), headers={"origin": "https://pirate.example"}
-            ),
-        ):
-            pass
+        assert _refusal_code(client, _protocols(TOKEN), {"origin": "https://pirate.example"}) == 4403
         with client.websocket_connect(
             "/ws", subprotocols=_protocols(TOKEN), headers={"origin": VERCEL}
         ) as ws:  # la page Vercel autorisée passe
+            assert ws.receive_json()["type"] == "ready"
+
+
+def test_too_many_wrong_tokens_get_the_blocked_code_but_the_right_one_still_opens():
+    with _client(limiter=FailureLimiter(limit=3)) as client:
+        codes = [_refusal_code(client, _protocols("x" * 32)) for _ in range(5)]
+        # la limite est de 3 : le 3e essai raté la atteint, et déjà on dit « bloqué »
+        assert codes == [4401, 4401, 4429, 4429, 4429]
+        with client.websocket_connect("/ws", subprotocols=_protocols(TOKEN)) as ws:
             assert ws.receive_json()["type"] == "ready"
 
 

@@ -162,14 +162,17 @@ def create_app(session_factory: Callable[[], Session] | None = None, access: Acc
     @app.websocket("/ws")
     async def ws(websocket: WebSocket) -> None:
         token, subprotocol = token_from_protocols(websocket.headers.get("sec-websocket-protocol"))
+        refusal: int | None = None
         if access.required:
             if not access.origin_allowed(websocket.headers.get("origin")):
-                await websocket.close(code=4403)  # page inconnue
-                return
-            if not access.accepts(token):
-                await websocket.close(code=4429 if access.blocked else 4401)  # trop d'essais / jeton faux
-                return
+                refusal = 4403  # page inconnue
+            elif not access.accepts(token):
+                refusal = 4429 if access.blocked else 4401  # trop d'essais / jeton faux
         await websocket.accept(subprotocol=subprotocol)
+        if refusal is not None:
+            # Refusé après l'accept : avant, le navigateur verrait une simple panne (1006) et réessaierait
+            await websocket.close(code=refusal)
+            return
         session: Session = app.state.session
 
         async def send(data: dict[str, Any]) -> None:
