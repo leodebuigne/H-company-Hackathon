@@ -86,6 +86,19 @@ def generic_instructions(with_vault: bool = False) -> str:
     return text
 
 
+# Les consignes de l'agent du portail décrivent aussi des sites (ex. SNCF : onglet « Trains »). La fiche
+# envoyée avec chaque demande est plus récente (speedrun « Tout rechercher ») : elle doit passer devant.
+CARD_PRIORITY = (
+    "\n\nPriorité : quand le message te donne une « Fiche du site » avec des étapes, suis ces étapes en "
+    "priorité, avant les indications sur ce site écrites plus haut. Ne reviens à ces indications que si "
+    "une étape de la fiche échoue vraiment (page qui ne répond pas, aucun résultat)."
+)
+
+
+def with_card_priority(instructions: str) -> str:
+    return instructions if CARD_PRIORITY in instructions else instructions + CARD_PRIORITY
+
+
 def site_card_text(card: SiteCard | None) -> str:
     if card is None or (not card.steps and not card.pitfalls):
         return "Fiche du site : aucune (première visite)."

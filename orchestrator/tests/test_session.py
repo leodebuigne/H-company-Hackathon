@@ -5,6 +5,7 @@ Chaque message envoyé aux écrans est vérifié contre contracts/schemas/ws-mes
 
 import asyncio
 import datetime as dt
+import json
 from typing import Any
 
 import pytest
@@ -558,3 +559,49 @@ async def test_incomplete_question_asks_for_the_missing_detail_then_merges_the_a
         await h.text("De Paris à Lyon")
         await h.wait_said("Je cherche la réponse")
         assert any("précision : De Paris à Lyon" in q for q in asked)
+
+
+async def test_agent_opens_while_pilote_restates_the_request():
+    """Chrome et la session H s'ouvrent pendant que Pilote parle, pas après."""
+    marks: dict[str, float] = {}
+    now = lambda: asyncio.get_running_loop().time()  # noqa: E731
+    async with Harness() as h:
+        speak, factory = h.session.ai.speak, h.session.agent_factory
+
+        async def slow_speak(text: str):
+            if "annule" in text:  # la phrase qui redit la demande avant la recherche
+                await asyncio.sleep(0.3)
+                marks.setdefault("said", now())
+            return await speak(text)
+
+        def spying_factory(approve, need_human):
+            agent = factory(approve, need_human)
+            start = agent.start
+
+            async def timed_start(*args):
+                marks.setdefault("agent", now())
+                return await start(*args)
+
+            agent.start = timed_start
+            return agent
+
+        h.session.ai.speak = slow_speak  # type: ignore[method-assign]
+        h.session.agent_factory = spying_factory
+        await h.text("Un train de Paris pour Lille demain après 14 h")
+        await h.wait("proposing")
+    assert marks["agent"] < marks["said"]  # l'agent a démarré avant la fin de la phrase
+
+
+async def test_journal_says_why_and_where_an_order_ended(tmp_path):
+    journal = tmp_path / "journal.jsonl"
+    async with Harness(agent={"speed": 1}, journal_path=str(journal)) as h:
+        await h.text("Un train de Paris pour Lille demain")
+        await h.wait("searching")
+        await h.session.receive({"type": "cancel"})
+        await h.wait("listening", limit_s=2)
+    ends = [json.loads(line) for line in journal.read_text().splitlines() if '"end"' in line]
+    last = ends[-1]
+    assert last["outcome"] == "cancelled" and last["code"] == "user_cancel"
+    assert last["state_before"] == "searching" and last["step"] in ("start", "search")
+    assert isinstance(last["seconds"], int)
+    assert "Rien" not in json.dumps(last)  # jamais la phrase dite

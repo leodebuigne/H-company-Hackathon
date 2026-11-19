@@ -737,7 +737,8 @@ async def test_portal_agent_is_mirrored_onto_the_local_chrome(monkeypatch):
 
     spec = client.started["agent"]
     env = spec["environments"][0]
-    assert spec["instructions"] == "CONSIGNES DU PORTAIL" and spec["skills"] == [
+    assert spec["instructions"].startswith("CONSIGNES DU PORTAIL") and "Fiche du site" in spec["instructions"]
+    assert spec["skills"] == [
         "h/visual-browser",
         "h/answering",
     ]
@@ -942,3 +943,25 @@ async def test_cancelled_order_saves_what_the_agent_learned(monkeypatch):
     assert card is not None and card.successful_runs == 0
     assert "Pub plein écran" in card.pitfalls
     assert any("le tarif n'apparaît pas" in p for p in card.pitfalls)
+
+
+async def test_a_reservation_without_a_fixed_site_does_not_use_an_empty_memory_key(monkeypatch):
+    monkeypatch.delenv("PILOTE_H_AGENT", raising=False)
+    memory = InMemorySiteMemory()
+    asked: list[str] = []
+    get = memory.get
+
+    async def spy(domain: str):
+        asked.append(domain)
+        return await get(domain)
+
+    memory.get = spy  # type: ignore[method-assign]
+    agent = ShoppingAgent(memory=memory, record_metrics=False, browser_host="cloud")
+    blocked = {"blocked_reason": "complet", "site_notes": {"pitfalls": ["Pub"]}}
+    agent._client = _FakeClient(lambda: _FakeSession([blocked], agent))  # type: ignore[assignment]
+    await agent.start(PIZZA.model_copy(update={"category": "reservation", "object": "table pour 2"}))
+    assert agent._site_card is None
+    with pytest.raises(NeedsHuman):
+        await agent.search()
+    await agent.cancel()  # site inconnu en navigateur cloud : rien n'est rangé, et pas d'erreur
+    assert "" not in asked

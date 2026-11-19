@@ -24,6 +24,7 @@ import hmac
 import json
 import logging
 import re
+import time
 import unicodedata
 import uuid
 from collections.abc import Awaitable, Callable
@@ -348,6 +349,8 @@ class Session:
         self._armed_hash: str | None = None
         self._direct_limit: int | None = None  # achat direct : prix maximal accepté (centimes)
         self._payment_cleared = False  # le dernier verrou a autorisé le clic de paiement
+        self._order_started: float | None = None  # début de la commande en cours (journal)
+        self._last_step: str | None = None  # dernière étape de l'agent lancée (journal)
         self._last_progress = 0.0
         self._secret_mode = False  # pendant la demande du code secret
         self._payment_refusal: str | None = None
@@ -589,7 +592,7 @@ class Session:
                 self._flow.cancel()
                 with contextlib.suppress(asyncio.CancelledError, Exception):
                     await self._flow
-            await self._end_order("cancelled", message)
+            await self._end_order("cancelled", message, code="user_cancel")
             self._flow = asyncio.create_task(self._flow_loop(), name="pilote-flow")
 
     async def _close_agent(self) -> None:
@@ -599,9 +602,20 @@ class Session:
             with contextlib.suppress(Exception):
                 await asyncio.wait_for(agent.cancel(), self.settings.step_timeouts["cancel"])
 
-    async def _end_order(self, state: State, message: str) -> None:
+    async def _end_order(self, state: State, message: str, code: str | None = None) -> None:
         await self._close_agent()
-        self._journal("end", outcome=state)
+        # Pourquoi et où la commande s'arrête (codes, jamais la phrase dite) : sans ça, le journal
+        # ne disait que « cancelled » et on ne savait pas si c'était la personne, un délai ou le site.
+        started = self._order_started
+        self._journal(
+            "end",
+            outcome=state,
+            code=code,
+            state_before=self.state,
+            step=self._last_step,
+            seconds=round(time.monotonic() - started) if started else None,
+        )
+        self._order_started, self._last_step = None, None
         self._intent = None
         self._summary = None
         await self._set_state(state)
@@ -620,19 +634,23 @@ class Session:
             except Abort as abort:
                 if abort.code:
                     await self._error(abort.code, abort.message)
-                await self._end_order("cancelled", abort.message)
+                await self._end_order("cancelled", abort.message, code=abort.code or "stopped")
             except Purchased as purchased:
-                await self._end_order("done", purchased.message)
-            except Exception:
+                await self._end_order("done", purchased.message, code="purchased")
+            except Exception as error:
                 log.exception("Erreur inattendue dans la commande")
                 await self._error("internal", "Erreur inattendue de l'orchestrateur.")
+                code = f"internal:{type(error).__name__}"
                 if self._payment_cleared:  # le clic de paiement a pu avoir lieu : ne jamais dire « rien »
-                    await self._end_order("done", UNSURE)
+                    await self._end_order("done", UNSURE, code=code)
                 else:
-                    await self._end_order("cancelled", "Une erreur est survenue. Rien n'a été acheté.")
+                    await self._end_order(
+                        "cancelled", "Une erreur est survenue. Rien n'a été acheté.", code=code
+                    )
 
     async def _order(self) -> None:
         intent = await self._get_request()
+        self._order_started = time.monotonic()
         self._payment_cleared = False
         for key in ("options", "summary", "agent_view"):
             self._snapshot.pop(key, None)
@@ -734,8 +752,22 @@ class Session:
                 continue
             return intent
 
+    async def _while_talking(self, talk: Awaitable[None], step: Awaitable[T]) -> T:
+        """Lance une étape de l'agent pendant que Pilote parle (rédaction + voix : plusieurs secondes),
+        au lieu de l'attendre. Si la parole échoue ou si la commande est annulée, l'étape est arrêtée."""
+        task = asyncio.ensure_future(step)
+        try:
+            await talk
+        except BaseException:
+            task.cancel()
+            with contextlib.suppress(BaseException):
+                await task
+            raise
+        return await task
+
     async def _step(self, name: str, call: Awaitable[T]) -> T:
         """Une étape de l'agent H, avec délai maximum et erreurs traduites pour l'oral."""
+        self._last_step = name
         try:
             return await asyncio.wait_for(call, self.settings.step_timeouts[name])
         except PaymentDenied:
@@ -782,14 +814,17 @@ class Session:
         if hasattr(self._agent, "on_stuck"):
             self._agent.on_stuck = self._stuck  # type: ignore[attr-defined]
         request = describe_request(intent, self.today())
-        await self._talk(
-            f"{request} Dites « annule » si ce n'est pas ça.",
-            "Tu vas lancer la recherche : redis la demande comprise pour que la personne vérifie, "
-            "et rappelle qu'elle peut dire « annule » si ce n'est pas ça.",
-            facts=request,
-            heard=intent.text,
+        # Chrome et la session H s'ouvrent pendant que Pilote redit la demande (5 à 8 s gagnées)
+        await self._while_talking(
+            self._talk(
+                f"{request} Dites « annule » si ce n'est pas ça.",
+                "Tu vas lancer la recherche : redis la demande comprise pour que la personne vérifie, "
+                "et rappelle qu'elle peut dire « annule » si ce n'est pas ça.",
+                facts=request,
+                heard=intent.text,
+            ),
+            self._step("start", self._agent.start(intent, None)),
         )
-        await self._step("start", self._agent.start(intent, None))
         options = await self._step("search", self._agent.search())
         if not options:
             raise Abort("Je n'ai rien trouvé sur le site. Essayez une autre demande.")
@@ -959,9 +994,12 @@ class Session:
                 raise Abort("D'accord, je n'achète rien.")
         self._direct_limit, self._payment_refusal = option.price_cents, None
         await self._set_state("paying")
-        await self._say(f"J'achète {option.title}, {euros(option.price_cents)}.")
         try:
-            await self._step("choose", self._agent.choose(option.id))
+            # L'agent sélectionne l'option pendant que Pilote dit « J'achète … »
+            await self._while_talking(
+                self._say(f"J'achète {option.title}, {euros(option.price_cents)}."),
+                self._step("choose", self._agent.choose(option.id)),
+            )
             result = await self._step("buy", self._agent.buy())
         except PaymentDenied as error:
             reason = (

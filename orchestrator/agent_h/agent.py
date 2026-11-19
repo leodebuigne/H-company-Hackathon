@@ -258,7 +258,9 @@ class ShoppingAgent:
             "name": f"{agent['name']}-local",
             "description": agent.get("description") or "Agent de navigation de Pilote.",
             "environments": [environment],
-            "instructions": agent.get("instructions") or prompts.generic_instructions(),
+            "instructions": prompts.with_card_priority(
+                agent.get("instructions") or prompts.generic_instructions()
+            ),
         }
         if agent.get("skills"):
             spec["skills"] = agent["skills"]
@@ -506,7 +508,7 @@ class ShoppingAgent:
         self._tool_cache.clear()
         self._paying = False
         domain = domain_of(self._site)
-        if site_card is None:
+        if site_card is None and domain:  # réservation sans site fixe : pas de fiche (sinon clé vide)
             site_card = card_for_order(await self._memory.get(domain), starter_card(domain))
         self._site_card = site_card
         await self._load_portal_agent(client)
@@ -678,9 +680,12 @@ class ShoppingAgent:
         # Mémoire gardée à chaque fin de commande, achetée ou non : un échec apprend aussi (pièges,
         # raison du blocage). Seul un achat accepté compte comme réussi. Pas pour les questions libres.
         answer = answer or self._last_answer
+        if not metrics.site and self._browser_host == "user_device" and self._real_client:
+            # Réservation sans site fixe : la fiche va au site où l'agent a fini (page ouverte)
+            metrics.site = domain_of(await asyncio.to_thread(local_chrome.current_url) or "")
         notes = answer.site_notes if answer is not None else None
         blocked = answer.blocked_reason if answer is not None and payment != "accepted" else None
-        if outcome != "question" and (notes or blocked or payment == "accepted"):
+        if outcome != "question" and metrics.site and (notes or blocked or payment == "accepted"):
             try:
                 old = await self._memory.get(metrics.site)
                 card = merge_card(
