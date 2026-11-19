@@ -45,10 +45,10 @@ async def check_settings() -> tuple[str, str]:
         )
     parts = ["vrais sites"]
     parts.append("achat direct" if settings.direct_buy else "achat avec relecture")
-    parts.append("code secret demandé" if settings.purchase_code else "SANS code secret")
+    parts.append("« oui » demandé avant de payer")
     if os.getenv("PILOTE_PLAN_B", "").strip() == "1":
         parts.append("PLAN B (faux sites)")
-    return (OK if settings.purchase_code else WARN), ", ".join(parts)
+    return OK, ", ".join(parts)
 
 
 async def check_h() -> tuple[str, str]:

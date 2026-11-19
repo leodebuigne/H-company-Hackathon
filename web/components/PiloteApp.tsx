@@ -156,8 +156,6 @@ export default function PiloteApp() {
   const [announce, setAnnounce] = useState("");
   const [micError, setMicError] = useState<string | null>(null);
   const [textInput, setTextInput] = useState("");
-  const [codeInput, setCodeInput] = useState("");
-  const [typingCode, setTypingCode] = useState(false); // le code se dit à voix haute ; clavier sur demande
   const prefs = useSyncExternalStore(subscribePrefs, getPrefs, getServerPrefs);
   const [voices, setVoices] = useState<string[]>([]);
   const [busySince, setBusySince] = useState<number | null>(null);
@@ -344,11 +342,7 @@ export default function PiloteApp() {
       cancelled = true;
     };
   }, [connected]);
-  // Pilote demande le code secret à 3 chiffres (même état que la confirmation, voir session._check_code)
-  const askingCode =
-    state === "confirm_1" &&
-    /code à 3 chiffres|bon code|votre code/i.test(lastSay);
-  const awaitingConfirm = CONFIRM_STATES.includes(state) && !askingCode;
+  const awaitingConfirm = CONFIRM_STATES.includes(state);
   const busy = BUSY_STATES.includes(state);
   const currentStep = STEPS.findIndex((s) => s.states.includes(state));
 
@@ -747,7 +741,7 @@ export default function PiloteApp() {
 
   const showOptions = state === "proposing" && options.length > 0 && !summary;
   const showSummary = !!summary && BUY_STATES.includes(state);
-  const hasAside = awaitingConfirm || askingCode || showOptions || showSummary;
+  const hasAside = awaitingConfirm || showOptions || showSummary;
   const recentLog = log.slice(-8);
   const tone =
     state === "done"
@@ -1037,68 +1031,6 @@ export default function PiloteApp() {
                   Non <kbd>N</kbd>
                 </button>
               </div>
-            )}
-
-            {askingCode && !typingCode && (
-              <section
-                className="pilote-code is-voice"
-                aria-label="Code secret"
-              >
-                <p className="pilote-code-title">
-                  Dites votre code à 3 chiffres
-                </p>
-                <p className="pilote-muted">
-                  Il n&apos;est ni affiché ni enregistré.
-                </p>
-                <button
-                  type="button"
-                  className="pilote-link"
-                  onClick={() => setTypingCode(true)}
-                >
-                  Je préfère le taper au clavier
-                </button>
-              </section>
-            )}
-            {askingCode && typingCode && (
-              <form
-                className="pilote-code"
-                aria-label="Code secret"
-                onSubmit={(e) => {
-                  e.preventDefault();
-                  if (codeInput.length !== 3) return;
-                  sendText(codeInput);
-                  setCodeInput("");
-                  setTypingCode(false);
-                }}
-              >
-                <label htmlFor="pilote-code-input">
-                  Votre code à 3 chiffres
-                </label>
-                <div>
-                  <input
-                    id="pilote-code-input"
-                    type="password"
-                    inputMode="numeric"
-                    pattern="[0-9]{3}"
-                    maxLength={3}
-                    autoComplete="off"
-                    autoFocus
-                    value={codeInput}
-                    onChange={(e) =>
-                      setCodeInput(
-                        e.target.value.replace(/\D/g, "").slice(0, 3),
-                      )
-                    }
-                    aria-describedby="pilote-code-help"
-                  />
-                  <button type="submit" disabled={codeInput.length !== 3}>
-                    Valider
-                  </button>
-                </div>
-                <p id="pilote-code-help" className="pilote-muted">
-                  Il n&apos;est ni affiché ni enregistré.
-                </p>
-              </form>
             )}
 
             {showOptions && (

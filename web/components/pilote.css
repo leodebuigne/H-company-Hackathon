@@ -205,27 +205,6 @@ kbd {
 .pilote-no { background: var(--soft); color: var(--text); }
 .pilote-no kbd { background: #fff; border-color: var(--line); }
 
-/* Code secret */
-.pilote-code {
-  display: grid; gap: 10px; background: #fff; border: 1px solid var(--line); border-radius: 22px; padding: 18px;
-  box-shadow: var(--shadow);
-}
-.pilote-code label { font-weight: 600; }
-.pilote-code div { display: flex; gap: 10px; }
-.pilote-code input {
-  flex: 1; min-width: 0; padding: 14px; border-radius: 14px; border: 1px solid var(--line); background: var(--soft);
-  color: var(--text); font: 600 2rem var(--font); letter-spacing: 0.6em; text-align: center;
-}
-.pilote-code input:focus { border-color: var(--blue); outline: none; background: #fff; }
-.pilote-code button {
-  padding: 0 22px; border-radius: 14px; border: 0; background: var(--blue); color: #fff; font: 600 1.05rem var(--font);
-  cursor: pointer;
-}
-.pilote-code button:disabled { opacity: 0.35; cursor: default; }
-.pilote-code .pilote-muted { margin: 0; }
-.pilote-code.is-voice { justify-items: start; }
-.pilote-code-title { margin: 0; font-size: 1.15rem; font-weight: 600; letter-spacing: -0.015em; }
-
 /* Cartes (options, récapitulatif) */
 .pilote-card { background: #fff; border: 1px solid var(--line); border-radius: 22px; padding: 18px; box-shadow: var(--shadow); }
 .pilote-card h2 {

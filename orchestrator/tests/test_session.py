@@ -415,14 +415,6 @@ def test_the_price_breakdown_names_each_fee():
     )
 
 
-async def test_direct_buy_asks_the_code_only_once_the_agent_is_at_the_pay_button():
-    async with Harness(direct_buy=True, purchase_code="472") as h:
-        await _to_code_prompt(h)
-        assert h.session._direct_option is not None  # dans l'étape d'achat : l'agent a le panier
-        assert "juste avant de payer" in h.said()
-        assert h.said().index("juste avant de payer") < h.said().index("dites votre code")
-
-
 async def test_direct_buy_saying_no_buys_nothing():
     async with Harness(direct_buy=True) as h:
         await h.text("Un train de Paris pour Lille demain après 14 h")
@@ -449,64 +441,22 @@ async def test_progress_is_spoken_while_searching_but_throttled_and_kept_out_of_
         assert "Je parcours les résultats." not in [m["text"] for m in h.of("say")]
 
 
-async def _to_code_prompt(h: Harness) -> None:
+async def _to_yes_prompt(h: Harness) -> None:
+    """Achat direct : l'agent est au bouton de paiement, Pilote demande « J'achète bien … ? »."""
     await h.text("Un train de Paris pour Lille demain après 14 h")
     await h.wait("proposing")
     await h.text("La deuxième")
     await h.wait("confirm_1")
-    assert "dites votre code à 3 chiffres" in h.said()
+    assert "J'achète bien" in h.said()
 
 
-async def test_right_code_buys_and_the_code_is_never_shown_nor_kept():
-    async with Harness(direct_buy=True, purchase_code="472") as h:
-        parsed: list[str] = []
-        original = h.session.ai.parse_intent
-
-        async def spy(text, today, history):
-            parsed.append(text)
-            return await original(text, today, history)
-
-        h.session.ai.parse_intent = spy  # type: ignore[method-assign]
-        await _to_code_prompt(h)
-        await h.text("quatre 7 deux")
-        await h.wait_said("C'est acheté")
-        typed = [m["text"] for m in h.of("transcript") if m["role"] == "user"]
-        assert "•••" in typed and not any("47" in t or "quatre" in t for t in typed)
-        assert not any("quatre" in t for t in parsed)  # jamais envoyé au modèle de langage
-        assert not any("quatre" in turn["text"] for turn in h.session.history)
-
-
-async def test_wrong_code_three_times_buys_nothing():
-    async with Harness(direct_buy=True, purchase_code="472") as h:
-        await _to_code_prompt(h)
-        await h.text("111")
-        await h.wait_said("Encore 2 essais.")
-        await h.text("111")
-        await h.wait_said("Encore 1 essai.")
-        await h.text("111")
-        await h.wait_said("Code incorrect trois fois")
-        assert "C'est acheté" not in h.said()
-
-
-async def test_saying_no_at_the_code_prompt_buys_nothing():
-    async with Harness(direct_buy=True, purchase_code="472") as h:
-        await _to_code_prompt(h)
-        await h.text("non")
-        await h.wait_said("je n'achète rien")
-        assert "C'est acheté" not in h.said()
-
-
-def test_spoken_digits_reads_words_and_figures():
-    from orchestrator.session import spoken_digits
-
-    assert spoken_digits("Un, deux, trois.") == "123"
-    assert spoken_digits("1 2 3") == "123" and spoken_digits("mon code est 908") == "908"
-
-
-async def test_direct_buy_asks_only_the_code():
-    async with Harness(direct_buy=True, purchase_code="123") as h:
-        await _to_code_prompt(h)
-        await h.text("un deux trois")
+async def test_direct_buy_asks_only_one_yes_at_the_pay_button():
+    async with Harness(direct_buy=True) as h:
+        await _to_yes_prompt(h)
+        assert h.session._direct_option is not None  # dans l'étape d'achat : l'agent a le panier
+        assert "juste avant de payer" in h.said()
+        assert h.said().index("juste avant de payer") < h.said().index("J'achète bien")
+        await h.confirm(True)
         await h.wait_said("C'est acheté")
         assert "confirm_2" not in h.states()
 
@@ -623,9 +573,9 @@ async def test_a_correction_updates_the_whole_request_sent_to_the_agent():
 
 
 async def test_pilote_says_clearly_that_the_order_is_finished():
-    async with Harness(direct_buy=True, purchase_code="472") as h:
-        await _to_code_prompt(h)
-        await h.text("472")
+    async with Harness(direct_buy=True) as h:
+        await _to_yes_prompt(h)
+        await h.confirm(True)
         await h.wait_said("C'est terminé.")
         assert "C'est acheté" in h.said()
 
@@ -634,8 +584,8 @@ async def test_lost_contact_after_payment_approval_never_says_nothing_was_bought
     from orchestrator.agent_h.base import AgentError
     from orchestrator.session import UNSURE
 
-    async with Harness(direct_buy=True, purchase_code="472") as h:
-        # Le code se demande au bouton de paiement, pendant buy() : l'agent est remplacé avant le choix
+    async with Harness(direct_buy=True) as h:
+        # Le « oui » se demande au bouton de paiement, pendant buy() : l'agent est remplacé avant le choix
         await h.text("Un train de Paris pour Lille demain après 14 h")
         await h.wait("proposing")
         agent = h.agents[-1]
@@ -648,8 +598,8 @@ async def test_lost_contact_after_payment_approval_never_says_nothing_was_bought
         agent.buy = buy_then_lose_contact  # type: ignore[method-assign]
         await h.text("La deuxième")
         await h.wait("confirm_1")
-        assert "dites votre code à 3 chiffres" in h.said()
-        await h.text("472")
+        assert "J'achète bien" in h.said()
+        await h.confirm(True)
         await h.wait_said("Je ne sais pas si l'achat est passé")
         assert UNSURE in h.said() and "Rien n'a été acheté" not in h.said()
 
@@ -1013,7 +963,7 @@ async def test_a_new_train_request_is_not_glued_to_a_question_waiting_for_a_prec
 
 
 async def _pay_button_reached_then_hang(h: Harness) -> None:
-    """Direct buy : le code est donné, le verrou autorise le clic, puis l'agent ne répond plus."""
+    """Direct buy : le « oui » est donné, le verrou autorise le clic, puis l'agent ne répond plus."""
     await h.text("Un train de Paris pour Lille demain après 14 h")
     await h.wait("proposing")
     agent = h.agents[-1]
@@ -1026,12 +976,12 @@ async def _pay_button_reached_then_hang(h: Harness) -> None:
     agent.buy = authorised_then_hang  # type: ignore[method-assign]
     await h.text("La deuxième")
     await h.wait("confirm_1")
-    await h.text("472")
+    await h.confirm(True)
     await _until(lambda: h.session._payment_cleared, 5)
 
 
 async def test_cancelling_after_the_payment_was_authorised_never_says_nothing_was_bought():
-    async with Harness(direct_buy=True, purchase_code="472") as h:
+    async with Harness(direct_buy=True) as h:
         await _pay_button_reached_then_hang(h)
         await h.session.receive({"type": "cancel"})
         await h.wait_said("je ne sais pas si l'achat est passé")
@@ -1040,7 +990,7 @@ async def test_cancelling_after_the_payment_was_authorised_never_says_nothing_wa
 
 
 async def test_resetting_after_the_payment_was_authorised_never_says_nothing_was_bought():
-    async with Harness(direct_buy=True, purchase_code="472") as h:
+    async with Harness(direct_buy=True) as h:
         await _pay_button_reached_then_hang(h)
         await h.text("Nouvelle conversation")
         await h.wait_said("je ne sais pas si l'achat est passé")
@@ -1088,17 +1038,6 @@ async def test_a_yes_captured_while_pilote_was_speaking_never_confirms_the_purch
         await _audio(h, "oui", overlapped=True)  # l'écho de « dites oui pour confirmer »
         assert "C'est acheté" not in h.said() and h.session.state == "confirm_1"
         await _audio(h, "oui", overlapped=False)  # le vrai « oui », après la fin de la phrase
-        await h.wait_said("C'est acheté")
-
-
-async def test_a_code_captured_while_pilote_was_speaking_is_ignored_and_costs_no_attempt():
-    async with Harness(direct_buy=True, purchase_code="472") as h:
-        await _to_code_prompt(h)
-        await _audio(h, "quatre sept deux", overlapped=True)  # même le bon code : il peut venir de Pilote
-        assert "C'est acheté" not in h.said() and "pas le bon code" not in h.said()
-        await _audio(h, "un un un")  # un vrai mauvais essai : il reste bien 2 essais, aucun n'a été perdu
-        await h.wait_said("Encore 2 essais.")
-        await _audio(h, "quatre sept deux")
         await h.wait_said("C'est acheté")
 
 
@@ -1151,12 +1090,21 @@ async def test_cancel_during_a_long_search_does_not_wait_for_the_language_model(
         assert not any("nnule" in t for t in asked)  # compris tout de suite, sans appeler le modèle
 
 
-async def test_a_reset_phrase_works_even_while_the_code_is_being_asked():
-    async with Harness(direct_buy=True, purchase_code="472") as h:
-        await _to_code_prompt(h)
+async def test_a_reset_phrase_works_even_while_the_yes_is_being_asked():
+    async with Harness(direct_buy=True) as h:
+        await _to_yes_prompt(h)
         await h.text("On recommence")
         await h.wait_said("on repart de zéro")
-        assert "C'est acheté" not in h.said() and h.session._secret_mode is False
+        assert "C'est acheté" not in h.said()
+
+
+async def test_a_reset_phrase_works_while_the_card_is_being_dictated():
+    async with Harness(direct_buy=True) as h:
+        await _to_yes_prompt(h)
+        h.session._secret_mode = True  # la carte se dicte : ni modèle, ni affichage
+        await h.text("Nouvelle conversation")
+        await h.wait_said("on repart de zéro")
+        assert "C'est acheté" not in h.said()
 
 
 async def test_the_transcriber_never_sees_the_overlap_parameter():

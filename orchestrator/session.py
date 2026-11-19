@@ -21,7 +21,6 @@ import base64
 import collections
 import contextlib
 import datetime as dt
-import hmac
 import json
 import logging
 import os
@@ -339,32 +338,6 @@ class Abort(Exception):
 
 
 CODE_ATTEMPTS = 3
-_DIGIT_WORDS = {
-    "zero": "0",
-    "un": "1",
-    "une": "1",
-    "deux": "2",
-    "trois": "3",
-    "quatre": "4",
-    "cinq": "5",
-    "six": "6",
-    "sept": "7",
-    "huit": "8",
-    "neuf": "9",
-}
-
-
-def spoken_digits(text: str) -> str:
-    """« 1 2 3 », « 123 », « un deux trois » -> « 123 ». Les autres mots sont ignorés."""
-    digits = []
-    for word in re.findall(r"[a-z]+|\d", _plain(text)):
-        if word.isdigit():
-            digits.append(word)
-        elif word in _DIGIT_WORDS:
-            digits.append(_DIGIT_WORDS[word])
-    return "".join(digits)
-
-
 # Commentaire en direct : seulement pendant que l'agent travaille seul, une phrase toutes les 6 s au plus.
 PROGRESS_STATES = ("searching", "cart", "paying")
 PROGRESS_GAP_S = 6.0
@@ -493,7 +466,7 @@ class Session:
         self._clients: set[SendFn] = set()
         self._snapshot: dict[str, dict[str, Any]] = {}
         # Dernières phrases de la conversation, rejouées à un écran qui arrive en cours de route
-        # (l'écran du jury ouvert après le début). Le code secret y est déjà « ••• ».
+        # (l'écran du jury ouvert après le début). La carte dictée y est déjà « ••• ».
         self._recent: collections.deque[dict[str, Any]] = collections.deque(maxlen=12)
         self._inbox: asyncio.Queue[ClientMessage] = asyncio.Queue()
         self._answers: asyncio.Queue[Intent] = asyncio.Queue()
@@ -515,7 +488,7 @@ class Session:
         self._cart_fixes = 0  # panier nettoyé à la demande de la personne (une fois par achat)
         self._direct_abort: Abort | None = None  # refus ou code faux au bouton de paiement
         self._last_progress = 0.0
-        self._secret_mode = False  # pendant la demande du code secret ou de la carte
+        self._secret_mode = False  # pendant la dictée de la carte
         self._card_dictated = False  # une carte a été dictée pour la commande en cours
         self._payment_refusal: str | None = None
         self._spoken: deque[str] = deque(
@@ -732,9 +705,9 @@ class Session:
             self._journal("echo_dropped", overlapped=overlapped)  # jamais le texte
             return DROPPED
         if self._secret_mode:
-            # Code secret : ni modèle de langage, ni historique, ni affichage. Comparé puis oublié.
+            # Carte dictée : ni modèle de langage, ni historique, ni affichage. Utilisée puis oubliée.
             await self._emit(ServerTranscript(role="user", text="•••"))
-            if wants_reset(text):  # « nouvelle conversation » à la place du code : on repart de zéro
+            if wants_reset(text):  # « nouvelle conversation » à la place de la carte : on repart de zéro
                 self._reset_asked = True
                 return _intent("cancel", "nouvelle conversation")
             plain = _plain(text)
@@ -1274,34 +1247,6 @@ class Session:
                 "price_changed",
             )
 
-    async def _check_code(self, option: Option, total_cents: int | None = None) -> None:
-        """Demande le code secret à 3 chiffres. Trois essais, puis rien n'est acheté."""
-        assert self.settings.purchase_code is not None
-        total = option.price_cents if total_cents is None else total_cents
-        await self._say(f"Pour acheter {option.title}, {euros(total)}, dites votre code à 3 chiffres.")
-        attempts = CODE_ATTEMPTS
-        self._secret_mode = True
-        try:
-            while True:
-                answer = await self._ask("confirm_1", self.settings.confirm_timeout_s)
-                if answer.kind == "deny":
-                    raise Abort("D'accord, je n'achète rien.")
-                if answer.kind == "confirm":  # touche Entrée ou bouton Oui : il faut le code, pas un oui
-                    await self._say("Il me faut votre code à 3 chiffres.")
-                    continue
-                if hmac.compare_digest(spoken_digits(answer.text), self.settings.purchase_code):
-                    self._journal("purchase_code", result="ok")
-                    return
-                attempts -= 1
-                self._journal("purchase_code", result="wrong")
-                if attempts == 0:
-                    raise Abort("Code incorrect trois fois. Je n'achète rien.")
-                await self._say(
-                    f"Ce n'est pas le bon code. Encore {attempts} essai{'s' if attempts > 1 else ''}."
-                )
-        finally:
-            self._secret_mode = False
-
     async def _buy_direct(self, option: Option) -> None:
         """Achat direct : le choix vaut ordre d'achat. Le résultat est toujours dit à l'oral.
 
@@ -1315,13 +1260,12 @@ class Session:
         self._cart_fixes = 0
         await self._set_state("paying")
         try:
-            # L'agent sélectionne l'option pendant que Pilote dit ce qui va se passer (le code, ou le oui,
-            # n'est demandé qu'au bouton de paiement : « J'achète » serait faux à ce stade)
-            ask = "votre code" if self.settings.purchase_code else "votre accord"
+            # L'agent sélectionne l'option pendant que Pilote dit ce qui va se passer (le « oui » n'est
+            # demandé qu'au bouton de paiement : « J'achète » serait faux à ce stade)
             await self._while_talking(
                 self._say(
                     f"Je prépare l'achat de {option.title}, {euros(option.price_cents)}. "
-                    f"Je vous demanderai {ask} juste avant de payer."
+                    "Je vous demanderai votre accord juste avant de payer."
                 ),
                 self._step("choose", self._agent.choose(option.id)),
             )
@@ -1465,19 +1409,16 @@ class Session:
                 await self._say("Je n'ai pas réussi à tout retirer du panier : " + " ; ".join(extras) + ".")
             if explained:
                 await self._say(price_breakdown(option, summary))
-            if self.settings.purchase_code:
-                await self._check_code(option, total_cents)  # le code vaut accord, même si c'est gratuit
-            else:
-                # Toujours un « oui », même gratuit : une réservation à 0 € engage aussi (une place est
-                # prise au nom du compte)
-                price = "gratuit" if total_cents == 0 else euros(total_cents)
-                question = (
-                    f"On paie {spoken_euros(total_cents)} au total ?"
-                    if explained
-                    else f"J'achète bien {option.title}, {price} ?"
-                )
-                if not await self._yes_no("confirm_1", question):
-                    raise Abort("D'accord, je n'achète rien.")
+            # Toujours un « oui », même gratuit : une réservation à 0 € engage aussi (une place est
+            # prise au nom du compte)
+            price = "gratuit" if total_cents == 0 else euros(total_cents)
+            question = (
+                f"On paie {spoken_euros(total_cents)} au total ?"
+                if explained
+                else f"J'achète bien {option.title}, {price} ?"
+            )
+            if not await self._yes_no("confirm_1", question):
+                raise Abort("D'accord, je n'achète rien.")
             return "approved"
         except Abort as abort:
             self._direct_abort = abort
