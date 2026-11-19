@@ -1,0 +1,26 @@
+{
+  "v": 5,
+  "createdOnFiles": { "v": 1, "at": "2026-11-19T15:30:00Z" },
+  "lists": "css",
+  "format": { "v": 1, "shared": ["project/deck.css"] },
+  "title": "Topil – pitch deck",
+  "cover": "cover",
+  "order": ["cover", "probleme", "solution", "concurrents", "demo", "business", "gtm", "architecture", "limites", "cout", "suite"],
+  "sections": {
+    "ouverture": { "description": "Le problème, la solution et la démo en direct.", "start": "cover" },
+    "marche": { "description": "Qui paie, combien, et comment on atteint les premiers utilisateurs.", "start": "business" },
+    "technique": { "description": "L’architecture, les limites, la feuille de route et le coût de run.", "start": "architecture" },
+    "fin": { "description": "L’équipe et le lien vers le code.", "start": "suite" }
+  },
+  "faces": {
+    "space-grotesk": {
+      "family": "Space Grotesk",
+      "href": "https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300..700&family=Inter:wght@400;600;700&display=swap"
+    },
+    "inter": {
+      "family": "Inter",
+      "href": "https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300..700&family=Inter:wght@400;600;700&display=swap"
+    }
+  },
+  "designSystems": []
+}

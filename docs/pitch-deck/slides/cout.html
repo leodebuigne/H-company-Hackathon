@@ -1,0 +1,14 @@
+<section id="cout" data-transition="fade">
+<p class="eyebrow">08 · COÛT DE RUN</p>
+<h2>Une démarche coûte environ douze centimes à faire tourner.</h2>
+<div class="grow"></div>
+<div class="stats">
+<div class="stat"><p class="big">0,03 $</p><p class="txt">une recherche de train : 126 578 tokens en 8 actions de l’agent, mesuré</p></div>
+<div class="stat"><p class="big">≈ 0,12 €</p><p class="txt">une démarche complète, recherche et achat : rentable jusqu’à une quarantaine par mois à 9,90 €</p></div>
+<div class="stat"><p class="big">&lt; 4 $</p><p class="txt">toute notre semaine côté agent : 80 essais, 6,9 millions de tokens</p></div>
+</div>
+<p class="source">Agent : coût rapporté par H Company pour chaque session, au tarif Holo4-27b. Hugging Face : 0,21 $ facturés pour 1 905 appels sur la semaine, soit moins d’un centime par commande.</p>
+<p class="source next">Pas encore compté, l’hébergement : l’interface sur Vercel (gratuit en usage personnel, à partir de 20 $ par mois en usage commercial), un serveur à part pour l’orchestrateur, à chiffrer, et un abonnement H Company au-delà du quota gratuit.</p>
+<div class="foot"><p class="mark">Topil</p><p class="pg"></p></div>
+<aside>5:30, 25 secondes. Le 0,03 $ est le chiffre que H renvoie lui-même pour la session (total_cost : 0,0305 $) : 45 778 tokens d’entrée, 80 800 en cache, 3 002 en sortie. Aujourd’hui nous ne payons rien à H : nous sommes dans le quota gratuit (6,9 millions de tokens sur 60 millions par mois) ; ces dollars sont ce que coûterait le même usage au tarif public. Le 0,21 $ vient de la facturation Hugging Face du compte du projet. Hébergement : aujourd’hui Topil tourne sur un ordinateur. Vercel peut héberger l’interface, pas l’orchestrateur tel qu’il est : l’agent pilote un Chrome local où le compte est connecté, le serveur ne tient qu’une conversation à la fois, et la voix tourne sur la machine. Le dire franchement si le jury pose la question : c’est sur la feuille de route. Le 0,12 € par démarche est le chiffre de la diapositive business model (mesure de l’équipe sur de vrais achats) : en connaître la source avant le pitch. La semaine entière est une borne haute, comme si aucun token n’était en cache. À 30 démarches par mois, le coût est d’environ 3,60 € pour un abonnement à 9,90 € ; avec une marge pour les échecs et l’hébergement, l’abonné reste rentable jusqu’à une quarantaine de démarches. Les audits vendus aux grandes entreprises (20 000 € l’audit) s’ajoutent à cette marge.</aside>
+</section>

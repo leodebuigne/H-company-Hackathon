@@ -1,0 +1,17 @@
+<section id="architecture" data-transition="fade">
+<p class="eyebrow">06 · ARCHITECTURE TECHNIQUE</p>
+<h2>Quatre briques, un chef d’orchestre.</h2>
+<div class="grow"></div>
+<div class="flow">
+<div class="step"><p class="tag">ÉCOUTER</p><h3>Whisper</h3><p class="txt">La voix devient du texte. Modèle Hugging Face.</p></div>
+<x-connector></x-connector>
+<div class="step"><p class="tag">COMPRENDRE</p><h3>Llama 3.3</h3><p class="txt">La phrase devient une demande : quoi, où, quand. Modèle Hugging Face.</p></div>
+<x-connector></x-connector>
+<div class="step"><p class="tag">AGIR</p><h3>Agent Holo</h3><p class="txt">L’agent de H Company clique, remplit et achète dans un vrai Chrome, sur le compte de la personne.</p></div>
+<x-connector></x-connector>
+<div class="step"><p class="tag">RÉPONDRE</p><h3>Voix française</h3><p class="txt">Kyutai sur l’ordinateur, Kokoro en ligne en secours. Modèles Hugging Face.</p></div>
+</div>
+<p class="source">Orchestrateur en Python (FastAPI) : il enchaîne les étapes et tient les garde-fous. Quand un site a un lien direct, le code ouvre et lit la page lui-même ; l’agent garde ce qui demande de voir et de cliquer. Deux mémoires retiennent les sites et les chemins déjà parcourus.</p>
+<div class="foot"><p class="mark">Topil</p><p class="pg"></p></div>
+<aside>4:35, 35 secondes. Suivre les flèches de gauche à droite. Point fort pour le jury H : l’agent travaille dans le navigateur de la personne, donc avec son compte déjà connecté. Choix d’architecture à assumer : l’agent est réservé à ce qu’aucun script ne sait faire (naviguer sur un site inconnu, remplir un panier, payer) ; la lecture d’une page de résultats connue est faite par le code, d’où les 20 secondes. À vérifier avant le pitch : la voix Kyutai (Jerem) n’est pas encore dans la branche last_one.</aside>
+</section>
