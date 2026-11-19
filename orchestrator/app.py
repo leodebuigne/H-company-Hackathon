@@ -14,6 +14,7 @@ from contextlib import asynccontextmanager
 from typing import Any
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from starlette.websockets import WebSocketDisconnected, WebSocketState
 
 from orchestrator.agent_h import local_chrome, make_agent_factory
 from orchestrator.ai import build_ai
@@ -80,13 +81,15 @@ def create_app(session_factory: Callable[[], Session] | None = None) -> FastAPI:
 
         await session.attach(send)
         try:
-            while True:
+            # Écran fermé pendant l'accueil (page rechargée, orchestrateur relancé) : l'envoi a échoué,
+            # la connexion est déjà fermée ; la relire levait une erreur bruyante dans le journal.
+            while websocket.client_state == WebSocketState.CONNECTED:
                 try:
                     data = await websocket.receive_json()
                 except ValueError:  # pas du JSON : ignoré
                     continue
                 await session.receive(data)
-        except WebSocketDisconnect:
+        except (WebSocketDisconnect, WebSocketDisconnected):
             pass
         finally:
             session.detach(send)
