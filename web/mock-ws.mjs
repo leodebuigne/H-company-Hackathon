@@ -252,7 +252,7 @@ wss.on("connection", (ws) => {
   send({ type: "ready", session_id: randomUUID() });
   send({ type: "state", state });
   if (state === "listening") {
-    send({ type: "say", text: "Je suis Pilote, un assistant automatique. Que voulez-vous commander ?", audio: null, mime: null });
+    send({ type: "say", text: "Je suis Topil, un assistant automatique. Que voulez-vous commander ?", audio: null, mime: null });
   }
   // Remet à jour un écran qui se connecte en cours de route
   if (options.length) send({ type: "options", options });

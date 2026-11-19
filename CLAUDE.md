@@ -1,14 +1,16 @@
-# Pilote : contexte pour les assistants de code
+# Topil (Pilote dans le code) : contexte pour les assistants de code
 
-Plan complet de l'équipe (benchmark, architecture, répartition, prompts par membre) : `docs/plan-pilote.md`.
+Index de la documentation : `docs/README.md`. Plan initial de l'équipe, du 17/11 (benchmark, architecture, répartition, prompts par membre) : `docs/plan-pilote.md`, historique : `docs/decisions.md` prévaut.
 
 ## Le projet
 
-Pilote est un assistant vocal en français qui fait des achats en ligne à la place d'une personne aveugle, sur de vrais sites marchands (Uber Eats et SNCF Connect pour le hackathon). Il utilise l'agent "computer use" de H Company (navigation) et des modèles Hugging Face (voix, langage, vision).
+Topil est un assistant vocal en français qui fait des achats en ligne à la place d'une personne aveugle, sur de vrais sites marchands (Uber Eats et SNCF Connect pour le hackathon). Il utilise l'agent "computer use" de H Company (navigation) et des modèles Hugging Face (voix, langage, vision).
 
 Avant chaque paiement : un "oui" oral, une relecture de la page, puis un deuxième "oui". La démo paie avec une carte virtuelle à 0 € : le paiement doit être refusé par la banque, ce qui prouve que le parcours marche.
 
 ## Dépôt
+
+Topil, c'est « pilote » en verlan : nom vu et entendu par la personne. Le dépôt, les fichiers (`PiloteApp.tsx`…), les variables `PILOTE_…` et les contrats gardent l'ancien nom : ne les renomme pas.
 
 ```
 contracts/              schémas JSON partagés + README des messages WebSocket (font foi)
@@ -29,7 +31,7 @@ Traductions des contrats : `orchestrator/contracts.py` (pydantic), `orchestrator
 - L'agent ne tape jamais de numéro de carte, de cryptogramme ni de mot de passe, ne résout jamais de CAPTCHA, ne crée jamais de compte, et ne clique jamais sur un bouton qui engage de l'argent sans approbation.
 - Une commande à la fois, déclenchée par une personne. 2 tentatives de paiement par site et par jour au maximum. Aucune collecte de données en masse.
 - Aucune donnée de santé ou de handicap stockée. L'audio est supprimé dès qu'il est transcrit.
-- Pilote annonce à l'oral qu'il est une IA : « Je suis Pilote, un assistant automatique ».
+- Topil annonce à l'oral qu'il est une IA : « Je suis Topil, un assistant automatique ».
 - Si une API externe ne se comporte pas comme décrit, lis la documentation officielle au lieu de deviner (H : https://hub.hcompany.ai/llms.txt, Hugging Face : https://huggingface.co/docs/inference-providers) et note l'écart dans `docs/decisions.md`.
 - Travaille sur ta branche, en petits commits, avec des tests à côté du code.
 

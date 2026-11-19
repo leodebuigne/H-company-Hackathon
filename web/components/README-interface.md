@@ -1,4 +1,6 @@
-# Interface vocale Pilote (membre 4)
+# Interface vocale Topil (membre 4)
+
+Topil s'appelle Pilote dans le code (voir le [README](../../README.md)) : `PiloteApp.tsx`, `usePilote.ts`, `pilote.css`.
 
 ## Lancer en local
 
@@ -19,9 +21,11 @@ Pour viser le vrai orchestrateur, arrêter `npm run mock` : l'adresse est la mê
 | Entrée | Oui (en `confirm_1` et `confirm_2`) |
 | N | Non (en `confirm_1` et `confirm_2`) |
 | Échap | Annuler, à tout moment, même dans le champ texte |
-| R | Répéter la dernière phrase de Pilote |
+| R | Répéter la dernière phrase de Topil |
 
-Le navigateur bloque tout son avant un geste de l'utilisateur. La phrase d'accueil envoyée par l'orchestrateur à la connexion est donc gardée et dite au premier appui, précédée de « Je suis Pilote, un assistant automatique » si elle ne le contient pas.
+Le navigateur bloque tout son avant un geste de l'utilisateur. La phrase d'accueil envoyée par l'orchestrateur à la connexion est donc gardée et dite au premier appui, précédée de « Je suis Topil, un assistant automatique » si elle ne le contient pas.
+
+Le micro ne s'ouvre que sur un appui (Espace ou bouton). Le mot de réveil « Bonjour Topil » et le mot pour couper « OK Topil » (`wakeword.ts`) ne marchent que si « Écouter aussi sans appui » est activé dans les réglages (décision du 19/11 dans `docs/decisions.md`).
 
 ## Fichiers
 
@@ -31,6 +35,10 @@ Le navigateur bloque tout son avant un geste de l'utilisateur. La phrase d'accue
 - `SpectatorScreen.tsx` : écran du jury (étapes, intention comprise, conversation, options ou récapitulatif, lien vers l'agent H).
 - `recorder.ts` : enregistrement du micro (webm/opus sur Chrome, mp4 sur Safari), envoyé avec son `mime`.
 - `speech.ts` : lecture des `say` (audio fourni avec son `mime`, sinon voix française du navigateur).
+- `phraseVoice.ts` : demande à l'orchestrateur (`POST /speak`) l'audio des phrases écrites dans l'interface (accueil, « D'accord. »), pour que toute la conversation ait la même voix.
+- `wakeword.ts` : mot de réveil « Bonjour Topil » et mot pour couper « OK Topil », par la reconnaissance vocale du navigateur (seulement avec « Écouter aussi sans appui »).
+- `Orb.tsx` : l'orbe animée (WebGL) qui montre l'état : repos, écoute, réflexion.
+- `pilote.css` : styles de l'interface.
 - `earcons.ts` : sons d'état (j'écoute, je réfléchis, question, succès, erreur).
 - `../mock-ws.mjs` : faux orchestrateur qui rejoue une commande de train ; il ignore et signale tout message hors contrat.
 

@@ -2,8 +2,9 @@
 
 - voix -> texte : Whisper (huggingface_hub, AsyncInferenceClient)
 - compréhension, vision : routeur compatible OpenAI https://router.huggingface.co/v1
-- texte -> voix : Kokoro, voix française. Renvoie None si trop lent : l'interface prend alors la
-  voix du navigateur.
+- texte -> voix : voix locale Kyutai si PILOTE_VOICE en nomme une (local_voice.py), sinon Kokoro en
+  ligne, voix française. Renvoie None si trop lent : l'interface prend alors la voix du navigateur
+  (jamais avec une voix locale : la phrase reste affichée sans être dite, voir docs/decisions.md).
 
 Les modèles se changent par variables d'environnement (PILOTE_ASR_MODEL, PILOTE_LLM_MODEL,
 PILOTE_VLM_MODEL, PILOTE_TTS_MODEL, PILOTE_TTS_VOICE, PILOTE_TTS_PROVIDER).
@@ -434,7 +435,7 @@ class HFAI:
         voice = _env("PILOTE_VOICE", "huggingface").strip().lower()
         self.browser_voice = voice == "navigateur"
         # PILOTE_VOICE=jerem : voix française qui tourne sur cet ordinateur (local_voice.py).
-        # La voix en ligne reste en secours si le paquet manque ou si la synthèse échoue.
+        # La voix en ligne ne sert que si le paquet manque ; si la synthèse échoue, la phrase reste muette.
         self.local_voice: LocalVoice | None = None
         if voice in available_voices():
             self.local_voice = LocalVoice(voice)

@@ -53,12 +53,12 @@ Si l'enregistrement de la carte échoue à 0 € : mettre 1 € le temps de l'en
 
 ## Plan B : faux sites
 
-À utiliser si un vrai site bloque l'agent ou le compte le jour de la démo. Rien n'est dépensé, aucune carte n'est nécessaire.
+À utiliser si un vrai site bloque l'agent ou le compte le jour de la démo. Rien n'est dépensé, aucune carte n'est nécessaire. On l'active avec `PILOTE_PLAN_B=1` dans `.env` (les adresses ci-dessous sont dans `orchestrator/agent_h/agent.py`).
 
 | Site | Adresse | Bouton d'argent | Scénarios (`?scenario=`) |
 | --- | --- | --- | --- |
-| Rail Démo (train) | https://h-company-hackathon-rail-demo.vercel.app (`RAIL_DEMO_URL`) | « Payer » (`id="payer"`) | `hausse` : +8 € après 60 s, `complet` : train complet au paiement |
-| Miam Démo (repas) | https://h-company-hackathon-repas-demo.vercel.app (`REPAS_DEMO_URL`) | « Commander et payer » (`id="commander"`) | `hausse` : livraison +2 € après 60 s, `ferme` : restaurant fermé au paiement |
+| Rail Démo (train) | https://h-company-hackathon-rail-demo.vercel.app | « Payer » (`id="payer"`) | `hausse` : +8 € après 60 s, `complet` : train complet au paiement |
+| Miam Démo (repas) | https://h-company-hackathon-repas-demo.vercel.app | « Commander et payer » (`id="commander"`) | `hausse` : livraison +2 € après 60 s, `ferme` : restaurant fermé au paiement |
 
 Le scénario `hausse` sert aussi à montrer au jury que Pilote annule quand le prix change entre la première confirmation et le paiement (le hash du récapitulatif change au `recheck()`).
 
