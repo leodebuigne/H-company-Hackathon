@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+from typing import Any
 
 from orchestrator.contracts import Intent, Option, SiteCard
 
@@ -127,15 +128,72 @@ def intent_text(intent: Intent, site: str) -> str:
     return "\n".join(parts)
 
 
+# Méthode de recherche commune à tous les sites, du plus court au plus long. Envoyée avec chaque
+# recherche (l'agent du portail H garde sa propre consigne générale : elle ne passe que par ce message).
+SEARCH_METHOD = """\
+Méthode de recherche rapide (chaque action coûte du temps : fais le moins d'actions possible) :
+1. Adresse directe : si le navigateur est déjà ouvert sur une page de résultats, lis-la tout de suite. Ne repars pas de l'accueil.
+2. Sinon, la barre de recherche du site (en haut de page, souvent avec une loupe) : tape toute la demande d'un coup (« casque Sony WH-1000XM5 », « restaurant italien Lyon ») puis Entrée. Pas de menus ni de catégories.
+3. Lis les résultats dans la liste elle-même (texte de la page). N'ouvre la fiche d'un résultat que pour une information obligatoire absente de la liste, et seulement pour les résultats que tu retiens.
+4. Filtres et tri seulement s'ils sont indispensables à la demande (date, heure, budget).
+5. Dès que tu as {max_options} options valables, arrête-toi et réponds : ne fais pas défiler plus loin, ne compare pas d'autres sites.
+6. Fenêtres gênantes (cookies, publicité, application) : ferme-les une fois en refusant, sans t'attarder.
+7. Renvoie dans results_url l'adresse exacte de la page de résultats."""
+
+
+def search_method() -> str:
+    return SEARCH_METHOD.replace("{max_options}", str(max_options()))
+
+
+def shortcut_text(shortcut: Any) -> str:
+    if shortcut is None:
+        return ""
+    return (
+        f"Le navigateur est déjà ouvert sur la page de résultats de {shortcut.domain} pour « {shortcut.query} » "
+        "(adresse directe). Vérifie que les résultats correspondent à la demande ; sinon, utilise la barre de "
+        "recherche du site.\n\n"
+    )
+
+
 def search_message(
-    intent: Intent, site: str, card: SiteCard | None, with_instructions: bool, with_vault: bool = False
+    intent: Intent,
+    site: str,
+    card: SiteCard | None,
+    with_instructions: bool,
+    with_vault: bool = False,
+    shortcut: Any = None,
+    stop_at_results: bool = False,
 ) -> str:
     head = generic_instructions(with_vault) + "\n" if with_instructions else ""
     login = LOGIN_FIRST + "\n\n" if with_vault else ""
+    site = f"https://{shortcut.domain}" if shortcut is not None and not site else site
+    step = (
+        STOP_AT_RESULTS
+        if stop_at_results
+        else (
+            "Étape : recherche. Trouve les options et renvoie-les dans le champ options. "
+            "Ne mets rien dans le panier pour l'instant."
+        )
+    )
     return (
-        f"{head}{site_card_text(card)}\n\n{intent_text(intent, site)}\n\n{login}"
-        "Étape : recherche. Trouve les options et renvoie-les dans le champ options. "
-        "Ne mets rien dans le panier pour l'instant."
+        f"{head}{site_card_text(card)}\n\n{intent_text(intent, site)}\n\n{login}{shortcut_text(shortcut)}"
+        f"{search_method()}\n\n{step}"
+    )
+
+
+# Recherche partagée : l'agent lance la recherche, le code lit la liste lui-même (fast_read), plus vite.
+STOP_AT_RESULTS = (
+    "Étape : recherche. Lance la recherche avec la méthode ci-dessus. Dès que la liste des résultats est "
+    "affichée et correspond à la demande (lieux, date, heure), ARRÊTE-TOI et réponds tout de suite : ne lis pas "
+    "les résultats, laisse le champ options vide et mets l'adresse de la page dans results_url. Pilote lit la "
+    "liste lui-même. Ne mets rien dans le panier."
+)
+
+
+def read_results_message() -> str:
+    return (
+        "Étape : recherche (suite). Lis maintenant les résultats affichés et renvoie au plus "
+        f"{max_options()} options dans le champ options. Ne mets rien dans le panier."
     )
 
 

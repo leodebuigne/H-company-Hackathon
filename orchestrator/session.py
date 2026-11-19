@@ -344,6 +344,8 @@ class Session:
         self._intent: Intent | None = None
         # Question en attente d'une précision (« Pour aller où ? ») : la réponse suivante la complète
         self._pending_question: str | None = None
+        self._prepared_agent: Any = None  # agent préparé pendant les questions (Chrome, page du site)
+        self._prepare_task: asyncio.Task[None] | None = None
         self._summary: OrderSummary | None = None
         self._armed_hash: str | None = None
         self._direct_limit: int | None = None  # achat direct : prix maximal accepté (centimes)
@@ -722,6 +724,7 @@ class Session:
                 continue
             if intent.missing:
                 pending = intent
+                self._prepare_agent(intent)  # pendant la question : Chrome et page du site déjà prêts
                 # Mêmes questions rédigées quelle que soit l'IA (la factice pose « details.origin »).
                 question = QUESTIONS.get(intent.missing[0]) or intent.question
                 await self._talk(
@@ -774,22 +777,50 @@ class Session:
         if url and self._snapshot.get("agent_view", {}).get("agent_view_url") != url:
             await self._emit(ServerAgentView(agent_view_url=url))
 
+    def _prepare_agent(self, intent: Intent) -> None:
+        """Prépare l'agent pendant que Pilote pose une question : 3 à 4 s de moins au lancement.
+        Jamais bloquant : une préparation qui échoue est refaite par start()."""
+        if intent.kind != "new_request" or intent.category is None:
+            return
+        if self._prepared_agent is None:
+            self._prepared_agent = self.agent_factory(self.approve_payment, self.need_human)
+        prepare = getattr(self._prepared_agent, "prepare", None)
+        if prepare is not None and (self._prepare_task is None or self._prepare_task.done()):
+
+            async def run() -> None:
+                with contextlib.suppress(Exception):
+                    await prepare(intent)
+
+            self._prepare_task = asyncio.create_task(run())
+
     async def _search(self, intent: Intent) -> list[Option]:
         await self._set_state("searching")
-        self._agent = self.agent_factory(self.approve_payment, self.need_human)
+        self._agent, self._prepared_agent = self._prepared_agent, None
+        if self._prepare_task is not None:
+            with contextlib.suppress(Exception):
+                await asyncio.wait_for(self._prepare_task, 10)
+            self._prepare_task = None
+        self._agent = self._agent or self.agent_factory(self.approve_payment, self.need_human)
         if hasattr(self._agent, "on_progress"):
             self._agent.on_progress = self._progress  # type: ignore[attr-defined]
         if hasattr(self._agent, "on_stuck"):
             self._agent.on_stuck = self._stuck  # type: ignore[attr-defined]
         request = describe_request(intent, self.today())
-        await self._talk(
-            f"{request} Dites « annule » si ce n'est pas ça.",
-            "Tu vas lancer la recherche : redis la demande comprise pour que la personne vérifie, "
-            "et rappelle qu'elle peut dire « annule » si ce n'est pas ça.",
-            facts=request,
-            heard=intent.text,
+        # La phrase de Pilote (≈ 2 s de modèle de langage) et le démarrage de l'agent en même temps
+        talk = asyncio.create_task(
+            self._talk(
+                f"{request} Dites « annule » si ce n'est pas ça.",
+                "Tu vas lancer la recherche : redis la demande comprise pour que la personne vérifie, "
+                "et rappelle qu'elle peut dire « annule » si ce n'est pas ça.",
+                facts=request,
+                heard=intent.text,
+            )
         )
-        await self._step("start", self._agent.start(intent, None))
+        try:
+            await self._step("start", self._agent.start(intent, None))
+        finally:
+            with contextlib.suppress(Exception):
+                await talk
         options = await self._step("search", self._agent.search())
         if not options:
             raise Abort("Je n'ai rien trouvé sur le site. Essayez une autre demande.")

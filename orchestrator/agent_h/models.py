@@ -155,6 +155,9 @@ class AgentAnswer(BaseModel):
     payment_message: str | None = Field(default=None, description="Message exact du site ou de la banque")
     blocked_reason: str | None = Field(default=None, description="Raison si tu n'as pas pu continuer")
     site_notes: SiteNotes | str | None = None
+    results_url: str | None = Field(
+        default=None, description="Adresse exacte de la page de résultats de la recherche"
+    )
     reply: str | None = Field(
         default=None, description="Réponse à une question : 1 à 3 phrases simples, à dire à voix haute"
     )

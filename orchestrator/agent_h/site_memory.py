@@ -59,7 +59,12 @@ def merge_card(
     buttons = sanitize((old.useful_buttons if old else []) + (notes.useful_buttons if notes else []))
     return SiteCard(
         domain=domain,
-        steps=sanitize((notes.steps if notes else []) or (old.steps if old else [])),
+        # L'adresse de recherche directe apprise est gardée même quand l'agent rapporte de nouvelles étapes
+        steps=[s for s in (old.steps if old else []) if s.startswith("Recherche directe : ")][:1]
+        + sanitize(
+            (notes.steps if notes else [])
+            or [s for s in (old.steps if old else []) if not s.startswith("Recherche directe : ")]
+        ),
         useful_buttons=[button[:80] for button in buttons],
         pitfalls=sanitize((old.pitfalls if old else []) + (notes.pitfalls if notes else [])),
         runs=runs + 1,
@@ -136,6 +141,42 @@ def starter_card(domain: str) -> SiteCard | None:
         avg_steps=None,
         updated_at=dt.datetime(2026, 11, 18, tzinfo=dt.UTC),
     )
+
+
+def with_starter(learned: SiteCard | None, domain: str) -> SiteCard | None:
+    """Fiche apprise + fiche de départ. Avant, la fiche apprise REMPLAÇAIT celle de départ : après un
+    premier achat sur SNCF Connect, l'agent perdait la recherche rapide (47 s au lieu de 88 s)."""
+    starter = starter_card(domain)
+    if learned is None or starter is None:
+        return learned or starter
+    learned_steps = [s for s in learned.steps if s not in starter.steps]
+    return learned.model_copy(
+        update={
+            # Étapes de départ (la recherche) d'abord, puis la suite apprise (panier, paiement)
+            "steps": (starter.steps + learned_steps)[: MAX_LINES + len(starter.steps)],
+            "useful_buttons": list(dict.fromkeys(starter.useful_buttons + learned.useful_buttons)),
+            "pitfalls": list(dict.fromkeys(starter.pitfalls + learned.pitfalls)),
+        }
+    )
+
+
+def learn_search(
+    old: SiteCard | None, domain: str, template: str, now: dt.datetime | None = None
+) -> SiteCard:
+    """Retient l'adresse de recherche directe d'un site (ligne « Recherche directe : … » de la fiche),
+    sans compter de visite : la prochaine recherche ouvrira directement la page de résultats."""
+    from .search_shortcuts import LEARNED_PREFIX
+
+    line = LEARNED_PREFIX + template
+    steps = [line] + [s for s in (old.steps if old else []) if not s.startswith(LEARNED_PREFIX)]
+    if old is not None:
+        return old.model_copy(
+            update={"steps": steps[:MAX_LINES], "updated_at": now or dt.datetime.now(dt.UTC)}
+        )
+    return SiteCard(
+        domain=domain, steps=[line], useful_buttons=[], pitfalls=[], runs=0, successful_runs=0,
+        avg_duration_s=None, avg_steps=None, updated_at=now or dt.datetime.now(dt.UTC),
+    )  # fmt: skip
 
 
 class SiteMemory(Protocol):

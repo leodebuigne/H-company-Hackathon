@@ -558,3 +558,22 @@ async def test_incomplete_question_asks_for_the_missing_detail_then_merges_the_a
         await h.text("De Paris à Lyon")
         await h.wait_said("Je cherche la réponse")
         assert any("précision : De Paris à Lyon" in q for q in asked)
+
+
+async def test_agent_is_prepared_while_pilote_asks_and_reused_for_the_search(monkeypatch):
+    prepared: list[Any] = []
+
+    async def prepare(self, intent):
+        prepared.append(intent)
+
+    monkeypatch.setattr(FakeShoppingAgent, "prepare", prepare, raising=False)
+    async with Harness() as h:
+        await h.text("Je veux un train pour Lille demain")
+        await h.wait_said("De quelle ville partez-vous ?")
+        await _until(lambda: prepared, 2)
+        assert prepared[0].category == "train", "le Chrome de l'agent se prépare pendant la question"
+        await h.wait("listening")
+        await h.text("Paris")
+        await h.wait("proposing")
+        assert len(h.agents) == 1, "l'agent préparé fait la recherche"
+        assert h.agents[0]._intent.details == {"destination": "Lille", "origin": "Paris"}

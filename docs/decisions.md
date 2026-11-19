@@ -236,3 +236,14 @@ Retour : pour un vêtement, Pilote ne demandait pas la taille. En plus des infor
 - **par règle** : la taille d'un vêtement, la pointure de chaussures, le nombre de personnes puis l'heure pour une table au restaurant ;
 - **par le modèle** (champ `needs` de sa réponse, hors contrat) : la seule information indispensable restante (modèle de téléphone pour une coque, imprimante pour des cartouches…), jamais une question de confort.
 Essai réel : pull → taille ; baskets → pointure ; coque → modèle de téléphone ; cartouches → imprimante ; t-shirt taille M → rien ; table japonaise → nombre de personnes ; livre précis → rien.
+
+## 2026-11-19 : recherche rapide, lecture directe des résultats (v2 locale, membre 4)
+
+Mesures dans `docs/bench-recherche.md` (`python -m orchestrator.agent_h.bench_search`, recherche seule, sans panier).
+- **Défaut corrigé** : la fiche apprise d'un site remplaçait sa fiche de départ ; SNCF avait perdu la recherche rapide (268 s, 25 actions). Les deux sont maintenant fusionnées (`site_memory.with_starter`).
+- **Méthode de recherche commune** (`prompts.SEARCH_METHOD`), envoyée avec chaque recherche : adresse directe, sinon barre de recherche avec toute la demande, lire la liste sans ouvrir chaque fiche, s'arrêter à 3 options.
+- **Adresses directes** (`search_shortcuts.py`) : le navigateur s'ouvre sur la page de résultats (Amazon, Google Maps, Booking, Fnac, Darty, Uber Eats, DuckDuckGo). La mémoire apprend celle d'un nouveau site à partir de `results_url`. `PILOTE_SEARCH_SHORTCUTS=0` coupe.
+- **Lecture directe** (`fast_read.py`) : le code lit le texte de la page de résultats dans le Chrome de l'agent et Llama 3.3 en extrait les options ; chaque nom et prix doit figurer sur la page, sinon l'option est écartée ; sans option vérifiée, l'agent H cherche comme avant. L'agent H démarre au panier, sur la page de résultats (testé sur Amazon jusqu'à la connexion, sans payer). `PILOTE_FAST_SEARCH=0` coupe.
+- **Train** : SNCF Connect n'a pas d'adresse de résultats ; l'agent H tape le trajet et s'arrête sur la liste, le code la lit. La saisie par le code a été écartée : SNCF a affiché sa vérification anti-robot pendant les essais (résolue à la main).
+- **Préparation pendant les questions** : l'orchestrateur ouvre déjà la page du site et lit la configuration de l'agent pendant que Pilote pose une question, et démarre l'agent pendant qu'il dit « Je cherche… ». Non mesuré en vrai.
+- Résultats (une mesure chacun) : train 268 s → 39 s, casque 43 s → 8 s, table au restaurant 244 s → 7 s. Couper le texte de la page n'a rien fait gagner. Héberger le modèle H en local n'a pas été retenu : le temps vient du calcul du modèle (≈ 10 s par action), pas du réseau.

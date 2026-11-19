@@ -67,3 +67,21 @@ Une ligne par commande, ajoutée automatiquement par orchestrator/agent_h/metric
 | 2026-11-19 00:44 |  | pilote-shopper | annulée | 91 | 9 | - |
 | 2026-11-19 00:49 |  | pilote-shopper | annulée | 208 | 9 | - |
 | 2026-11-19 09:18 |  | pilote-shopper | annulée | 247 | 22 | - |
+| 2026-11-19 09:34 | www.sncf-connect.com | pilote-shopper | annulée | 100 | 13 | - |
+| 2026-11-19 13:03 | www.sncf-connect.com | pilote-shopper | annulée | 265 | 25 | - |
+| 2026-11-19 13:04 |  | pilote-shopper | annulée | 47 | 4 | - |
+| 2026-11-19 13:08 |  | pilote-shopper | annulée | 239 | 28 | - |
+| 2026-11-19 13:10 | www.sncf-connect.com | pilote-shopper | annulée | 83 | 8 | - |
+| 2026-11-19 13:10 | www.amazon.fr | pilote-shopper | annulée | 26 | 2 | - |
+| 2026-11-19 13:11 | www.google.com | pilote-shopper | annulée | 37 | 5 | - |
+| 2026-11-19 13:12 | www.sncf-connect.com | pilote-shopper | annulée | 53 | 5 | - |
+| 2026-11-19 13:13 | www.amazon.fr | pilote-shopper | annulée | 26 | 2 | - |
+| 2026-11-19 13:13 | www.google.com | pilote-shopper | annulée | 30 | 1 | - |
+| 2026-11-19 13:18 | www.sncf-connect.com | pilote-shopper | annulée | 53 | 5 | - |
+| 2026-11-19 13:18 | www.amazon.fr | pilote-shopper | annulée | 27 | 2 | - |
+| 2026-11-19 13:23 | www.amazon.fr | pilote-shopper | annulée | 6 | ? | - |
+| 2026-11-19 13:23 | www.google.com | pilote-shopper | annulée | 6 | ? | - |
+| 2026-11-19 13:23 | www.google.com | pilote-shopper | annulée | 5 | ? | - |
+| 2026-11-19 13:27 | www.amazon.fr | pilote-shopper | annulée | 69 | 6 | - |
+| 2026-11-19 13:34 | www.sncf-connect.com | pilote-shopper | annulée | 71 | 2 | - |
+| 2026-11-19 13:37 | www.sncf-connect.com | pilote-shopper | annulée | 38 | 3 | - |

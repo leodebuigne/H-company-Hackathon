@@ -43,7 +43,7 @@ from hai_agents.tools import Tool, tool
 from orchestrator.contracts import Intent, Option, OrderSummary, SiteCard
 from orchestrator.ports import PaymentResult
 
-from . import local_chrome, prompts
+from . import fast_read, local_chrome, prompts, search_shortcuts
 from .base import (
     AgentError,
     ApprovalCallback,
@@ -62,7 +62,7 @@ from .models import (
     to_order_summary,
 )
 from .narration import actions_in, describe_action
-from .site_memory import SiteMemory, domain_of, merge_card, site_memory_from_env, starter_card
+from .site_memory import SiteMemory, domain_of, learn_search, merge_card, site_memory_from_env, with_starter
 from .watch import StepWatch, StuckCallback, screenshot_in
 
 OK_STATUSES = {"idle", "completed"}
@@ -126,7 +126,15 @@ class ShoppingAgent:
         self.order_id = ""  # UUID créé par checkout() ; recheck() le conserve
         self.agent_view_url: str | None = None
         self._site = ""
+        self.timings: dict[str, float] = {}  # instants (monotonic) du départ d'une commande, pour mesurer
+        self._prepared_url = ""  # page de départ déjà ouverte par prepare()
+        self._start_url = ""  # page ouverte au départ : l'accueil du site, ou ses résultats (adresse directe)
+        self._query = ""  # recherche tapée par l'adresse directe, pour apprendre celle d'un nouveau site
         self._session: Any = None
+        self._shortcut: Any = None
+        self.fast_timings: dict[str, float] = {}
+        self.last_fast_error = ""
+        self._shared_search = False  # train : l'agent tape la recherche, le code lit la liste
         self._site_card: SiteCard | None = None
         self._real_client = False
         self._portal: dict[str, Any] | None = None
@@ -250,7 +258,7 @@ class ShoppingAgent:
         mode["markdown"] = os.getenv("PILOTE_H_PAGE_TEXT", "").strip() != "0"
         environment: dict[str, Any] = {"kind": "web", "id": "browser", "host": "user_device", "mode": mode}
         if self._site:
-            environment["start_url"] = self._site
+            environment["start_url"] = self._start_url or self._site
         spec: dict[str, Any] = {
             "name": f"{agent['name']}-local",
             "description": agent.get("description") or "Agent de navigation de Pilote.",
@@ -282,7 +290,8 @@ class ShoppingAgent:
         if os.getenv("PILOTE_H_PAGE_TEXT", "").strip() != "0":
             environment["mode"] = {"type": "visual", "markdown": True}
         if self._site:
-            environment["start_url"] = self._site  # le navigateur s'ouvre directement sur le site
+            # Le navigateur s'ouvre directement sur le site, ou sur ses résultats (adresse directe)
+            environment["start_url"] = self._start_url or self._site
         # Coffre-fort H : H saisit les identifiants du site à la place de l'agent, qui ne les voit jamais.
         # Uniquement sur un navigateur cloud (limite du SDK H).
         if self._vault_id:
@@ -331,6 +340,7 @@ class ShoppingAgent:
                 if url := screenshot_in(event):
                     watch.saw_screenshot(url)
                 for name, args in actions_in(event):
+                    self.timings.setdefault("first_action", now)
                     watch.saw_action(name, args, now)
                     sentence = describe_action(name, args)
                     if sentence and sentence != last and self.on_progress is not None:
@@ -438,6 +448,10 @@ class ShoppingAgent:
         raise AgentError(f"Étape {phase} : aucune réponse de l'agent")
 
     async def _send(self, text: str, phase: str) -> AgentAnswer:
+        if self._session is None and self._intent is not None:
+            # Résultats lus directement : l'agent H démarre ici, sur la page de résultats déjà ouverte
+            await self._start_followup_session(text)
+            return await self._wait(phase)
         if self._session is None:
             raise AgentError("Session non démarrée : appelle start() d'abord.")
         if self._fresh_session_per_step:
@@ -461,6 +475,24 @@ class ShoppingAgent:
         # reprise suivante réutilise ce pilote mort (« Connection refused », mesuré le 2026-11-18). On
         # repart donc d'une session neuve à chaque étape ; le Chrome dédié garde la page.
         return self._browser_host == "user_device" and self._real_client and self._idle_timeout_s == 0
+
+    async def _start_followup_session(self, step: str) -> None:
+        client = await self._ensure_client()
+        spec = self._agent_spec()
+        if isinstance(spec, dict):  # ne pas rouvrir l'accueil : on continue depuis la page de résultats
+            spec["environments"][0].pop("start_url", None)
+        self._session = await client.start_session(
+            agent=spec,
+            messages=prompts.continue_message(self._intent, self._site, self._site_card, self._chosen, step),
+            answer_schema=AgentAnswer,
+            tools=self._tools(),
+            idempotency_key=uuid.uuid4().hex,
+            timezone="Europe/Paris",
+            **({"idle_timeout_s": self._idle_timeout_s} if self._idle_timeout_s else {}),
+        )
+        self._cursor = 0
+        with contextlib.suppress(Exception):
+            self.agent_view_url = getattr(await self._session.get(), "agent_view_url", None)
 
     async def _restart_session(self, step: str) -> None:
         await asyncio.to_thread(local_chrome.ensure_page, self._site)
@@ -489,13 +521,46 @@ class ShoppingAgent:
 
     # --- interface publique ----------------------------------------------------------
 
-    async def start(self, intent: Intent, site_card: SiteCard | None = None) -> None:
+    async def _plan_start(self, intent: Intent, site_card: SiteCard | None) -> tuple[SiteCard | None, Any]:
+        """Site, fiche du site et page de départ de la demande (sans rien ouvrir)."""
         self._site = site_for(intent)
+        # Site choisi d'office si aucun n'est configuré (Amazon, Google Maps…), fiche du site, puis adresse
+        # directe de la page de résultats quand on la connaît (search_shortcuts)
+        domain = domain_of(self._site) or search_shortcuts.default_domain(intent) or ""
+        if site_card is None and domain:
+            site_card = with_starter(await self._memory.get(domain), domain)
+        shortcut = search_shortcuts.plan(intent, domain_of(self._site), site_card)
+        if shortcut is not None and not self._site and shortcut.domain != "duckduckgo.com":
+            self._site = f"https://{shortcut.domain}"  # un moteur de recherche n'est pas le site de l'achat
+        self._start_url = shortcut.url if shortcut else self._site
+        self._query = search_shortcuts.query_for(intent)
+        return site_card, shortcut
+
+    async def _open_start_page(self) -> None:
         self._real_client = self._real_client or self._client is None  # client simulé dans les tests
         if self._browser_host == "user_device" and self._real_client:
             # Sinon le SDK lance Chrome sans --force-device-scale-factor=1 : clics décalés sur Retina
-            await asyncio.to_thread(local_chrome.ensure, self._site)
-            await asyncio.to_thread(local_chrome.fresh_page, self._site)
+            await asyncio.to_thread(local_chrome.ensure, self._start_url)
+            await asyncio.to_thread(local_chrome.fresh_page, self._start_url)
+
+    async def prepare(self, intent: Intent) -> None:
+        """Pendant que Pilote pose ses questions : ouvre déjà la page de départ (résultats ou accueil du site)
+        et lit la configuration de l'agent du portail. start() n'a plus qu'à créer la session H.
+        Aucune session H n'est créée ici : rien n'est facturé si la personne annule."""
+        await self._plan_start(intent, None)
+        if not self._start_url:
+            return
+        await self._open_start_page()
+        self._prepared_url = self._start_url
+        await self._load_portal_agent(await self._ensure_client())
+
+    async def start(self, intent: Intent, site_card: SiteCard | None = None) -> None:
+        self.timings = {"start": time.monotonic()}
+        site_card, shortcut = await self._plan_start(intent, site_card)
+        if self._prepared_url != self._start_url:  # page déjà ouverte par prepare() pendant les questions
+            await self._open_start_page()
+        self._prepared_url = ""
+        self.timings["chrome"] = time.monotonic()
         client = await self._ensure_client()
         self._intent = intent
         self.order_id = ""
@@ -503,11 +568,36 @@ class ShoppingAgent:
         self._tool_cache.clear()
         self._paying = False
         domain = domain_of(self._site)
-        if site_card is None:
-            site_card = await self._memory.get(domain) or starter_card(domain)
         self._site_card = site_card
         await self._load_portal_agent(client)
         self._metrics = RunMetrics(site=domain, agent=self._agent_name or "inline", started=time.monotonic())
+        self._session = None
+        self._shared_search = False
+        self._shortcut = shortcut
+        self.fast_timings: dict[str, float] = {}
+        if self._can_read_directly(shortcut):
+            return  # la recherche lira la page elle-même ; l'agent H démarre au panier (ou en repli)
+        # Train (SNCF Connect : pas d'adresse de résultats) : l'agent tape la recherche, le code lit la liste
+        self._shared_search = (
+            shortcut is None
+            and intent.category == "train"
+            and self._browser_host == "user_device"
+            and self._real_client
+            and fast_read.enabled()
+        )
+        await self._start_search_session(intent, site_card, shortcut)
+
+    def _can_read_directly(self, shortcut: Any) -> bool:
+        return (
+            shortcut is not None
+            and shortcut.domain != "duckduckgo.com"
+            and self._browser_host == "user_device"
+            and self._real_client
+            and fast_read.enabled()
+        )
+
+    async def _start_search_session(self, intent: Intent, site_card: SiteCard | None, shortcut: Any) -> None:
+        client = await self._ensure_client()
         self._session = await client.start_session(
             agent=self._agent_spec(),
             messages=prompts.search_message(
@@ -516,6 +606,8 @@ class ShoppingAgent:
                 site_card,
                 with_instructions=bool(self._agent_name) and not self._mirror_portal_agent,
                 with_vault=self._vault_id is not None,
+                shortcut=shortcut,
+                stop_at_results=self._shared_search,
             ),
             answer_schema=AgentAnswer,
             tools=self._tools(),
@@ -523,6 +615,7 @@ class ShoppingAgent:
             timezone="Europe/Paris",
             **({"idle_timeout_s": self._idle_timeout_s} if self._idle_timeout_s else {}),
         )
+        self.timings["session"] = time.monotonic()
         self._cursor = 0
         try:
             session = await self._session.get()
@@ -569,9 +662,58 @@ class ShoppingAgent:
         return f"{reply} (Source : {source}.)" if source else reply
 
     async def search(self) -> list[Option]:
+        if self._session is None and self._intent is not None:
+            # Lecture directe de la page de résultats (fast_read) ; en cas d'échec, l'agent H cherche
+            try:
+                found, self.fast_timings = await fast_read.find_options(
+                    self._shortcut.domain,
+                    self._intent,
+                    prompts.intent_text(self._intent, self._site),
+                    prompts.max_options(),
+                )
+                self._options = to_options(found)
+                return self._options
+            except Exception as error:
+                self.fast_timings = {"repli": 1.0}
+                log_reason = f"{type(error).__name__}: {error}"[:120]
+                self.last_fast_error = log_reason
+                await self._start_search_session(self._intent, self._site_card, self._shortcut)
         answer = await self._wait("search")
+        if self._shared_search and not answer.options:
+            answer = await self._read_shared_results(answer)
         self._options = to_options(answer.options)
+        if self._options:
+            await self._learn_search_url(answer.results_url)
         return self._options
+
+    async def _read_shared_results(self, answer: AgentAnswer) -> AgentAnswer:
+        """L'agent s'est arrêté sur la liste : le code la lit (fast_read). Sinon, l'agent la lit lui-même."""
+        try:
+            found, self.fast_timings = await fast_read.find_options(
+                domain_of(self._site),
+                self._intent,
+                prompts.intent_text(self._intent, self._site),
+                prompts.max_options(),
+            )
+            return answer.model_copy(update={"options": found})
+        except Exception as error:
+            self.fast_timings = {"repli": 1.0}
+            self.last_fast_error = f"{type(error).__name__}: {error}"[:120]
+            return await self._send(prompts.read_results_message(), "search")
+
+    async def _learn_search_url(self, results_url: str | None) -> None:
+        """Nouveau site : retient son adresse de recherche directe pour aller droit aux résultats la
+        prochaine fois. Jamais bloquant : la mémoire est un bonus."""
+        domain = domain_of(results_url or "")
+        if not results_url or not self._query or not domain or domain in search_shortcuts.BUILTIN:
+            return
+        template = search_shortcuts.template_from(results_url, self._query)
+        try:
+            old = await self._memory.get(domain)
+            if template and search_shortcuts.learned_template(old) != template:
+                await self._memory.put(learn_search(old, domain, template))
+        except Exception:
+            pass
 
     async def refine(self, message: str) -> list[Option]:
         answer = await self._send(prompts.refine_message(message), "refine")
@@ -656,7 +798,9 @@ class ShoppingAgent:
         return answer.payment_result
 
     async def cancel(self) -> None:
-        if self._session is not None:
+        if self._session is None:
+            await self._finish("annulée", "-")
+        else:
             try:
                 await self._session.cancel()
             finally:
