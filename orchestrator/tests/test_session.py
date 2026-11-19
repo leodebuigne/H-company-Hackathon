@@ -6,6 +6,7 @@ Chaque message envoyé aux écrans est vérifié contre contracts/schemas/ws-mes
 import asyncio
 import datetime as dt
 import json
+import uuid
 from typing import Any
 
 import pytest
@@ -13,6 +14,7 @@ import pytest
 from orchestrator.agent_h.fake import FakeShoppingAgent
 from orchestrator.ai.fake import FakeAI
 from orchestrator.config import Settings
+from orchestrator.contracts import Fee, Option, OrderItem, OrderSummary
 from orchestrator.session import WAITING, Session, merge_answer
 
 from .test_contracts import _validator
@@ -304,15 +306,55 @@ async def test_direct_buy_asks_once_for_a_paid_ticket_then_says_it():
         assert "done" in h.states()
 
 
-async def test_direct_buy_refuses_a_cart_more_expensive_than_the_choice():
+async def test_direct_buy_explains_a_higher_total_and_lets_the_person_decide():
     async with Harness(direct_buy=True, agent={"price_change_on_recheck": True}) as h:
         await h.text("Un train de Paris pour Lille demain après 14 h")
         await h.wait("proposing")
         await h.text("La deuxième")
-        await h.wait("confirm_1")
-        await h.confirm(True)
-        await h.wait_said("Je n'ai pas acheté")
-        assert "au lieu de" in h.said() and "C'est acheté" not in h.said()
+        await h.wait_said("le total est plus cher")
+        assert "au lieu de" in h.said() and "au total ?" in h.said()
+        await h.confirm(False)
+        await h.wait_said("je n'achète rien")
+        assert h.paid == 0 and "C'est acheté" not in h.said()
+
+
+def test_the_price_breakdown_names_each_fee():
+    from orchestrator.session import price_breakdown
+
+    option = Option(
+        id="o1", rank=1, title="Burger", price_cents=500, currency="EUR", rating=None,
+        description=None, conditions=None, details={}, url=None,
+    )  # fmt: skip
+    summary = OrderSummary(
+        order_id=str(uuid.uuid4()),
+        site="www.ubereats.com",
+        page_url="https://www.ubereats.com/checkout",
+        items=[OrderItem(name="Burger", quantity=1, unit_price_cents=500, total_cents=500, options=[])],
+        fees=[
+            Fee(label="Frais de livraison", amount_cents=99),
+            Fee(label="Frais de service", amount_cents=549),
+        ],
+        total_cents=1148,
+        currency="EUR",
+        when_label=None,
+        conditions=None,
+        payment_button_label="Commander",
+        hash="0" * 64,
+        read_at=dt.datetime.now(dt.UTC),
+    )
+    said = price_breakdown(option, summary)
+    assert said == (
+        "Attention, le total est plus cher : 11 euros 48. Il comprend Burger à 5 euros, comme annoncé, "
+        "frais de livraison : 99 centimes, frais de service : 5 euros 49."
+    )
+
+
+async def test_direct_buy_asks_the_code_only_once_the_agent_is_at_the_pay_button():
+    async with Harness(direct_buy=True, purchase_code="472") as h:
+        await _to_code_prompt(h)
+        assert h.session._direct_option is not None  # dans l'étape d'achat : l'agent a le panier
+        assert "juste avant de payer" in h.said()
+        assert h.said().index("juste avant de payer") < h.said().index("dites votre code")
 
 
 async def test_direct_buy_saying_no_buys_nothing():
@@ -527,7 +569,9 @@ async def test_lost_contact_after_payment_approval_never_says_nothing_was_bought
     from orchestrator.session import UNSURE
 
     async with Harness(direct_buy=True, purchase_code="472") as h:
-        await _to_code_prompt(h)
+        # Le code se demande au bouton de paiement, pendant buy() : l'agent est remplacé avant le choix
+        await h.text("Un train de Paris pour Lille demain après 14 h")
+        await h.wait("proposing")
         agent = h.agents[-1]
 
         async def buy_then_lose_contact():
@@ -536,6 +580,9 @@ async def test_lost_contact_after_payment_approval_never_says_nothing_was_bought
             raise AgentError("coupure réseau avec H")
 
         agent.buy = buy_then_lose_contact  # type: ignore[method-assign]
+        await h.text("La deuxième")
+        await h.wait("confirm_1")
+        assert "dites votre code à 3 chiffres" in h.said()
         await h.text("472")
         await h.wait_said("Je ne sais pas si l'achat est passé")
         assert UNSURE in h.said() and "Rien n'a été acheté" not in h.said()
@@ -676,3 +723,115 @@ async def test_a_screen_opened_midway_gets_the_recent_conversation_before_the_st
         assert kinds[0] == "ready" and "transcript" in kinds
         assert kinds.index("transcript") < kinds.index("state")  # rejoué avant l'état courant
         assert any("Paris pour Lille" in m["text"] for m in late if m["type"] == "transcript")
+
+        assert "confirm_2" not in h.states()
+
+
+# --- carte dictée quand le site n'en a pas d'enregistrée ------------------------------
+
+VISA_TEST = "4111111111111111"  # numéro de test public
+
+
+async def _dictate_card(h: Harness, save: bool) -> None:
+    await h.text("Un train de Paris pour Lille demain après 14 h")
+    await h.wait("proposing")
+    await h.text("La deuxième")
+    await h.wait("confirm_1")
+    await h.confirm(True)  # « J'achète bien … ? »
+    await h.wait_said("Dites le numéro de la carte")
+    await h.wait("confirm_1")
+    await h.text("4111 1111 1111 1111")
+    await h.wait_said("La date d'expiration")
+    await h.wait("confirm_1")
+    await h.text("zéro trois deux sept")
+    await h.wait_said("Le cryptogramme")
+    await h.wait("confirm_1")
+    await h.text("un deux trois")
+    await h.wait_said("C'est bien ça ?")
+    await h.wait("confirm_1")
+    assert "finit par 1 1 1 1" in h.said()
+    await h.confirm(True)
+    await h.wait_said("Voulez-vous enregistrer cette carte sur SNCF Connect")
+    await h.wait("confirm_1")
+    await h.confirm(save)
+
+
+async def test_dictated_card_pays_and_is_saved_on_the_site_only_if_asked(tmp_path):
+    journal = tmp_path / "journal.jsonl"
+    async with Harness(direct_buy=True, agent={"needs_card": True}, journal_path=str(journal)) as h:
+        await _dictate_card(h, save=True)
+        await h.wait_said("C'est acheté")
+        agent = h.agents[0]
+        assert agent.card_used.number == VISA_TEST and agent.card_used.expiry == "0327"
+        assert "Votre carte est maintenant enregistrée sur le site." in h.said()
+        import json
+
+        shown = json.dumps(h.messages, ensure_ascii=False)
+        assert VISA_TEST not in shown and "4111 1111" not in shown, "le numéro ne part vers aucun écran"
+        assert all("4111" not in turn["text"] for turn in h.session.history)
+        assert "4111" not in journal.read_text() and '"save_on_site": true' in journal.read_text()
+        typed = [m["text"] for m in h.of("transcript") if m["role"] == "user"]
+        assert typed.count("•••") >= 3
+
+
+async def test_dictated_card_not_saved_when_the_user_says_no():
+    async with Harness(direct_buy=True, agent={"needs_card": True}) as h:
+        await _dictate_card(h, save=False)
+        await h.wait_said("C'est acheté")
+        assert "La carte n'a pas été enregistrée sur le site." in h.said()
+
+
+async def test_saying_no_instead_of_the_card_number_buys_nothing():
+    async with Harness(direct_buy=True, agent={"needs_card": True}) as h:
+        await h.text("Un train de Paris pour Lille demain après 14 h")
+        await h.wait("proposing")
+        await h.text("La deuxième")
+        await h.wait("confirm_1")
+        await h.confirm(True)
+        await h.wait_said("Dites le numéro de la carte")
+        await h.wait("confirm_1")
+        await h.text("non")
+        await h.wait_said("Rien n'a été payé")
+        assert "C'est acheté" not in h.said()
+
+
+# --- achat sur le site choisi par la personne -------------------------------------------
+
+
+def test_pilote_asks_for_the_site_only_when_needed(monkeypatch):
+    from orchestrator.session import Session, _intent
+
+    monkeypatch.delenv("PILOTE_SITE_BOUTIQUE", raising=False)
+    shop = _intent("new_request", "un aspirateur Dyson V15").model_copy(
+        update={"category": "boutique", "object": "aspirateur Dyson V15"}
+    )
+    assert Session._needs_site(shop)
+    assert not Session._needs_site(shop.model_copy(update={"text": "un aspirateur Dyson V15 chez Darty"}))
+    assert not Session._needs_site(shop.model_copy(update={"details": {"site": "Vinted"}}))
+    assert not Session._needs_site(shop.model_copy(update={"category": "train"}))
+
+
+def test_the_answer_to_the_site_question_fills_the_site():
+    from orchestrator.agent_h.shops import resolve_site
+    from orchestrator.session import _intent
+
+    pending = _intent("new_request", "un pull").model_copy(
+        update={"category": "boutique", "object": "pull", "missing": ["details.site"]}
+    )
+    merged = merge_answer(pending, _intent("other", "Petit Bateau"))
+    choice = resolve_site(merged)
+    assert choice is not None and choice.name == "Petit Bateau" and choice.lookup
+
+
+def test_the_site_is_asked_for_a_shop_but_never_for_a_reservation_or_a_train(monkeypatch):
+    from orchestrator.session import Session, _intent
+
+    monkeypatch.delenv("PILOTE_SITE_BOUTIQUE", raising=False)
+    base = _intent("new_request", "une lampe")
+    shop = base.model_copy(update={"category": "boutique", "object": "lampe"})
+    assert Session._needs_site(shop) is True
+    named = shop.model_copy(update={"text": "une lampe chez Zalando"})
+    assert Session._needs_site(named) is False
+    table = base.model_copy(update={"category": "reservation", "object": "restaurant italien"})
+    assert Session._needs_site(table) is False
+    assert Session._needs_site(base.model_copy(update={"category": "train"})) is False

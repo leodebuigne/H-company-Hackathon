@@ -29,6 +29,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import dataclasses
 import logging
 import os
 import re
@@ -36,6 +37,7 @@ import time
 import uuid
 from collections.abc import Awaitable, Callable
 from typing import Any
+from urllib.parse import quote, quote_plus, urlparse
 
 import httpx
 from hai_agents import AsyncClient
@@ -53,6 +55,7 @@ from .base import (
     PaymentDenied,
     UnapprovedPurchase,
 )
+from .card import CardField, NewCard, type_into_focused_field
 from .metrics import RunMetrics, append_result
 from .models import (
     AgentAnswer,
@@ -63,6 +66,8 @@ from .models import (
     to_order_summary,
 )
 from .narration import actions_in, describe_action
+from .path_memory import Briefing, PathMemory, briefing_text
+from .shops import SiteChoice, resolve_site, search_query, site_name
 from .site_memory import SiteMemory, card_for_order, domain_of, merge_card, site_memory_from_env, starter_card
 from .watch import StepWatch, StuckCallback, screenshot_in
 
@@ -72,7 +77,12 @@ OK_STATUSES = {"idle", "completed"}
 
 # Site visé par catégorie d'achat (docs/sites.md). Le plan B remplace ces adresses par celles des
 # faux sites avec PILOTE_SITE_TRAIN et PILOTE_SITE_REPAS.
-DEFAULT_SITES = {"train": "https://www.sncf-connect.com", "repas": "https://www.ubereats.com/fr"}
+# Sites par défaut quand la personne n'en nomme pas : seulement les trains et les repas. Pour un autre
+# achat, c'est elle qui choisit le site (la session le lui demande s'il manque).
+DEFAULT_SITES = {
+    "train": "https://www.sncf-connect.com",
+    "repas": "https://www.ubereats.com/fr",
+}
 
 
 NETWORK_RETRIES = 5  # coupures réseau tolérées d'affilée en attendant la réponse de l'agent
@@ -86,14 +96,39 @@ PLAN_B_SITES = {
 }
 
 
-def site_for(intent: Intent) -> str:
-    """Adresse du site pour la demande, ou "" si l'agent doit le choisir ; AgentError sans catégorie."""
+def site_choice(intent: Intent) -> SiteChoice:
+    """Site d'achat : celui que la personne a donné (lien, adresse, nom), sinon le site par défaut de la
+    catégorie (train, repas). AgentError si aucun site n'est connu : la session doit le demander d'abord."""
     category = intent.category
     if category is None:
         raise AgentError("Catégorie d'achat inconnue : l'orchestrateur doit la demander d'abord.")
-    # Sans site configuré (une boutique, par exemple), l'agent choisit lui-même le site : "".
+    given = resolve_site(intent)
+    if given is not None:
+        return given
     sites = PLAN_B_SITES if os.getenv("PILOTE_PLAN_B", "").strip() == "1" else DEFAULT_SITES
-    return os.getenv(f"PILOTE_SITE_{category.upper()}") or sites.get(category) or ""
+    site = os.getenv(f"PILOTE_SITE_{category.upper()}") or sites.get(category)
+    if site:
+        return SiteChoice(url=site, name=site_name(site))
+    if category == "reservation":  # restaurant, rendez-vous : l'agent choisit lui-même où chercher
+        return SiteChoice(url="", name="")
+    raise AgentError("Sur quel site faut-il acheter ? Aucun site n'a été donné.")
+
+
+def site_for(intent: Intent) -> str:
+    """Adresse du site pour la demande (voir site_choice)."""
+    return site_choice(intent).url
+
+
+def start_url_for(intent: Intent, site: str) -> str:
+    """Page d'arrivée : directement les résultats quand l'adresse de recherche du site est sûre."""
+    query = search_query(intent)
+    if urlparse(site).path.strip("/") and "ubereats.com" not in site and "ikea.com" not in site:
+        return site  # lien direct (produit ou page du site) : on l'ouvre tel quel
+    if "amazon." in site and query:
+        return f"{site.rstrip('/')}/s?k={quote_plus(query)}"
+    if "ubereats.com" in site and intent.object:
+        return f"{site.rstrip('/')}/search?q={quote(intent.object)}"
+    return site
 
 
 def _fit_effort(spec: dict[str, Any]) -> dict[str, Any]:
@@ -125,6 +160,9 @@ class ShoppingAgent:
         self._approval_callback = approval_callback
         self._need_human_callback = need_human_callback
         self._memory = memory or site_memory_from_env()
+        # Mémoire des chemins (fichier local) : ce qui marche, ce qui rate, réessais espacés.
+        self._paths: PathMemory | None = PathMemory.from_env()
+        self._briefing: Briefing | None = None
         self._timeout = step_timeout_s
         self._record = record_metrics
         self._max_total_eur = (
@@ -138,6 +176,8 @@ class ShoppingAgent:
         self.order_id = ""  # UUID créé par checkout() ; recheck() le conserve
         self.agent_view_url: str | None = None
         self._site = ""
+        self._start_url = ""  # page d'arrivée : les résultats quand c'est possible (start_url_for)
+        self._site_note = ""  # consigne sur le site : lien produit, ou site officiel à trouver
         self._session: Any = None
         self._site_card: SiteCard | None = None
         self._real_client = False
@@ -148,12 +188,21 @@ class ShoppingAgent:
         self.on_progress: Callable[[str], Awaitable[None]] | None = None
         # Rappelée avec la dernière capture quand l'agent est bloqué : renvoie un conseil, ou None.
         self.on_stuck: StuckCallback | None = None
+        # Carte dictée quand le site n'en a pas : posé par l'orchestrateur. kind = "card" (numéro, date,
+        # cryptogramme, et souhait d'enregistrement sur le site) ou "holder" (nom du titulaire).
+        self.on_card_needed: Callable[[str], Awaitable[Any]] | None = None
+        self._card: NewCard | None = None  # effacée à la fin de buy(), pay() et cancel()
+        self._save_card_on_site = False
+        self.last_card_saved: bool | None = None  # le site a-t-il enregistré la carte (dernier achat)
         self._cursor = 0
         self._intent: Intent | None = None
         self._options: list[Option] = []
         self._chosen: Option | None = None
         self._paying = False
         self._pay_denied = False  # le garde-fou a refusé pendant pay()
+        # L'agent a atteint le bouton de paiement (récapitulatif lisible envoyé) : le chemin d'achat est
+        # bon et va en mémoire, même si la personne refuse ensuite ou se trompe de code.
+        self._reached_payment = False
         self._tool_cache: dict[tuple[str, str], str] = {}
         self._metrics: RunMetrics | None = None
         self._last_answer: AgentAnswer | None = None
@@ -173,7 +222,108 @@ class ShoppingAgent:
             """À appeler en cas de CAPTCHA, de cryptogramme demandé ou de page de connexion (pas pour la validation dans l'application bancaire : celle-ci, attends-la). Attends la réponse : "resolved" (un humain a fait le geste, continue) ou "abort" (arrête-toi)."""
             return await agent._ask_human(reason)
 
-        return [request_payment_approval, need_human]
+        @tool(name="request_card")
+        async def request_card() -> str:
+            """À appeler sur la page de paiement si aucune carte enregistrée n'est utilisable (formulaire de carte vide, « Ajouter une carte »). Pilote fait dicter la carte à l'utilisateur. Renvoie "ready save_on_site=yes" ou "ready save_on_site=no" (puis remplis chaque champ avec fill_card_field), ou "abort" (arrête-toi sans payer)."""
+            return await agent._request_card()
+
+        @tool(name="fill_card_field")
+        async def fill_card_field(field: CardField) -> str:
+            """Après request_card : clique d'abord dans un champ du formulaire de carte, puis appelle cet outil avec son nom (number, expiry, expiry_month, expiry_year, cvc, holder). Pilote tape lui-même la valeur ; tu ne la connais pas et ne dois jamais la lire ni la recopier. Renvoie "ok" ou la raison du refus."""
+            return await agent._fill_card_field(field)
+
+        return [request_payment_approval, need_human, request_card, fill_card_field]
+
+    async def _request_card(self) -> str:
+        """Fait dicter la carte (une fois par paiement). La carte reste dans ce processus, jamais chez H."""
+        if not self._paying:
+            return "abort"  # on ne demande une carte qu'à l'étape d'achat ou de paiement
+        if self._card is not None:
+            return f"ready save_on_site={'yes' if self._save_card_on_site else 'no'}"
+        if self._browser_host != "user_device" or self.on_card_needed is None:
+            return "abort"  # sans le Chrome local, on ne peut pas taper la carte sans passer par H
+        try:
+            result = await self.on_card_needed("card")
+        except Exception:
+            result = None
+        if not result:
+            return "abort"
+        card, save = result
+        self._card, self._save_card_on_site = card, bool(save)
+        return f"ready save_on_site={'yes' if self._save_card_on_site else 'no'}"
+
+    async def _fill_card_field(self, field: Any) -> str:
+        """Tape une valeur de la carte dans le champ qui a le focus. N'en renvoie jamais la valeur."""
+        card = self._card
+        if not self._paying or card is None:
+            return "refusé : appelle d'abord request_card"
+        name = str(field)
+        if name == "holder" and not card.holder and self.on_card_needed is not None:
+            try:
+                holder = await self.on_card_needed("holder")
+            except Exception:
+                holder = None
+            if holder:
+                card = self._card = dataclasses.replace(card, holder=holder)
+        value = card.value(name)  # type: ignore[arg-type]
+        if not value:
+            return f"refusé : champ inconnu ou vide ({name})"
+        try:
+            await type_into_focused_field(value, self._site)
+        except Exception as error:  # jamais la valeur dans le message
+            self._log_card_error(name, error)
+            return "erreur : saisie impossible, clique dans le champ puis réessaie"
+        return "ok"
+
+    @staticmethod
+    def _log_card_error(name: str, error: Exception) -> None:
+        import logging
+
+        logging.getLogger(__name__).warning(
+            "Saisie de carte impossible (%s) : %s", name, type(error).__name__
+        )
+
+    def _learn(self, answer: AgentAnswer, phase: str) -> None:
+        """Bilan des chemins de cette étape dans la mémoire des sites. Une erreur ici ne bloque jamais l'achat."""
+        if self._paths is None or self._briefing is None:
+            return
+        searching = phase in ("search", "refine")
+        ok = (
+            (searching and bool(answer.options))
+            or (phase in ("checkout", "recheck") and answer.order_summary is not None)
+            or (phase in ("buy", "pay") and (answer.payment_result is not None or self._reached_payment))
+        )
+        known = self._briefing.ids
+        feedback = [(f.id.strip("[] "), f.worked) for f in answer.tips_feedback if f.id.strip("[] ") in known]
+        learned = []
+        # Les valeurs de cette commande (villes, plat…) ne doivent pas rester dans la mémoire.
+        values: dict[str, str] = {}
+        if self._intent is not None:
+            names = {"origin": "<ville de départ>", "destination": "<ville d'arrivée>"}
+            for key, value in (self._intent.details or {}).items():
+                if value and len(str(value)) >= 3:
+                    values[str(value)] = names.get(key, f"<{key}>")
+            if self._intent.object and len(self._intent.object) >= 3:
+                values[self._intent.object] = "<plat>" if self._intent.category == "repas" else "<objet>"
+        for tip in answer.new_tips:
+            for value, placeholder in sorted(values.items(), key=lambda kv: -len(kv[0])):
+                tip.text = re.sub(re.escape(value), placeholder, tip.text, flags=re.IGNORECASE)
+            kind = (
+                "raccourci"
+                if "racc" in tip.kind.lower()
+                else "piège"
+                if "pi" in tip.kind.lower()
+                else "étape"
+            )
+            buying = any(w in tip.phase.lower() for w in ("ach", "pai", "panier"))
+            learned.append((tip.text, kind, "achat" if buying or not searching else "recherche"))
+        try:
+            self._paths.record(domain_of(self._site), feedback, learned, ok)  # type: ignore[arg-type]
+        except Exception:
+            pass
+
+    def _forget_card(self) -> None:
+        self._card, self._save_card_on_site = None, False
 
     async def _decide_payment(self, summary: Any) -> str:
         """Décision de l'outil request_payment_approval. Tout ce qui est douteux donne "denied"."""
@@ -190,6 +340,7 @@ class ShoppingAgent:
             self.last_denial_reason = "le récapitulatif du panier était illisible"
             self._pay_denied = self._pay_denied or self._paying
             return "denied"  # récapitulatif illisible : on ne paie pas
+        self._reached_payment = self._reached_payment or self._paying
         key = ("pay", order.hash)
         if key in self._tool_cache:  # appels répétés pour la même action : même réponse
             return self._tool_cache[key]
@@ -262,7 +413,7 @@ class ShoppingAgent:
         mode["markdown"] = os.getenv("PILOTE_H_PAGE_TEXT", "").strip() != "0"
         environment: dict[str, Any] = {"kind": "web", "id": "browser", "host": "user_device", "mode": mode}
         if self._site:
-            environment["start_url"] = self._site
+            environment["start_url"] = self._start_url or self._site
         spec: dict[str, Any] = {
             "name": f"{agent['name']}-local",
             "description": agent.get("description") or "Agent de navigation de Pilote.",
@@ -296,7 +447,9 @@ class ShoppingAgent:
         if os.getenv("PILOTE_H_PAGE_TEXT", "").strip() != "0":
             environment["mode"] = {"type": "visual", "markdown": True}
         if self._site:
-            environment["start_url"] = self._site  # le navigateur s'ouvre directement sur le site
+            environment["start_url"] = (
+                self._start_url or self._site
+            )  # le navigateur s'ouvre directement sur le site
         # Coffre-fort H : H saisit les identifiants du site à la place de l'agent, qui ne les voit jamais.
         # Uniquement sur un navigateur cloud (limite du SDK H).
         if self._vault_id:
@@ -434,6 +587,7 @@ class ShoppingAgent:
                     else AgentAnswer.model_validate(result.answer)
                 )
                 self._last_answer = answer
+                self._learn(answer, phase)
                 if answer.payment_result is not None and not self._paying:
                     # Achat cliqué hors de pay() : on le signale au lieu de le prendre pour une erreur
                     await self._finish("achat hors étape paiement", answer.payment_result, answer)
@@ -488,7 +642,14 @@ class ShoppingAgent:
             spec["environments"][0].pop("start_url", None)
         self._session = await client.start_session(
             agent=spec,
-            messages=prompts.continue_message(self._intent, self._site, self._site_card, self._chosen, step),
+            messages=prompts.continue_message(
+                self._intent,
+                self._site,
+                self._site_card,
+                self._chosen,
+                step,
+                memory=briefing_text(self._briefing),
+            ),
             answer_schema=AgentAnswer,
             tools=self._tools(),
             idempotency_key=uuid.uuid4().hex,
@@ -503,13 +664,16 @@ class ShoppingAgent:
 
     # --- interface publique ----------------------------------------------------------
 
-    async def start(self, intent: Intent, site_card: SiteCard | None = None) -> None:
-        self._site = site_for(intent)
+    async def start(self, intent: Intent, site_card: SiteCard | None = None, site: str | None = None) -> None:
+        choice = SiteChoice(url=site, name=site_name(site)) if site else site_choice(intent)
+        self._site = choice.url
+        self._start_url = start_url_for(intent, self._site)
+        self._site_note = prompts.site_note(choice)
         self._real_client = self._real_client or self._client is None  # client simulé dans les tests
         if self._browser_host == "user_device" and self._real_client:
             # Sinon le SDK lance Chrome sans --force-device-scale-factor=1 : clics décalés sur Retina
-            await asyncio.to_thread(local_chrome.ensure, self._site)
-            await asyncio.to_thread(local_chrome.fresh_page, self._site)
+            await asyncio.to_thread(local_chrome.ensure, self._start_url)
+            await asyncio.to_thread(local_chrome.fresh_page, self._start_url)
         client = await self._ensure_client()
         self._intent = intent
         self.order_id = ""
@@ -520,6 +684,8 @@ class ShoppingAgent:
         if site_card is None and domain:  # réservation sans site fixe : pas de fiche (sinon clé vide)
             site_card = card_for_order(await self._memory.get(domain), starter_card(domain))
         self._site_card = site_card
+        if self._paths is not None and not choice.lookup:  # site encore inconnu : pas de mémoire pour Bing
+            self._briefing = await asyncio.to_thread(self._paths.begin_visit, domain)
         await self._load_portal_agent(client)
         self._metrics = RunMetrics(site=domain, agent=self._agent_name or "inline", started=time.monotonic())
         self._session = await client.start_session(
@@ -530,6 +696,8 @@ class ShoppingAgent:
                 site_card,
                 with_instructions=bool(self._agent_name) and not self._mirror_portal_agent,
                 with_vault=self._vault_id is not None,
+                memory=briefing_text(self._briefing),
+                note=self._site_note,
             ),
             answer_schema=AgentAnswer,
             tools=self._tools(),
@@ -623,7 +791,7 @@ class ShoppingAgent:
 
     async def pay(self) -> PaymentResult:
         """Clique sur le bouton de paiement ; la validation se fait dans l'application bancaire."""
-        self._paying, self._pay_denied = True, False
+        self._paying, self._pay_denied, self._reached_payment = True, False, False
         try:
             answer = await self._send(prompts.pay_message(), "pay")
         except NeedsHuman as blocked:
@@ -634,6 +802,7 @@ class ShoppingAgent:
             raise PaymentDenied(str(blocked)) from blocked
         finally:
             self._paying = False
+            self._forget_card()  # la carte dictée n'est gardée que le temps du paiement
         if answer.payment_result is None or self._pay_denied:
             await self._finish("paiement non effectué", "-")
             raise PaymentDenied(
@@ -650,7 +819,8 @@ class ShoppingAgent:
             self.order_id = str(uuid.uuid4())
         self.last_payment_message = None
         self.last_denial_reason = None
-        self._paying, self._pay_denied = True, False
+        self.last_card_saved = None
+        self._paying, self._pay_denied, self._reached_payment = True, False, False
         try:
             answer = await self._send(prompts.buy_message(self._chosen), "buy")
         except NeedsHuman as blocked:
@@ -660,16 +830,19 @@ class ShoppingAgent:
             raise PaymentDenied(str(blocked)) from blocked
         finally:
             self._paying = False
+            self._forget_card()  # la carte dictée n'est gardée que le temps du paiement
         if answer.payment_result is None or self._pay_denied:
             await self._finish("achat non effectué", "-")
             raise PaymentDenied(
                 self.last_denial_reason or answer.blocked_reason or "L'agent n'a pas pu acheter."
             )
         self.last_payment_message = answer.payment_message
+        self.last_card_saved = answer.card_saved_on_site
         await self._finish("achat direct", answer.payment_result, answer)
         return answer.payment_result
 
     async def cancel(self) -> None:
+        self._forget_card()
         if self._session is not None:
             try:
                 await self._session.cancel()

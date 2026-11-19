@@ -205,8 +205,81 @@ def test_site_for_uses_category_and_env_override(monkeypatch):
 def test_site_for_refuses_unknown_category():
     with pytest.raises(AgentError):
         site_for(PIZZA.model_copy(update={"category": None}))
-    # Sans site configuré (une boutique), l'agent choisit lui-même le site.
-    assert site_for(PIZZA.model_copy(update={"category": "boutique"})) == ""
+    with pytest.raises(AgentError):  # boutique : pas de site par défaut, la session demande lequel
+        site_for(PIZZA.model_copy(update={"category": "boutique"}))
+    # Réservation (restaurant, rendez-vous) : l'agent choisit lui-même où chercher
+    assert site_for(PIZZA.model_copy(update={"category": "reservation"})) == ""
+
+
+# --- recherche rapide généralisée et boutiques -----------------------------------------
+
+
+def _shop(**kw):
+    base = {
+        "category": "boutique",
+        "object": "abat-jour style moderne",
+        "budget_cents": 300000,
+        "constraints": [],
+    }
+    base.update(kw)
+    return PIZZA.model_copy(update={**base, "details": {}, "text": kw.get("text", "abat-jour moderne")})
+
+
+def test_shopping_uses_the_site_the_person_gives_and_never_a_default(monkeypatch):
+    from orchestrator.agent_h.agent import site_choice, start_url_for
+
+    monkeypatch.delenv("PILOTE_SITE_BOUTIQUE", raising=False)
+    with pytest.raises(AgentError):  # pas de site par défaut : la session le demande
+        site_choice(_shop())
+    zalando = site_choice(_shop(text="une veste chez Zalando", object="veste"))
+    assert zalando.url == "https://www.zalando.fr" and not zalando.lookup
+    by_address = site_choice(_shop(text="le canapé Jules sur maisonsdumonde.com", object="canapé Jules"))
+    assert by_address.url == "https://maisonsdumonde.com" and by_address.name == "Maisons du Monde"
+    link = "https://www.ikea.com/fr/fr/p/friheten-canape-convertible-angle-s49216342/"
+    by_link = site_choice(_shop(text=f"achète ça {link}", object=None))
+    assert by_link.product_link and start_url_for(_shop(object=None), by_link.url) == link
+    unknown = site_choice(_shop(constraints=["sur le site de Sézane"], object="chaussures"))
+    assert unknown.lookup and unknown.name == "Sézane" and "bing.com/search" in unknown.url
+    amazon = _shop(text="un abat-jour sur Amazon")
+    assert (
+        start_url_for(amazon, site_choice(amazon).url) == "https://www.amazon.fr/s?k=abat-jour+style+moderne"
+    )
+
+
+def test_the_agent_is_told_how_to_handle_an_unknown_site_or_a_product_link():
+    from orchestrator.agent_h.prompts import site_note
+    from orchestrator.agent_h.shops import SiteChoice
+
+    note = site_note(SiteChoice(url="https://www.bing.com/search?q=x", name="Sézane", lookup=True))
+    assert "site officiel de Sézane" in note and "Sponsorisé" in note and "ne vend pas en ligne" in note
+    assert "ce produit-là" in site_note(SiteChoice(url="https://x.fr/p/1", name="x.fr", product_link=True))
+    assert site_note(SiteChoice(url="https://www.zalando.fr", name="Zalando")) == ""
+
+
+def test_search_text_has_the_object_and_criteria_but_never_the_budget_or_shop():
+    from orchestrator.agent_h.shops import search_query
+
+    casque = _shop(
+        object="casque sans fil", constraints=["réduction de bruit", "sur amazon", "moins de 200 €"]
+    )
+    assert search_query(casque) == "casque sans fil réduction de bruit"
+    train = TRAIN.model_copy(
+        update={
+            "details": {"origin": "Paris", "destination": "Lille"},
+            "when": TRAIN.when.model_copy(update={"date": dt.date(2026, 11, 19), "after": "14:00"}),
+        }
+    )
+    assert search_query(train) == "Paris Lille 19 novembre 14h"
+
+
+def test_the_agent_is_told_to_search_in_one_go_and_filter_the_budget():
+    from orchestrator.agent_h.prompts import generic_instructions
+
+    rules = generic_instructions()
+    assert "Recherche rapide (tous les sites)" in rules and "filtre de prix" in rules
+    text = intent_text(_shop(), "https://www.amazon.fr")
+    assert "Texte de recherche : « abat-jour style moderne »" in text
+    assert "3000,00 €" in text and "jamais dans la barre de recherche" in text
 
 
 def test_intent_text_describes_the_contract_intent():
@@ -312,6 +385,26 @@ async def test_gate_denies_outside_pay_step():
     assert await agent._decide_payment(raw_summary()) == "denied"  # recherche ou panier
     agent._paying = True
     assert await agent._decide_payment(raw_summary()) == "approved"
+
+
+async def test_the_purchase_path_is_remembered_even_when_the_person_refuses(tmp_path):
+    from orchestrator.agent_h.models import AgentAnswer, NewTip
+    from orchestrator.agent_h.path_memory import PathMemory
+
+    async def refuse(_summary: OrderSummary) -> str:
+        return "denied"  # la personne dit non, ou se trompe de code
+
+    tip = NewTip(text="Bouton « Commander » en bas du panier, puis « Payer »", kind="étape", phase="achat")
+    for reached in (True, False):
+        agent = paying_agent(approval_callback=refuse)
+        agent._paths = PathMemory(tmp_path / f"mem-{reached}.json")
+        agent._briefing = agent._paths.begin_visit(domain_of(agent._site))
+        agent._paying = True
+        if reached:  # l'agent est arrivé au bouton de paiement et a montré le panier
+            assert await agent._decide_payment(raw_summary()) == "denied"
+        agent._learn(AgentAnswer(blocked_reason="refusé", new_tips=[tip]), "buy")
+        tips = [t.text for t in agent._paths.sites[domain_of(agent._site)].tips.values()]
+        assert tips == ([tip.text] if reached else [])  # pas arrivé au paiement : rien d'appris
 
 
 async def test_gate_denies_by_default_without_orchestrator_callback(monkeypatch):
@@ -428,7 +521,7 @@ def test_make_agent_is_real_by_default(monkeypatch):
 def test_tools_declared_for_the_agent():
     agent = ShoppingAgent(client=object(), memory=InMemorySiteMemory(), record_metrics=False)  # type: ignore[arg-type]
     names = {t.name: t for t in agent._tools()}
-    assert set(names) == {"request_payment_approval", "need_human"}
+    assert set(names) == {"request_payment_approval", "need_human", "request_card", "fill_card_field"}
     assert "summary" in names["request_payment_approval"].input_schema["properties"]
 
 
@@ -975,3 +1068,71 @@ def test_plan_b_switches_train_and_meal_to_the_demo_sites(monkeypatch):
     monkeypatch.setenv("PILOTE_PLAN_B", "1")
     assert site_for(train) == "https://h-company-hackathon-rail-demo.vercel.app"
     assert site_for(PIZZA) == "https://h-company-hackathon-repas-demo.vercel.app"
+
+
+# --- carte dictée : outils request_card et fill_card_field ------------------------------
+
+from orchestrator.agent_h.card import NewCard  # noqa: E402
+
+VISA_TEST = "4111111111111111"
+
+
+async def test_card_is_only_asked_while_paying_and_typed_without_the_agent_seeing_it(monkeypatch):
+    typed: list[str] = []
+
+    async def fake_type(text, site, port=9222):
+        typed.append(text)
+
+    monkeypatch.setattr("orchestrator.agent_h.agent.type_into_focused_field", fake_type)
+    asked: list[str] = []
+
+    async def on_card_needed(kind):
+        asked.append(kind)
+        return (NewCard(VISA_TEST, "0327", "123"), True) if kind == "card" else "Leo Test"
+
+    agent = paying_agent()
+    agent.on_card_needed = on_card_needed
+    tools = {t.name: t for t in agent._tools()}
+    assert await tools["request_card"].fn() == "abort"  # hors de l'achat : jamais de carte
+    agent._paying = True
+    assert await tools["request_card"].fn() == "ready save_on_site=yes"
+    assert await tools["request_card"].fn() == "ready save_on_site=yes" and asked == ["card"]  # une fois
+    replies = [await tools["fill_card_field"].fn(field=f) for f in ("number", "expiry", "cvc", "holder")]
+    assert replies == ["ok"] * 4 and all(VISA_TEST not in r for r in replies)
+    assert typed == [VISA_TEST, "03/27", "123", "Leo Test"] and asked == ["card", "holder"]
+    await agent.cancel()
+    assert agent._card is None, "carte effacée"
+
+
+async def test_without_local_chrome_no_card_is_asked():
+    agent = paying_agent(browser_host="cloud")
+    agent._paying = True
+
+    async def never(kind):
+        raise AssertionError("ne doit pas demander de carte sans Chrome local")
+
+    agent.on_card_needed = never
+    assert await agent._request_card() == "abort"
+
+
+def test_agent_instructions_have_the_card_rule():
+    from orchestrator.agent_h.prompts import generic_instructions
+
+    text = generic_instructions()
+    assert "request_card" in text and "fill_card_field" in text and "DÉCOCHÉE" in text
+
+
+def test_product_details_do_not_make_the_answer_rejected():
+    from orchestrator.agent_h.models import AgentAnswer, to_options
+
+    answer = AgentAnswer.model_validate(
+        {
+            "options": [
+                {"id": "o1", "title": "Canapé", "price_eur": 899, "details": {"color": "gris", "places": 3}},
+                {"id": "o2", "title": "Canapé B", "price_eur": 799, "details": "Livré en 3 semaines"},
+            ]
+        }
+    )
+    options = to_options(answer.options)
+    assert options[0].details == {"color": "gris", "places": "3"}
+    assert options[1].details == {"info": "Livré en 3 semaines"}

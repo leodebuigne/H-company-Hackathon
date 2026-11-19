@@ -99,10 +99,9 @@ Base : `partie-5` (contrats et squelette), puis `partie-2` (IA), `partie-4` (int
 - **Commentaire en direct (2026-11-18)** : pendant la recherche et l'achat, Pilote suit le flux d'événements H (`session.changes`, actions annoncées par l'agent) et dit une phrase courte (`agent_h/narration.py`, règles fixes, sans modèle ni donnée personnelle), au plus une toutes les 6 s, hors de l'historique de conversation. Chaque commande en Chrome local ouvre aussi un onglet neuf et ferme les anciens (`local_chrome.fresh_page`) : l'agent s'accrochait sinon à l'onglet de la commande précédente, fermé en retard par H.
 - **Code secret d'achat (2026-11-18)** : avec `PILOTE_PURCHASE_CODE` (3 chiffres) et l'achat direct, Pilote demande le code à l'oral avant chaque achat, même à 0 €, puis l'agent clique lui-même sur « Valider et payer ». Trois essais. Le code ne passe jamais par le modèle de langage, n'entre pas dans l'historique et s'affiche « ••• » (transcription et écran jury) ; seul le résultat (bon / mauvais) va au journal. L'interface reconnaît la demande au texte dit par Pilote (même état `confirm_1`, sans toucher au contrat) et affiche un champ masqué. Réflexion de l'agent H repassée à `low` pour la vitesse. Ce n'est pas le cryptogramme de la carte : l'agent ne le tape jamais (règle de l'équipe, et un cryptogramme ne doit jamais être enregistré).
 - **Recherche rapide SNCF (2026-11-18)** : la fiche SNCF fait taper le trajet d'un coup dans « Tout rechercher » (« Paris Lyon 20 novembre 9h » + Entrée) au lieu de remplir le formulaire Trains. Mesuré sur la même recherche : 47 s, 5 actions, 70 000 tokens, contre 88 s, 12 à 17 actions et 280 000 à 350 000 tokens ; résultats justes. Le formulaire reste en repli dans la consigne (`PILOTE_SNCF_QUICK_SEARCH=0` pour le forcer). Couper le texte de la page (`PILOTE_H_PAGE_TEXT=0`) ne fait pas gagner de temps (107 s) : gardé. La lenteur n'est pas un blocage SNCF.
-- **Parcours sans validation par un tiers (2026-11-18, à la demande de l'utilisateur)** : les schémas `approval-request` et `approval-status`, le message `approval`, l'état `awaiting_relative`, le code d'erreur `approval_failed`, `approvals.py` et les variables associées sont supprimés. Le parcours complet devient : oui, relecture de la page, deuxième oui. L'outil H `request_payment_approval` reste : c'est le verrou de paiement, il n'a rien à voir avec ce retrait. Contrats modifiés, à relire par le membre 5.
 **Décision.** La validation d'un proche par SMS est abandonnée. Avant de payer : premier « oui », relecture de la page (même hash), deuxième « oui », puis le dernier verrou de `request_payment_approval`.
 **Raisons.** La partie 3 n'existait pas, et demander l'accord d'un proche pour chaque achat d'un adulte aveugle le place sous tutelle.
-**Conséquences.** `orchestrator/approvals.py` et les réglages des proches sont supprimés. Le contrat n'est pas modifié : l'état `awaiting_relative`, le message `approval` et les schémas `approval-*` restent définis mais ne sont plus envoyés. L'écran du jury passe à 5 étapes.
+**Conséquences.** `orchestrator/approvals.py` et les réglages des proches sont supprimés. Les contrats changent : les schémas `approval-*`, le message `approval`, l'état `awaiting_relative` et le code d'erreur `approval_failed` sont supprimés. L'outil H `request_payment_approval` reste (verrou avant le clic). L'écran du jury passe à 5 étapes.
 
 ## 2026-11-18 : fournisseur de la voix imposé (v1 locale)
 
@@ -239,3 +238,65 @@ Essai réel : pull → taille ; baskets → pointure ; coque → modèle de tél
 - **Mémoire des sites et speedrun (2026-11-19)** : la fiche donnée à l'agent garde toujours les étapes de départ écrites à la main (le speedrun SNCF « Tout rechercher ») ; la mémoire n'y ajoute que ses pièges, ses boutons et ses statistiques (`card_for_order`). Avant, dès qu'un premier achat avait été enregistré, la fiche apprise remplaçait le speedrun pour toutes les commandes suivantes, et le fichier `data/site-cards.json` le gardait après redémarrage. La mémoire est maintenant enregistrée à chaque fin de commande, achetée ou non (échec, blocage, annulation), avec la raison du blocage comme piège : une commande ratée sert à la suivante. Seul un achat accepté compte dans `successful_runs`. On garde les 12 pièges et boutons les plus récents.
 - **Speedrun SNCF corrigé et commandes plus rapides (2026-11-19)** : sur SNCF Connect, Entrée ne lance plus rien dans « Tout rechercher » et les suggestions sont des adresses ; l'agent repartait alors sur le formulaire Trains et reconfirmait tout (71 à 89 s, 12 actions). La fiche fait maintenant cliquer directement sur « Rechercher » après avoir tapé le trajet, sans reconfirmer : 53 s, 6 actions, mesuré sur Paris → Lyon. L'adresse `/home/search?userInput=…` ouverte directement ne marche pas (retour à l'accueil). Les consignes de l'agent du portail (onglet « Trains ») passent désormais après la fiche du site (`prompts.with_card_priority`). Autres gains : Chrome et la session H s'ouvrent pendant que Pilote redit la demande, et l'agent sélectionne l'option pendant « J'achète … ». Le journal dit pourquoi et où chaque commande s'arrête (`code`, `state_before`, `step`, `seconds`, jamais la phrase dite). Les réservations sans site fixe ne rangent plus leur mémoire sous un nom vide (refusé par le contrat) : elle va au site où l'agent a fini.
 - **Tournée de tests réels et corrections (2026-11-19)** : parcours complets rejoués sans achat (question, train, affinage, repas, réservation, mauvais code, coupure du serveur, téléphone). Corrigé : heures et classes mal dites (« 7 heures52 », « 2e classe », « 20/11 »), détails d'option en double, « répète les options » compris, heure inventée quand aucune n'est dite, heure exacte d'une réservation dans `details.time`, source d'une réponse dite simplement. Vitesse : options lues telles quelles (2,6 s après leur arrivée au lieu de 5 à 8 s), une seule question pour départ, arrivée et jour, Chrome ouvert au démarrage, affinage sur la page de résultats (43 s au lieu de 57 s). Voix : le service Hugging Face (Kokoro via deepinfra) répond parfois en 6 s ou par des erreurs 503 ; une requête lente est doublée, et après deux phrases de suite sans voix le navigateur parle seul pendant 45 s. Interface : conversation et champ de texte visibles à l'écran, états justes, commentaire en direct affiché, cibles tactiles de 44 px ; écran du jury avec date en clair et conversation rejouée. Démo : `python -m orchestrator.check` (tout vérifier avant de commencer, sans rien acheter) et `PILOTE_PLAN_B=1` (faux sites de l'équipe, recherche mesurée à 40 s).
+
+## 2026-11-18 : carte dictée quand le site n'en a pas d'enregistrée
+
+- À la page de paiement, si aucune carte enregistrée n'est utilisable, l'agent appelle l'outil `request_card`. Pilote fait dicter à voix haute le numéro, la date d'expiration et le cryptogramme (saisie masquée « ••• » : ni modèle de langage, ni historique, ni journal), relit les 4 derniers chiffres, puis demande : « Voulez-vous enregistrer cette carte sur <site> ? ». Le nom du titulaire n'est demandé que si le site le réclame.
+- L'agent clique dans chaque champ et appelle `fill_card_field` : Pilote tape la valeur dans le Chrome local (port 9222), l'agent H ne reçoit jamais les chiffres. Il coche ou décoche la case d'enregistrement du site selon la réponse (`card_saved_on_site`), ou ne paie pas si le site impose l'enregistrement alors que la personne a dit non.
+- Pilote ne garde jamais la carte : effacée à la fin de `buy()`, `pay()` et `cancel()` ; jamais dans la mémoire des sites ni ailleurs. Seul le site la garde, et seulement si la personne l'a demandé.
+- Limites : seulement avec le Chrome local ; dictés, les chiffres passent par la transcription Hugging Face et sont entendus autour ; ce que la page affiche ensuite reste visible sur les captures de l'agent. Non testé en paiement réel.
+
+## 2026-11-18 : mémoire des chemins, avec réessais espacés
+
+- `orchestrator/agent_h/path_memory.py`, fichier local `~/.pilote/memoire-sites.json` (droits 600), gardé d'une visite et d'un redémarrage à l'autre. Une astuce par chemin ou piège, avec réussites, échecs et échecs de suite.
+- Apprentissage : après une étape réussie (options trouvées, récapitulatif lu, paiement tenté), l'agent résume le chemin suivi en 1 à 3 astuces et les pièges évités (`new_tips`) ; pour chaque astuce de la mémoire essayée, il dit si elle a marché (`tips_feedback`).
+- Jugée inutile et mise de côté après 3 échecs de suite (une réussite remet le compteur à zéro). Pas de réessai programmé (décision du 2026-11-18) : une astuce écartée n'est proposée que « si tu es bloqué », quand aucun autre chemin ne marche. Si elle marche alors, la réussite est enregistrée et elle revient en service.
+- Données personnelles : refus des textes avec e-mail, adresse, nombre de 2 chiffres ou plus (prix, date, heure, carte), montant ; les valeurs de la commande (villes, plat) sont remplacées par <ville de départ>, <ville d'arrivée>, <plat>.
+- Mesuré : 3 visites SNCF, 4 astuces apprises ; 2e visite 13 décisions au lieu de 18, astuces confirmées. Limite vue : les chemins du guide écrit à la main (ex. recherche rapide « Tout rechercher ») ne sont pas suivis par la mémoire, donc pas réessayés : la 1re visite a vu la recherche rapide échouer et la mémoire a appris à passer par le formulaire.
+
+## 2026-11-18 : recherche rapide généralisée, achats en boutique
+
+- La « recherche rapide » de SNCF Connect (tout taper d'un coup dans « Tout rechercher ») devient une règle de la consigne pour tous les sites : barre de recherche principale, texte de recherche tapé d'un coup, puis les critères avec les filtres du site. Le budget n'est jamais tapé (une barre prend « 3000 » pour un mot du produit) : filtre de prix ou tri « Prix croissant », et aucune option au-dessus du budget.
+- Pilote calcule le texte de recherche (`shops.search_query`) : l'objet et ses critères, sans budget ni nom de boutique ; pour un train « <départ> <arrivée> <jour> <mois> <heure> ».
+- Catégorie « boutique » : la boutique nommée par la personne (« sur Amazon », « chez Fnac », Leroy Merlin, Ikea, Darty…), sinon Amazon.fr (`PILOTE_SITE_BOUTIQUE` pour changer). Sur Amazon, l'agent arrive directement sur les résultats (`/s?k=`).
+- Mesuré : « abat-jour style moderne, budget 3000 € » sur Amazon, 3 options dans le budget en 33 s et 4 actions.
+
+## 2026-11-18 : comparaison entre boutiques
+
+- Achat en boutique sans boutique nommée (et sans `PILOTE_SITE_BOUTIQUE`) : Pilote compare jusqu'à 3 boutiques adaptées au type de produit (`shops.CATALOG` : canapé → Maisons du Monde, Conforama, Ikea ; casque → Fnac, Darty, Boulanger ; vélo → Decathlon… ; sinon Cdiscount, La Redoute, Fnac). Amazon ou Fnac seulement s'ils sont nommés ou adaptés.
+- Les recherches tournent en parallèle, une session H par boutique, en navigateur cloud (pas besoin d'être connecté pour chercher) ; au plus 3 à la fois (offre gratuite H), 2 options par boutique, mêlées (la meilleure de chaque boutique d'abord), titre suivi du nom de la boutique. Une boutique bloquée, lente (240 s) ou sans résultat est ignorée.
+- Après le choix, l'achat se fait dans le Chrome local (comptes connectés) : nouvelle session sur la boutique choisie, l'agent retrouve le produit par la barre de recherche et vérifie le prix.
+- Poltronesofà retiré : site vitrine, pas de prix ni de vente en ligne (« Visitez nos magasins »).
+- Réponses de l'agent plus tolérantes : détails de produit libres (couleur, places…) acceptés au lieu de rejeter toute la boutique.
+- Mesuré : canapé d'angle gris, budget 1500 €, 6 options de 3 boutiques en 86 s. Achat après comparaison non testé en réel.
+
+## 2026-11-18 : acheter sur n'importe quel site, plus de comparaison
+
+- Décision : Pilote n'est pas un comparateur. La personne fait sa recherche ailleurs (un assistant, un ami) et demande d'acheter sur le site de son choix. La comparaison entre boutiques et Amazon par défaut sont retirés.
+- Le site est pris dans la demande (`shops.resolve_site`) : un lien (produit ou site, tapé dans le champ de texte : ouvert tel quel, l'agent propose ce produit-là), une adresse (« maisonsdumonde.com »), une boutique courante (Ikea, Zalando, Vinted…), ou n'importe quel autre nom après « sur » / « chez ». Pour un nom inconnu, l'agent part d'une recherche Bing et ouvre le site officiel (pas une annonce, une place de marché ni un comparateur) ; s'il ne vend pas en ligne, il s'arrête et le dit.
+- Sans site donné (hors train et repas, qui gardent SNCF Connect et Uber Eats), Pilote demande : « Sur quel site voulez-vous l'acheter ? ». `PILOTE_SITE_BOUTIQUE` impose un site si besoin.
+- La recherche rapide reste valable sur tous les sites (texte tapé d'un coup, budget par les filtres).
+- Mesuré : « un pull marinière sur le site de Petit Bateau » (site inconnu) : site officiel trouvé, 3 options en 69 s et 10 actions.
+
+
+## 2026-11-19 — Le chemin d'achat est retenu même sans achat
+
+- En achat direct, l'agent va d'abord jusqu'au bouton de paiement ; le code à 3 chiffres (ou le « oui » sans code)
+  est demandé à ce moment-là, sur le total réellement affiché, via request_payment_approval.
+- Dès que l'agent a atteint ce bouton (récapitulatif lisible envoyé), l'étape d'achat compte comme réussie pour la
+  mémoire des chemins : si la personne dit non ou se trompe de code, rien n'est payé mais le chemin est appris.
+- Un panier plus cher que l'option choisie est toujours refusé, sans poser la question.
+
+## 2026-11-19 — Total plus cher que le prix annoncé : on explique, la personne décide
+
+- Achat direct : si le total au bouton de paiement diffère du prix annoncé (frais de livraison, de service…),
+  Pilote dit le détail (« le produit à 5 euros, comme annoncé, frais de livraison : 99 centimes, frais de
+  service : 5 euros 49 ») puis demande le code (ou un oui). Avant, l'achat était refusé d'office.
+- Le plafond de l'agent (PILOTE_MAX_TOTAL_EUR) s'applique toujours, avant toute question.
+
+## 2026-11-19 : fusion de `version-2` et `pilote-V72`
+
+- **Base** : `version-2` (interface, conversation, questions sur le web, réservations, mémoire des sites) + les 9 commits de `pilote-V72` (carte dictée à voix haute, mémoire des chemins de l'agent, achat sur n'importe quel site, explication des frais). Les deux partaient de `fix/empty-env-defaults` ; 29 zones de conflit résolues à la main.
+- **Site d'achat** : les deux branches avaient chacune sa règle. Règle retenue : un site donné par la personne (lien, adresse, nom) passe d'abord ; sinon le site par défaut (train, repas ; faux sites si `PILOTE_PLAN_B=1`) ; **réservation** (restaurant, rendez-vous) sans site : l'agent choisit lui-même (Google Maps), `site_for` renvoie `""` ; **boutique** sans site : Pilote demande « Sur quel site voulez-vous l'acheter ? » (pas d'Amazon par défaut, décision de `pilote-V72`).
+- **Achat direct** : le code ou le oui est demandé au bouton de paiement, sur le total réellement affiché (`pilote-V72`), avec le détail des frais si le total diffère du prix annoncé. La phrase d'avant dit « Je prépare l'achat… Je vous demanderai votre code juste avant de payer », car « J'achète » serait faux à ce moment.
+- **Deux mémoires** coexistent : la fiche de site (`site_memory`, `version-2`) et la mémoire des chemins (`path_memory`, `pilote-V72`, `PILOTE_MEMORY`). À rapprocher plus tard.

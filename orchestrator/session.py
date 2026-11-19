@@ -24,6 +24,7 @@ import datetime as dt
 import hmac
 import json
 import logging
+import os
 import re
 import time
 import unicodedata
@@ -36,6 +37,9 @@ from zoneinfo import ZoneInfo
 from pydantic import BaseModel, TypeAdapter, ValidationError
 
 from orchestrator.agent_h.base import AgentError, NeedsHuman, PaymentDenied, UnapprovedPurchase
+from orchestrator.agent_h.card import NewCard, parse_cvc, parse_expiry, parse_number
+from orchestrator.agent_h.shops import resolve_site, site_name
+from orchestrator.agent_h.site_memory import domain_of
 from orchestrator.ai.hf import SPEAK_MIME, AIError, complete_intent, question_for
 from orchestrator.ai.speech_text import euros, readable_progress
 from orchestrator.config import Settings
@@ -83,6 +87,12 @@ UNSURE = (
 )
 # États où Pilote attend une réponse de la personne.
 WAITING: set[State] = {"listening", "proposing", "confirm_1", "confirm_2", "human_needed"}
+SITE_NAMES = {"www.sncf-connect.com": "SNCF Connect", "www.ubereats.com": "Uber Eats"}
+CATEGORY_SITES = {"train": "SNCF Connect", "repas": "Uber Eats"}
+SITE_QUESTION = (
+    "Sur quel site voulez-vous l'acheter ? Dites son nom, par exemple Ikea ou Maisons du Monde, "
+    "ou tapez l'adresse du produit."
+)
 CLIENT_MESSAGE: TypeAdapter[ClientMessage] = TypeAdapter(ClientMessage)
 SendFn = Callable[[dict[str, Any]], Awaitable[None]]
 
@@ -198,6 +208,37 @@ def same_order(a: OrderSummary, b: OrderSummary) -> bool:
     """
     return a.total_cents == b.total_cents and sorted(i.quantity for i in a.items) == sorted(
         i.quantity for i in b.items
+    )
+
+
+def spoken_euros(cents: int) -> str:
+    """« 99 centimes », « 5 euros 49 » : à l'oral, « 0 euros 99 » se comprend mal."""
+    return f"{cents} centimes" if 0 < cents < 100 else euros(cents)
+
+
+def price_breakdown(option: Option, summary: OrderSummary) -> str:
+    """Phrase qui explique pourquoi le total payé n'est pas le prix annoncé à la recherche."""
+    items = sum(item.total_cents for item in summary.items)
+    parts = []
+    if items == option.price_cents:
+        parts.append(f"{option.title} à {spoken_euros(items)}, comme annoncé")
+    else:
+        parts.append(
+            f"les articles à {spoken_euros(items)} au lieu de {spoken_euros(option.price_cents)} annoncés"
+        )
+    parts += [
+        f"{fee.label.strip().rstrip('.').lower()} : {spoken_euros(fee.amount_cents)}" for fee in summary.fees
+    ]
+    gap = summary.total_cents - items - sum(fee.amount_cents for fee in summary.fees)
+    if gap > 0:
+        parts.append(f"et {spoken_euros(gap)} d'autres frais que la page ne détaille pas")
+    elif gap < 0:
+        parts.append(f"et une réduction de {spoken_euros(-gap)}")
+    head = "plus cher" if summary.total_cents > option.price_cents else "différent"
+    return (
+        f"Attention, le total est {head} : {spoken_euros(summary.total_cents)}. Il comprend "
+        + ", ".join(parts)
+        + "."
     )
 
 
@@ -377,8 +418,11 @@ class Session:
         self._payment_cleared = False  # le dernier verrou a autorisé le clic de paiement
         self._order_started: float | None = None  # début de la commande en cours (journal)
         self._last_step: str | None = None  # dernière étape de l'agent lancée (journal)
+        self._direct_option: Option | None = None  # achat direct en cours : accord demandé au bouton
+        self._direct_abort: Abort | None = None  # refus ou code faux au bouton de paiement
         self._last_progress = 0.0
-        self._secret_mode = False  # pendant la demande du code secret
+        self._secret_mode = False  # pendant la demande du code secret ou de la carte
+        self._card_dictated = False  # une carte a été dictée pour la commande en cours
         self._payment_refusal: str | None = None
         self._flow: asyncio.Task[None] | None = None
         self._reader: asyncio.Task[None] | None = None
@@ -774,11 +818,15 @@ class Session:
                     heard=answer.text,
                 )
                 continue
+            if not intent.missing and self._needs_site(intent):
+                # Achat ailleurs que train ou repas : c'est la personne qui choisit le site.
+                intent = intent.model_copy(update={"missing": ["details.site"]})
             if intent.missing:
                 pending = intent
                 # Mêmes questions rédigées quelle que soit l'IA (la factice pose « details.origin »).
-                question = question_for(intent.missing) or intent.question
+                question = SITE_QUESTION if intent.missing[0] == "details.site" else None
                 # Dite telle quelle : une question courte et toujours la même, sans attendre le modèle
+                question = question or question_for(intent.missing) or intent.question
                 await self._say(question or "Pouvez-vous préciser votre demande ?")
                 continue
             return intent
@@ -795,6 +843,17 @@ class Session:
                 await task
             raise
         return await task
+
+    @staticmethod
+    def _needs_site(intent: Intent) -> bool:
+        """Faut-il demander le site ? Oui sans site par défaut (ni train, ni repas, ni réservation)."""
+        category = intent.category or ""
+        if (
+            category in ("train", "repas", "reservation")
+            or os.getenv(f"PILOTE_SITE_{category.upper()}", "").strip()
+        ):
+            return False
+        return resolve_site(intent) is None
 
     async def _step(self, name: str, call: Awaitable[T]) -> T:
         """Une étape de l'agent H, avec délai maximum et erreurs traduites pour l'oral."""
@@ -844,6 +903,9 @@ class Session:
             self._agent.on_progress = self._progress  # type: ignore[attr-defined]
         if hasattr(self._agent, "on_stuck"):
             self._agent.on_stuck = self._stuck  # type: ignore[attr-defined]
+        if hasattr(self._agent, "on_card_needed"):  # carte dictée quand le site n'en a pas
+            self._agent.on_card_needed = self._provide_card
+        self._card_dictated = False
         request = describe_request(intent, self.today())
         # Chrome et la session H s'ouvrent pendant que Pilote redit la demande (5 à 8 s gagnées)
         await self._while_talking(
@@ -983,12 +1045,11 @@ class Session:
                 "price_changed",
             )
 
-    async def _check_code(self, option: Option) -> None:
+    async def _check_code(self, option: Option, total_cents: int | None = None) -> None:
         """Demande le code secret à 3 chiffres. Trois essais, puis rien n'est acheté."""
         assert self.settings.purchase_code is not None
-        await self._say(
-            f"Pour acheter {option.title}, {euros(option.price_cents)}, dites votre code à 3 chiffres."
-        )
+        total = option.price_cents if total_cents is None else total_cents
+        await self._say(f"Pour acheter {option.title}, {euros(total)}, dites votre code à 3 chiffres.")
         attempts = CODE_ATTEMPTS
         self._secret_mode = True
         try:
@@ -1013,24 +1074,31 @@ class Session:
             self._secret_mode = False
 
     async def _buy_direct(self, option: Option) -> None:
-        """Achat direct : le choix vaut ordre d'achat. Le résultat est toujours dit à l'oral."""
+        """Achat direct : le choix vaut ordre d'achat. Le résultat est toujours dit à l'oral.
+
+        L'agent va d'abord jusqu'au bouton de paiement ; le code (ou le oui) est demandé là, dans
+        approve_payment, sur le total réellement affiché. Si la personne refuse ou se trompe de code, rien
+        n'est payé, mais l'agent a parcouru le chemin d'achat et la mémoire des sites le retient.
+        """
         assert self._agent is not None
-        if self.settings.purchase_code:
-            await self._check_code(option)  # le code vaut confirmation, même pour un billet gratuit
-        elif option.price_cents > 0:  # sans code : un billet gratuit s'achète sans question
-            question = f"J'achète bien {option.title}, {euros(option.price_cents)} ?"
-            if not await self._yes_no("confirm_1", question):
-                raise Abort("D'accord, je n'achète rien.")
         self._direct_limit, self._payment_refusal = option.price_cents, None
+        self._direct_option, self._direct_abort = option, None
         await self._set_state("paying")
         try:
-            # L'agent sélectionne l'option pendant que Pilote dit « J'achète … »
+            # L'agent sélectionne l'option pendant que Pilote dit ce qui va se passer (le code, ou le oui,
+            # n'est demandé qu'au bouton de paiement : « J'achète » serait faux à ce stade)
+            ask = "votre code" if self.settings.purchase_code else "votre accord"
             await self._while_talking(
-                self._say(f"J'achète {option.title}, {euros(option.price_cents)}."),
+                self._say(
+                    f"Je prépare l'achat de {option.title}, {euros(option.price_cents)}. "
+                    f"Je vous demanderai {ask} juste avant de payer."
+                ),
                 self._step("choose", self._agent.choose(option.id)),
             )
             result = await self._step("buy", self._agent.buy())
         except PaymentDenied as error:
+            if self._direct_abort is not None:  # la personne a dit non, ou code faux trois fois
+                raise self._direct_abort from error
             reason = (
                 self._payment_refusal
                 or getattr(self._agent, "last_denial_reason", None)
@@ -1038,7 +1106,7 @@ class Session:
             )
             raise Abort(f"Je n'ai pas acheté : {reason}. Rien n'a été payé.") from error
         finally:
-            self._direct_limit = None
+            self._direct_limit, self._direct_option = None, None
         self._journal("payment", result=result, direct=True)
         site = site_message_for_speech(getattr(self._agent, "last_payment_message", None))
         messages = {
@@ -1047,7 +1115,10 @@ class Session:
             "unknown": "Je ne sais pas si l'achat est passé. Vérifiez sur le site avant de recommencer.",
         }
         said = messages.get(result, messages["unknown"])
-        await self._end_order("done", f"{said} {site}".strip() if result == "accepted" and site else said)
+        said = f"{said} {site}".strip() if result == "accepted" and site else said
+        if result == "accepted":
+            said = f"{said} {self._card_saved_sentence()}".strip()
+        await self._end_order("done", said)
 
     async def _pay(self, summary: OrderSummary) -> None:
         assert self._agent is not None
@@ -1106,9 +1177,13 @@ class Session:
     async def approve_payment(self, summary: OrderSummary) -> ApprovalDecision:
         """Outil request_payment_approval. Dernier verrou avant le clic qui engage de l'argent."""
         if self._direct_limit is not None and self.state == "paying":
-            # Achat direct : l'ordre vaut accord, mais jamais plus cher que l'option choisie
-            approved = summary.total_cents <= self._direct_limit
-            if not approved:
+            # Achat direct : si le total dépasse le prix annoncé (frais de livraison, de service…), on dit
+            # le détail et c'est la personne qui décide, avec son code ou un oui. Jamais sans son accord.
+            if self._direct_option is not None:
+                approved = await self._direct_consent(self._direct_option, summary)
+            else:
+                approved = summary.total_cents <= self._direct_limit
+            if not approved and self._payment_refusal is None:
                 self._payment_refusal = (
                     f"le panier affichait {euros(summary.total_cents)} au lieu de {euros(self._direct_limit)}"
                 )
@@ -1130,6 +1205,135 @@ class Session:
         self._journal("payment_approval", decision="approved" if approved else "denied")
         self._payment_cleared = self._payment_cleared or approved
         return "approved" if approved else "denied"
+
+    async def _direct_consent(self, option: Option, summary: OrderSummary) -> bool:
+        """Achat direct, agent arrêté sur le bouton de paiement : le code, ou un oui (rien si gratuit).
+
+        Si le total diffère du prix annoncé, le détail est dit d'abord (produit, frais de livraison, de
+        service…) et la personne décide en connaissant le vrai total.
+        """
+        total_cents = summary.total_cents
+        explained = total_cents != option.price_cents
+        try:
+            if explained:
+                await self._say(price_breakdown(option, summary))
+            if self.settings.purchase_code:
+                await self._check_code(option, total_cents)  # le code vaut accord, même si c'est gratuit
+            elif total_cents > 0 or explained:
+                question = (
+                    f"On paie {spoken_euros(total_cents)} au total ?"
+                    if explained
+                    else f"J'achète bien {option.title}, {euros(total_cents)} ?"
+                )
+                if not await self._yes_no("confirm_1", question):
+                    raise Abort("D'accord, je n'achète rien.")
+            return True
+        except Abort as abort:
+            self._direct_abort = abort
+            self._payment_refusal = "vous n'avez pas confirmé"
+            return False
+        finally:
+            with contextlib.suppress(Exception):
+                await self._set_state("paying")
+
+    # --- carte dictée (outil request_card de l'agent) -------------------------------------
+
+    async def _secret_answer(self, prompt: str, parse: Callable[[str], str | None], retry: str) -> str | None:
+        """Une réponse dictée, masquée (ni modèle de langage, ni historique, ni affichage). None : « non »."""
+        await self._say(prompt)
+        self._secret_mode = True
+        try:
+            for _ in range(CODE_ATTEMPTS):
+                answer = await self._ask("confirm_1", self.settings.confirm_timeout_s)
+                if answer.kind == "deny":
+                    return None
+                value = parse(answer.text)
+                if value:
+                    return value
+                await self._say(retry)
+            return None
+        finally:
+            self._secret_mode = False
+
+    async def _provide_card(self, kind: str) -> Any:
+        """Carte dictée pour ce paiement : (NewCard, enregistrer sur le site ?), ou None si refus.
+
+        Rien n'est gardé ici : la carte va à l'agent, qui la tape dans le Chrome local puis l'oublie.
+        """
+        previous = self.state
+        category = self._intent.category if self._intent else None
+        agent_site = self._agent_site()
+        site = (
+            SITE_NAMES.get(domain_of(agent_site))
+            or (site_name(agent_site) if agent_site else "")
+            or CATEGORY_SITES.get(category or "", "ce site")
+        )
+        try:
+            if kind == "holder":
+                return await self._secret_answer(
+                    "Le site demande le nom du titulaire. Dites-le tel qu'il est écrit sur la carte.",
+                    lambda text: text.strip() or None,
+                    "Je n'ai pas compris le nom. Redites-le.",
+                )
+            await self._say(
+                f"{site[:1].upper()}{site[1:]} n'a pas de carte enregistrée. Je vais vous demander "
+                "votre carte bancaire, pour ce paiement seulement : je ne la garderai pas. "
+                "Attention, les chiffres seront entendus autour de vous. Dites « non » pour arrêter."
+            )
+            number = await self._secret_answer(
+                "Dites le numéro de la carte, les seize chiffres.",
+                parse_number,
+                "Je n'ai pas un numéro de carte valide. Redites les chiffres, lentement.",
+            )
+            if number is None:
+                return None
+            expiry = await self._secret_answer(
+                "La date d'expiration : le mois puis l'année, par exemple zéro trois, vingt-sept.",
+                lambda text: parse_expiry(text, self.today()),
+                "Je n'ai pas compris la date, ou la carte est expirée. Le mois, puis l'année.",
+            )
+            if expiry is None:
+                return None
+            cvc = await self._secret_answer(
+                "Le cryptogramme : les trois chiffres au dos de la carte.",
+                parse_cvc,
+                "Il faut trois chiffres. Redites-les.",
+            )
+            if cvc is None:
+                return None
+            card = NewCard(number, expiry, cvc)
+            spaced = " ".join(card.last4)
+            if not await self._yes_no(
+                "confirm_1",
+                f"Carte qui finit par {spaced}, valable jusqu'en {expiry[:2]} {expiry[2:]}. C'est bien ça ?",
+            ):
+                return None
+            save = await self._yes_no(
+                "confirm_1",
+                f"Voulez-vous enregistrer cette carte sur {site} pour vos prochains achats ? "
+                "C'est le site qui la gardera, pas moi.",
+            )
+            self._card_dictated = True
+            self._journal("card_dictated", save_on_site=save)  # jamais de chiffres
+            return card, save
+        except Abort:
+            return None
+        finally:
+            with contextlib.suppress(Exception):
+                await self._set_state(previous)
+
+    def _agent_site(self) -> str:
+        return getattr(self._agent, "_site", "") or ""
+
+    def _card_saved_sentence(self) -> str:
+        if not self._card_dictated:
+            return ""
+        saved = getattr(self._agent, "last_card_saved", None)
+        if saved is True:
+            return "Votre carte est maintenant enregistrée sur le site."
+        if saved is False:
+            return "La carte n'a pas été enregistrée sur le site."
+        return ""
 
     async def need_human(self, reason: str) -> NeedHumanDecision:
         """Outil need_human : CAPTCHA, cryptogramme, connexion. Attend « c'est fait » ou « annule »."""
