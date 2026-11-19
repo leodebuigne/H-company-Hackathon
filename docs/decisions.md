@@ -255,3 +255,11 @@ Mesures dans `docs/bench-recherche.md` (`python -m orchestrator.agent_h.bench_se
 - **Fiche SNCF** : après la saisie dans « Tout rechercher », SNCF affiche des suggestions d'adresses ; l'agent les prenait pour un échec et passait au formulaire (117 s). La fiche dit maintenant de cliquer tout de suite sur « Rechercher ». Mesuré dans Pilote complet : demande → 3 options en 41 s.
 - **Reste lent** : chaque clic ou saisie prend 6 à 11 s chez H (exécution sur le Chrome local), contre ≈ 2 s de réflexion. À voir dans la documentation H.
 - **Non vérifié** : lors du dernier essai, Pilote n'a rien dit pendant les 37 s de recherche.
+
+## 2026-11-19 : clics de l'agent en 0,1 s au lieu de 5 s (v2 locale, membre 4)
+
+- **Cause** : en Chrome local, le relais de H pilote le navigateur par Selenium, réglé pour attendre le chargement complet de la page après chaque commande (`pageLoadStrategy` normal). Journal du relais : « click_at dispatched in 5.2 s », « write_at 5.3 s » sur SNCF Connect.
+- **Correction** : `local_chrome.tune_local_driver` règle Selenium sur `eager` (structure de la page seulement) avant que le relais crée son pilote. Mesuré : clic 0,1 s, saisie 0,3 s ; recherche de train 36 s → 31 s. `PILOTE_H_PAGE_LOAD=normal` revient au réglage de H. Écart avec H : réglage d'une bibliothèque de H depuis notre code, à revoir à chaque mise à jour du SDK.
+- **Lecture directe** : l'agent répond dès son clic sur « Rechercher », le code attend lui-même les prix (jusqu'à 25 s) ; sans résultat qui respecte la demande (« gratuit »), le code propose les plus proches au lieu de renvoyer l'agent relire la page. Les replis sont journalisés.
+- **Fiche SNCF** : le badge « Meilleur prix » n'est pas un bouton ; le questionnaire « Océane » se ferme avec la croix.
+- **Uber Eats** : sans compte ni adresse dans le Chrome de l'agent, aucune recherche n'aboutit (le site renvoie à l'accueil).

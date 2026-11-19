@@ -134,7 +134,7 @@ def test_lecture_directe_accepte_une_reservation_gratuite() -> None:
 def test_train_l_agent_s_arrete_sur_la_liste_que_le_code_lit() -> None:
     intent = _intent("train", origin="Paris", destination="Lyon")
     text = prompts.search_message(intent, "https://www.sncf-connect.com", None, False, stop_at_results=True)
-    assert "ARRÊTE-TOI" in text and "laisse le champ options vide" in text
+    assert "ARRÊTE-TOI" in text and "champ options vide" in text and "sans attendre" in text
     assert "ARRÊTE-TOI" not in prompts.search_message(intent, "https://www.sncf-connect.com", None, False)
 
 

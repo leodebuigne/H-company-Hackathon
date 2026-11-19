@@ -25,3 +25,6 @@ Mesures de `python -m orchestrator.agent_h.bench_search` : recherche seule, sans
 | 2026-11-19 13:42 | H seul, réflexion disabled | produit | 33 | 1 | 2 | Sony WH-1000XM5 Casque Bluetooth sans Fi — 237.83 € |
 | 2026-11-19 13:42 | H seul, sans sous-agents | produit | 23 | 2 | 3 | Sony WH-1000XM5 Casque Bluetooth sans fi — 237.83 € |
 | 2026-11-19 13:45 | H seul, session d'attente | produit | 16 | 2 | 3 | Sony WH-1000XM5 Casque Bluetooth sans fi — 237.83 € |
+| 2026-11-19 14:12 | H seul, sans adresse directe (mesure des clics) | produit | 30 | 4 | 3 | Sony WH-1000XM5 Casque Bluetooth sans fi — 237.83 € |
+| 2026-11-19 14:13 | train, attente + réponse au clic | train | 36 | 3 | 3 | TGV INOUI 09:00 → 10:56 — 69.00 € |
+| 2026-11-19 14:15 | train, Selenium eager | train | 31 | 3 | 3 | TGV INOUI 09:00 → 10:56 — 69.00 € |

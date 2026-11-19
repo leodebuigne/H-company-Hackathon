@@ -122,6 +122,8 @@ QUICK_SEARCH_SNCF: dict[str, list[str]] = {
         "formulaire.",
         "Sur le panier, « Valider et payer » est le bouton final, même pour un billet à 0 € : ne clique dessus "
         "qu'à l'étape « achat » ou « paiement », après approbation.",
+        "Pour choisir un train, clique sur la ligne du train puis « Choisir ce tarif » ; le badge « Meilleur prix » "
+        "n'est pas un bouton. Le questionnaire « Océane » qui s'ouvre parfois se ferme avec la croix.",
     ],
 }
 

@@ -14,6 +14,7 @@ from __future__ import annotations
 import argparse
 import contextlib
 import json
+import os
 import platform
 import shutil
 import socket
@@ -92,6 +93,34 @@ def fresh_page(url: str) -> None:
     with contextlib.suppress(Exception):  # met le nouvel onglet au premier plan
         urllib.request.urlopen(f"http://127.0.0.1:{PORT}/json/activate/{new_tab['id']}", timeout=3).close()
     time.sleep(1)
+
+
+_TUNED = False
+
+
+def tune_local_driver() -> None:
+    """Le relais local de H pilote ce Chrome par Selenium, réglé pour attendre le chargement COMPLET de la
+    page après chaque commande : ≈ 5 s par clic sur SNCF Connect (mesuré le 19/11 : « click_at dispatched
+    in 5.2 s »).
+    « eager » n'attend que la structure de la page (DOMContentLoaded). PILOTE_H_PAGE_LOAD=normal revient au
+    réglage de H, none n'attend rien."""
+    global _TUNED
+    strategy = (os.getenv("PILOTE_H_PAGE_LOAD") or "eager").strip()
+    if _TUNED or strategy == "normal":
+        return
+    try:
+        from hai_drivers.web.selenium import driver as selenium_driver
+    except ImportError:
+        return
+    original = selenium_driver.SeleniumWebDriver._get_chrome_options.__func__
+
+    def with_strategy(cls, *args, **kwargs):  # type: ignore[no-untyped-def]
+        options = original(cls, *args, **kwargs)
+        options.page_load_strategy = strategy
+        return options
+
+    selenium_driver.SeleniumWebDriver._get_chrome_options = classmethod(with_strategy)
+    _TUNED = True
 
 
 def navigate(url: str) -> bool:

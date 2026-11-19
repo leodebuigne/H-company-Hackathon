@@ -183,10 +183,10 @@ def search_message(
 
 # Recherche partagée : l'agent lance la recherche, le code lit la liste lui-même (fast_read), plus vite.
 STOP_AT_RESULTS = (
-    "Étape : recherche. Lance la recherche avec la méthode ci-dessus. Dès que la liste des résultats est "
-    "affichée et correspond à la demande (lieux, date, heure), ARRÊTE-TOI et réponds tout de suite : ne lis pas "
-    "les résultats, laisse le champ options vide et mets l'adresse de la page dans results_url. Pilote lit la "
-    "liste lui-même. Ne mets rien dans le panier."
+    "Étape : recherche. Lance la recherche avec la méthode ci-dessus. Dès que tu as cliqué sur le bouton qui "
+    "lance la recherche (« Rechercher »), ARRÊTE-TOI et réponds tout de suite, sans attendre l'affichage ni "
+    "lire les résultats : Pilote attend la liste et la lit lui-même. Laisse le champ options vide. Ne mets "
+    "rien dans le panier."
 )
 
 

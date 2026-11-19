@@ -92,3 +92,8 @@ Une ligne par commande, ajoutée automatiquement par orchestrator/agent_h/metric
 | 2026-11-19 13:45 | www.amazon.fr | pilote-shopper | annulée | 25 | 2 | - |
 | 2026-11-19 13:48 | www.sncf-connect.com | pilote-shopper | annulée | 113 | 13 | - |
 | 2026-11-19 13:53 | www.sncf-connect.com | pilote-shopper | annulée | 39 | 4 | - |
+| 2026-11-19 14:01 | www.sncf-connect.com | pilote-shopper | achat direct | 258 | 10 | accepted |
+| 2026-11-19 14:03 | www.ubereats.com | pilote-shopper | annulée | 49 | 5 | - |
+| 2026-11-19 14:12 |  | pilote-shopper | annulée | 31 | 4 | - |
+| 2026-11-19 14:13 | www.sncf-connect.com | pilote-shopper | annulée | 36 | 3 | - |
+| 2026-11-19 14:15 | www.sncf-connect.com | pilote-shopper | annulée | 32 | 3 | - |

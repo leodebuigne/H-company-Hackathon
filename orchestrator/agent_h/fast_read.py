@@ -38,6 +38,9 @@ horaire, préférence). Réponds UNIQUEMENT en JSON :
 "rating": 4.5 ou null, "description": "une phrase courte" ou null, "details": {{...}}}}]}}
 Règles absolues :
 - Recopie le nom et le prix EXACTEMENT comme sur la page. N'invente rien : une information absente reste null.
+- Si aucun résultat ne respecte toutes les contraintes (par exemple « gratuit » ou un budget), renvoie \
+quand même les {n} plus proches, en disant dans description ce qui ne correspond pas : ne renvoie jamais \
+une liste vide quand la page affiche des résultats.
 - Ignore les publicités et les résultats « Sponsorisé » quand d'autres résultats existent.
 - details, clés possibles (seulement si la page l'affiche) : departure, arrival (HH:MM), duration, via \
 (« direct » ou correspondances) pour un train, avec title = type de train et heures (« TGV INOUI 09:00 → \
@@ -91,8 +94,9 @@ async def _evaluate(ws: Any, expression: str, ident: int) -> Any:
             return message.get("result", {}).get("result", {}).get("value")
 
 
-async def page_text(domain: str, wait_s: float = WAIT_S) -> str:
-    """Texte visible de la page, une fois qu'il ne grandit plus (résultats chargés) ou après wait_s."""
+async def page_text(domain: str, wait_s: float = WAIT_S, min_prices: int = 0) -> str:
+    """Texte visible de la page, une fois qu'il ne grandit plus (résultats chargés) ou après wait_s.
+    min_prices : nombre de prix (« € ») à voir avant de lire, quand la liste met du temps à arriver."""
     import websockets
 
     url = await asyncio.to_thread(_target, domain)
@@ -102,7 +106,8 @@ async def page_text(domain: str, wait_s: float = WAIT_S) -> str:
         while time.monotonic() < deadline:
             ident += 1
             text = await _evaluate(ws, "document.body ? document.body.innerText : ''", ident) or ""
-            stable = stable + 1 if len(text) == last and len(text) > 500 else 0
+            ready = len(text) > 500 and text.count("€") >= min_prices
+            stable = stable + 1 if len(text) == last and ready else 0
             if stable >= 2:  # même longueur 2 fois de suite (≈ 0,8 s) : la liste est affichée
                 break
             last = len(text)
@@ -190,12 +195,20 @@ async def _extract(text: str, request: str, n: int) -> list[AgentOption]:
     return _parse(response.choices[0].message.content or "")
 
 
-async def find_options(
+async def find_options_when_ready(
     domain: str, intent: Intent, request: str, n: int
+) -> tuple[list[AgentOption], dict[str, float]]:
+    """Comme find_options, mais attend que la liste des résultats arrive (jusqu'à 25 s) : l'agent répond
+    dès son clic sur « Rechercher » au lieu d'attendre lui-même l'affichage (≈ 15 s gagnées sur SNCF)."""
+    return await find_options(domain, intent, request, n, wait_s=25, min_prices=3)
+
+
+async def find_options(
+    domain: str, intent: Intent, request: str, n: int, wait_s: float = WAIT_S, min_prices: int = 0
 ) -> tuple[list[AgentOption], dict[str, float]]:
     """Options lues directement sur la page de résultats ; FastReadError si rien de vérifié."""
     t0 = time.monotonic()
-    text = await page_text(domain)
+    text = await page_text(domain, wait_s, min_prices)
     t1 = time.monotonic()
     if len(text) < 300:
         raise FastReadError("page vide ou bloquée")

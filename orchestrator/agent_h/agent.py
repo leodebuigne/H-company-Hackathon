@@ -29,6 +29,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import logging
 import os
 import re
 import time
@@ -64,6 +65,8 @@ from .models import (
 from .narration import actions_in, describe_action
 from .site_memory import SiteMemory, domain_of, learn_search, merge_card, site_memory_from_env, with_starter
 from .watch import StepWatch, StuckCallback, screenshot_in
+
+log = logging.getLogger(__name__)
 
 OK_STATUSES = {"idle", "completed"}
 
@@ -317,6 +320,8 @@ class ShoppingAgent:
         return _fit_effort(spec)
 
     async def _ensure_client(self) -> AsyncClient:
+        if self._browser_host == "user_device":
+            local_chrome.tune_local_driver()  # avant que le relais H ne crée son pilote Selenium
         if self._client is None:
             self._client = AsyncClient()
         return self._client
@@ -734,8 +739,8 @@ class ShoppingAgent:
                 return self._options
             except Exception as error:
                 self.fast_timings = {"repli": 1.0}
-                log_reason = f"{type(error).__name__}: {error}"[:120]
-                self.last_fast_error = log_reason
+                self.last_fast_error = f"{type(error).__name__}: {error}"[:120]
+                log.info("lecture directe impossible (%s) : l'agent H cherche", self.last_fast_error)
                 await self._start_search_session(self._intent, self._site_card, self._shortcut)
         answer = await self._wait("search")
         if self._shared_search and not answer.options:
@@ -748,7 +753,7 @@ class ShoppingAgent:
     async def _read_shared_results(self, answer: AgentAnswer) -> AgentAnswer:
         """L'agent s'est arrêté sur la liste : le code la lit (fast_read). Sinon, l'agent la lit lui-même."""
         try:
-            found, self.fast_timings = await fast_read.find_options(
+            found, self.fast_timings = await fast_read.find_options_when_ready(
                 domain_of(self._site),
                 self._intent,
                 prompts.intent_text(self._intent, self._site),
@@ -758,6 +763,7 @@ class ShoppingAgent:
         except Exception as error:
             self.fast_timings = {"repli": 1.0}
             self.last_fast_error = f"{type(error).__name__}: {error}"[:120]
+            log.info("lecture directe impossible (%s) : l'agent H lit la liste", self.last_fast_error)
             return await self._send(prompts.read_results_message(), "search")
 
     async def _learn_search_url(self, results_url: str | None) -> None:
