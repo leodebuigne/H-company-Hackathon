@@ -1207,7 +1207,7 @@ class Session:
         return "approved" if approved else "denied"
 
     async def _direct_consent(self, option: Option, summary: OrderSummary) -> bool:
-        """Achat direct, agent arrêté sur le bouton de paiement : le code, ou un oui (rien si gratuit).
+        """Achat direct, agent arrêté sur le bouton de paiement : le code, ou un oui (même si gratuit).
 
         Si le total diffère du prix annoncé, le détail est dit d'abord (produit, frais de livraison, de
         service…) et la personne décide en connaissant le vrai total.
@@ -1219,11 +1219,14 @@ class Session:
                 await self._say(price_breakdown(option, summary))
             if self.settings.purchase_code:
                 await self._check_code(option, total_cents)  # le code vaut accord, même si c'est gratuit
-            elif total_cents > 0 or explained:
+            else:
+                # Toujours un « oui », même gratuit : une réservation à 0 € engage aussi (une place est
+                # prise au nom du compte)
+                price = "gratuit" if total_cents == 0 else euros(total_cents)
                 question = (
                     f"On paie {spoken_euros(total_cents)} au total ?"
                     if explained
-                    else f"J'achète bien {option.title}, {euros(total_cents)} ?"
+                    else f"J'achète bien {option.title}, {price} ?"
                 )
                 if not await self._yes_no("confirm_1", question):
                     raise Abort("D'accord, je n'achète rien.")

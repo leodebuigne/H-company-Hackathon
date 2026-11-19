@@ -68,7 +68,16 @@ from .models import (
 from .narration import actions_in, describe_action
 from .path_memory import Briefing, PathMemory, briefing_text
 from .shops import SiteChoice, resolve_site, search_query, site_name
-from .site_memory import SiteMemory, card_for_order, domain_of, merge_card, site_memory_from_env, starter_card
+from .site_memory import (
+    DIRECT_RESULTS_STEPS,
+    SiteMemory,
+    card_for_order,
+    direct_search_url,
+    domain_of,
+    merge_card,
+    site_memory_from_env,
+    starter_card,
+)
 from .watch import StepWatch, StuckCallback, screenshot_in
 
 log = logging.getLogger(__name__)
@@ -176,7 +185,9 @@ class ShoppingAgent:
         self.order_id = ""  # UUID créé par checkout() ; recheck() le conserve
         self.agent_view_url: str | None = None
         self._site = ""
-        self._start_url = ""  # page d'arrivée : les résultats quand c'est possible (start_url_for)
+        self._start_url = (
+            ""  # page d'arrivée : les résultats quand c'est possible (direct_search_url, start_url_for)
+        )
         self._site_note = ""  # consigne sur le site : lien produit, ou site officiel à trouver
         self._session: Any = None
         self._site_card: SiteCard | None = None
@@ -447,9 +458,8 @@ class ShoppingAgent:
         if os.getenv("PILOTE_H_PAGE_TEXT", "").strip() != "0":
             environment["mode"] = {"type": "visual", "markdown": True}
         if self._site:
-            environment["start_url"] = (
-                self._start_url or self._site
-            )  # le navigateur s'ouvre directement sur le site
+            # le navigateur s'ouvre directement sur le site (ou sur ses résultats, voir direct_search_url)
+            environment["start_url"] = self._start_url or self._site
         # Coffre-fort H : H saisit les identifiants du site à la place de l'agent, qui ne les voit jamais.
         # Uniquement sur un navigateur cloud (limite du SDK H).
         if self._vault_id:
@@ -667,7 +677,10 @@ class ShoppingAgent:
     async def start(self, intent: Intent, site_card: SiteCard | None = None, site: str | None = None) -> None:
         choice = SiteChoice(url=site, name=site_name(site)) if site else site_choice(intent)
         self._site = choice.url
-        self._start_url = start_url_for(intent, self._site)
+        # Lien direct vers les résultats quand le site en a un (SNCF) : la page charge pendant que Pilote
+        # parle, et l'agent n'a plus qu'à lire ; sinon les résultats d'Amazon, d'Uber Eats, ou le lien donné
+        direct = direct_search_url(intent, self._site)
+        self._start_url = direct or start_url_for(intent, self._site)
         self._site_note = prompts.site_note(choice)
         self._real_client = self._real_client or self._client is None  # client simulé dans les tests
         if self._browser_host == "user_device" and self._real_client:
@@ -683,13 +696,21 @@ class ShoppingAgent:
         domain = domain_of(self._site)
         if site_card is None and domain:  # réservation sans site fixe : pas de fiche (sinon clé vide)
             site_card = card_for_order(await self._memory.get(domain), starter_card(domain))
+            if direct and site_card is not None:
+                site_card = site_card.model_copy(update={"steps": DIRECT_RESULTS_STEPS})
         self._site_card = site_card
         if self._paths is not None and not choice.lookup:  # site encore inconnu : pas de mémoire pour Bing
             self._briefing = await asyncio.to_thread(self._paths.begin_visit, domain)
         await self._load_portal_agent(client)
         self._metrics = RunMetrics(site=domain, agent=self._agent_name or "inline", started=time.monotonic())
+        spec = self._agent_spec()
+        if direct and isinstance(spec, dict) and self._browser_host == "user_device" and self._real_client:
+            # Chrome local : Pilote a déjà ouvert la page des résultats. Si H la rouvrait lui-même, la
+            # fenêtre se fermait en plein chargement (« target window already closed », mesuré le
+            # 2026-11-19) : l'agent continue donc depuis la page ouverte, comme entre deux étapes.
+            spec["environments"][0].pop("start_url", None)
         self._session = await client.start_session(
-            agent=self._agent_spec(),
+            agent=spec,
             messages=prompts.search_message(
                 intent,
                 self._site,

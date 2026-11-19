@@ -1136,3 +1136,44 @@ def test_product_details_do_not_make_the_answer_rejected():
     options = to_options(answer.options)
     assert options[0].details == {"color": "gris", "places": "3"}
     assert options[1].details == {"info": "Livré en 3 semaines"}
+
+
+def test_sncf_results_open_from_a_direct_link(monkeypatch):
+    from orchestrator.agent_h.site_memory import DIRECT_RESULTS_STEPS, direct_search_url
+
+    monkeypatch.delenv("PILOTE_SNCF_QUICK_SEARCH", raising=False)
+    trip = TRAIN.model_copy(
+        update={
+            "category": "train",
+            "details": {"origin": "Paris", "destination": "Nantes"},
+            "when": TRAIN.when.model_copy(update={"date": dt.date(2026, 11, 21), "after": "10:00"}),
+        }
+    )
+    url = direct_search_url(trip, "https://www.sncf-connect.com")
+    assert url == "https://www.sncf-connect.com/home/search?userInput=Paris+Nantes+21+novembre+10h"
+    no_hour = trip.model_copy(update={"when": trip.when.model_copy(update={"after": None})})
+    assert direct_search_url(no_hour, "https://www.sncf-connect.com").endswith("Paris+Nantes+21+novembre")
+    assert direct_search_url(trip, "https://h-company-hackathon-rail-demo.vercel.app") is None
+    assert direct_search_url(PIZZA, "https://www.sncf-connect.com") is None
+    assert all(len(step) <= 200 for step in DIRECT_RESULTS_STEPS)
+    monkeypatch.setenv("PILOTE_SNCF_QUICK_SEARCH", "0")
+    assert direct_search_url(trip, "https://www.sncf-connect.com") is None
+
+
+async def test_agent_starts_on_the_direct_results_page(monkeypatch):
+    monkeypatch.delenv("PILOTE_H_AGENT", raising=False)
+    monkeypatch.delenv("PILOTE_SNCF_QUICK_SEARCH", raising=False)
+    agent = ShoppingAgent(memory=InMemorySiteMemory(), record_metrics=False, browser_host="cloud")
+    agent._client = _FakeClient(lambda: _FakeSession([{"options": []}], agent))  # type: ignore[assignment]
+    trip = TRAIN.model_copy(
+        update={
+            "category": "train",
+            "details": {"origin": "Paris", "destination": "Lyon"},
+            "when": TRAIN.when.model_copy(update={"date": dt.date(2026, 11, 20)}),
+        }
+    )
+    await agent.start(trip)
+    started = agent._client.started  # type: ignore[union-attr]
+    assert started["agent"]["environments"][0]["start_url"].endswith("userInput=Paris+Lyon+20+novembre+14h")
+    assert "ne tape rien" in started["messages"]
+    await agent.cancel()

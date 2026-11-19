@@ -835,3 +835,20 @@ def test_the_site_is_asked_for_a_shop_but_never_for_a_reservation_or_a_train(mon
     table = base.model_copy(update={"category": "reservation", "object": "restaurant italien"})
     assert Session._needs_site(table) is False
     assert Session._needs_site(base.model_copy(update={"category": "train"})) is False
+
+
+async def test_a_free_ticket_also_needs_a_yes_and_a_no_buys_nothing(monkeypatch):
+    """Sans code secret : un billet à 0 € ne s'achète jamais sans un oui, demandé au bouton de paiement."""
+    import orchestrator.agent_h.fake as fake
+
+    free = [o.model_copy(update={"price_eur": 0.0}) for o in fake.TRAIN_OPTIONS]
+    monkeypatch.setattr(fake, "TRAIN_OPTIONS", free)
+    async with Harness(direct_buy=True) as h:
+        await h.text("Un train de Paris pour Lille demain après 14 h")
+        await h.wait("proposing")
+        await h.text("La deuxième")
+        await h.wait("confirm_1")
+        assert "J'achète bien" in h.said() and "gratuit ?" in h.said()
+        await h.confirm(False)
+        await h.wait("listening")
+        assert "je n'achète rien" in h.said() and "C'est acheté" not in h.said()

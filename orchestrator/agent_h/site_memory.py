@@ -12,11 +12,12 @@ import os
 import re
 from pathlib import Path
 from typing import Protocol
+from urllib.parse import urlencode
 
 import httpx
 from pydantic import ValidationError
 
-from orchestrator.contracts import SiteCard
+from orchestrator.contracts import Intent, SiteCard
 
 from .models import SiteNotes
 
@@ -138,6 +139,47 @@ QUICK_SEARCH_SNCF: dict[str, list[str]] = {
         "qu'à l'étape « achat » ou « paiement », après approbation.",
     ],
 }
+
+
+# Lien direct vers les résultats SNCF Connect (mesuré le 2026-11-19 : résultats affichés en 9 à 14 s,
+# sans rien taper). Sans lui, le bouton « Rechercher » passe par l'assistant du site, qui met 30 à 40 s
+# pendant lesquelles l'agent ne peut qu'attendre.
+DIRECT_RESULTS_STEPS = [
+    "La page s'ouvre directement sur la recherche demandée : ne tape rien et ne clique sur rien. Si elle "
+    "charge encore (points qui tournent), attends 5 secondes à la fois, 20 secondes au maximum.",
+    "Dès que la liste des trains est affichée, lis les premiers trains visibles et réponds tout de suite : "
+    "un seul défilement au plus, les trois premiers trains qui conviennent suffisent.",
+    "Vérifie seulement les gares et la date affichées en haut ; ne refais pas la recherche si elles sont "
+    "justes.",
+    "Seulement si tu te retrouves sur l'accueil sans résultats : tape le trajet, la date et l'heure dans "
+    "« Tout rechercher » puis clique sur le bouton bleu « Rechercher ».",
+]
+_FR_MONTHS = (
+    "janvier", "février", "mars", "avril", "mai", "juin",
+    "juillet", "août", "septembre", "octobre", "novembre", "décembre",
+)  # fmt: skip
+
+
+def direct_search_url(intent: Intent, site: str) -> str | None:
+    """Adresse qui ouvre directement les résultats de la demande, ou None si le site n'en a pas.
+
+    SNCF Connect, pour un train avec départ, arrivée et date : la recherche en texte libre du site
+    (« Paris Lyon 20 novembre 10h »). PILOTE_SNCF_QUICK_SEARCH=0 la coupe.
+    """
+    if domain_of(site) != "www.sncf-connect.com" or intent.category != "train":
+        return None
+    if os.getenv("PILOTE_SNCF_QUICK_SEARCH", "").strip() == "0":
+        return None
+    origin, destination = intent.details.get("origin"), intent.details.get("destination")
+    date = intent.when.date
+    if not origin or not destination or date is None:
+        return None
+    words = [origin, destination, f"{date.day} {_FR_MONTHS[date.month - 1]}"]
+    hour = intent.details.get("time") or intent.when.after
+    if hour:
+        hours, _, minutes = hour.partition(":")
+        words.append(f"{int(hours)}h{minutes if minutes not in ('', '00') else ''}")
+    return f"https://www.sncf-connect.com/home/search?{urlencode({'userInput': ' '.join(words)})}"
 
 
 def starter_card(domain: str) -> SiteCard | None:
