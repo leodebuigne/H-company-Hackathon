@@ -10,7 +10,7 @@ ligne à la place d'une personne aveugle ou malvoyante : on lui parle, il agit s
 dit ce qu'il fait, et il n'achète jamais sans accord.
 
 - **Équipe 3 :** Antonin Fonteneau, Léo Debuigne, Victor Smiernow, Benjamin Chabanis, Rubens Le Scao
-- **Dépôt :** https://github.com/leodebuigne/H-company-Hackathon (dernière version : branche `last_last_version`)
+- **Dépôt :** https://github.com/leodebuigne/H-company-Hackathon (branche `main`)
 - **Prototype :** il tourne sur l'ordinateur de démo (voir « Comment tester ») ; [lien vers la vidéo de démo]
 - **Pitch deck :** https://claude.ai/artifact/ATsZ6Zf7pMjkcq15bpcaLP (sources dans [`docs/pitch-deck/`](pitch-deck/README.md))
 
@@ -100,7 +100,6 @@ Hugging Face (`HF_TOKEN`).
 
 ```bash
 git clone https://github.com/leodebuigne/H-company-Hackathon.git && cd H-company-Hackathon
-git switch last_last_version
 python3.12 -m venv .venv && . .venv/bin/activate && pip install -e ".[dev,agent,ai,voix]"
 cp .env.example .env        # puis renseigner HAI_API_KEY et HF_TOKEN
 (cd web && npm install)
@@ -137,5 +136,4 @@ Vérifier le code : `ruff check . && ruff format --check . && pytest -q`, puis d
 - La voix locale demande une installation lourde (`.[voix]`, qui installe torch). Sans elle, Topil garde
   la voix en ligne, qui a eu des pannes le 19 novembre.
 - Le vrai micro et le mot de réveil « Bonjour Topil » ont été peu testés dans la dernière tournée.
-- La dernière version est sur la branche `last_last_version`, pas encore sur `main`.
 - Topil n'a pas encore été essayé par des personnes aveugles.
