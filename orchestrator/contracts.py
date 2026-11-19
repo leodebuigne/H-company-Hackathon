@@ -141,6 +141,7 @@ class ClientAudio(_Strict):
     type: Literal["audio"]
     data: Annotated[str, Field(min_length=1)]
     mime: str
+    overlapped: bool = False  # la voix de Pilote jouait pendant l'enregistrement : écho possible
 
 
 class ClientText(_Strict):

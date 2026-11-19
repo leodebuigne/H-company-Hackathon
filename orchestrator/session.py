@@ -29,6 +29,7 @@ import re
 import time
 import unicodedata
 import uuid
+from collections import deque
 from collections.abc import Awaitable, Callable
 from pathlib import Path
 from typing import Any, TypeVar
@@ -64,6 +65,7 @@ from orchestrator.contracts import (
     State,
     When,
 )
+from orchestrator.echo import should_drop
 from orchestrator.ports import (
     AI,
     AgentFactory,
@@ -301,6 +303,15 @@ def cart_extras(option: Option, summary: OrderSummary, wanted: int = 1) -> list[
     return extras
 
 
+class _Dropped:
+    """Transcription écartée comme écho de Pilote.
+
+    Ni réponse, ni « je n'ai pas compris » : ce serait une phrase de plus à faire écho."""
+
+
+DROPPED = _Dropped()
+
+
 class Abort(Exception):
     """Fin anticipée de la commande. `message` est dit à l'oral ; `code` part aussi en message error."""
 
@@ -490,6 +501,9 @@ class Session:
         self._secret_mode = False  # pendant la demande du code secret ou de la carte
         self._card_dictated = False  # une carte a été dictée pour la commande en cours
         self._payment_refusal: str | None = None
+        self._spoken: deque[str] = deque(
+            maxlen=6
+        )  # ce que Pilote a dit (progression comprise) : filtre d'écho
         self._flow: asyncio.Task[None] | None = None
         self._reader: asyncio.Task[None] | None = None
         self._cancelling = asyncio.Lock()
@@ -560,6 +574,8 @@ class Session:
             self._snapshot[key] = data
         elif key == "transcript":
             self._recent.append(data)
+        if key == "say":
+            self._spoken.append(data["text"])
         for send in list(self._clients):
             await self._send_raw(send, data)
 
@@ -648,6 +664,10 @@ class Session:
             except Exception:
                 log.exception("Compréhension impossible")
                 intent = None
+            if intent is DROPPED:  # écho de Pilote : on retourne en attente, sans rien dire
+                if self._waiting:
+                    await self._set_state(self._resume_state)
+                continue
             if intent is None:
                 if self._waiting:
                     await self._set_state(self._resume_state)
@@ -671,7 +691,7 @@ class Session:
                     heard=intent.text,
                 )
 
-    async def _understand(self, message: ClientMessage) -> Intent | None:
+    async def _understand(self, message: ClientMessage) -> Intent | None | _Dropped:
         if isinstance(message, ClientConfirm):
             return _intent("confirm" if message.value else "deny", "oui" if message.value else "non")
         if self._waiting:
@@ -688,6 +708,10 @@ class Session:
         else:
             assert isinstance(message, ClientText)
             text = message.text
+        if isinstance(message, ClientAudio) and should_drop(text, list(self._spoken), message.overlapped):
+            # La voix de Pilote captée par le micro : ni réponse, ni affichage, ni essai de code consommé
+            self._journal("echo_dropped", overlapped=message.overlapped)  # jamais le texte
+            return DROPPED
         if self._secret_mode:
             # Code secret : ni modèle de langage, ni historique, ni affichage. Comparé puis oublié.
             await self._emit(ServerTranscript(role="user", text="•••"))

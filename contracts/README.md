@@ -70,7 +70,7 @@ Adresse : `ws://localhost:8000/ws`. Chaque message est un objet JSON avec un cha
 
 | type | Champs | Quand |
 | --- | --- | --- |
-| `audio` | `data` (base64), `mime` | Bouton ou espace relâché. Un message = un enregistrement complet. |
+| `audio` | `data` (base64), `mime`, `overlapped` (optionnel) | Bouton ou espace relâché. Un message = un enregistrement complet. `overlapped: true` : la voix de Pilote jouait pendant l'enregistrement, donc ni « oui », ni « non », ni code n'est accepté, et ce qui ressemble à ce que Pilote vient de dire est écarté. |
 | `text` | `text` | Mode texte de secours. Traité exactement comme une transcription. |
 | `confirm` | `value` (booléen) | Oui ou non au clavier, équivalent d'un « oui » ou « non » oral. Accepté en `proposing`, `confirm_1`, `confirm_2`. |
 | `cancel` | | Échap ou « annule ». Accepté dans tous les états. |

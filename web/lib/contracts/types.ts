@@ -281,6 +281,10 @@ export interface ClientAudio {
    * ex. audio/webm;codecs=opus
    */
   mime: string;
+  /**
+   * Optionnel, faux par défaut. Vrai si la voix de Pilote jouait pendant l'enregistrement (ou venait de finir) : le micro a pu capter Pilote, donc l'orchestrateur n'accepte alors ni « oui », ni « non », ni code, et écarte ce qui ressemble à ce que Pilote vient de dire.
+   */
+  overlapped?: boolean;
 }
 /**
  * Interface → orchestrateur. Mode texte de secours : remplace un message audio.

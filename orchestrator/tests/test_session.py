@@ -1054,3 +1054,56 @@ async def test_cancelling_before_any_payment_authorisation_still_says_nothing_wa
         await h.wait("proposing")
         await h.session.receive({"type": "cancel"})
         await h.wait_said("Rien n'a été acheté")
+
+
+# --- écho : la voix de Pilote captée par le micro ----------------------------------------------
+
+
+async def _audio(h: Harness, transcript: str, overlapped: bool = False) -> None:
+    h.session.ai.transcript = transcript  # type: ignore[attr-defined]
+    await h.session.receive({"type": "audio", "data": "AAAA", "mime": "audio/webm", "overlapped": overlapped})
+    await asyncio.sleep(0.15)
+
+
+async def test_pilotes_own_sentence_heard_by_the_microphone_is_ignored_in_silence():
+    async with Harness() as h:
+        await h.session._say("Je cherche un train de Paris à Lille, demain après quatorze heures.")
+        users_before = len([m for m in h.of("transcript") if m["role"] == "user"])
+        said_before = h.said()
+        await _audio(h, "Je cherche un train de Paris à Lille demain après quatorze heures")
+        assert len([m for m in h.of("transcript") if m["role"] == "user"]) == users_before  # pas affiché
+        assert (
+            h.said() == said_before
+        )  # et surtout : aucun « je n'ai pas compris », ce serait un écho de plus
+        assert h.session.state == "listening" and h.session._waiting
+
+
+async def test_a_yes_captured_while_pilote_was_speaking_never_confirms_the_purchase():
+    async with Harness(direct_buy=True) as h:
+        await h.text("Un train de Paris pour Lille demain après 14 h")
+        await h.wait("proposing")
+        await h.text("La deuxième")
+        await h.wait("confirm_1")
+        await _audio(h, "oui", overlapped=True)  # l'écho de « dites oui pour confirmer »
+        assert "C'est acheté" not in h.said() and h.session.state == "confirm_1"
+        await _audio(h, "oui", overlapped=False)  # le vrai « oui », après la fin de la phrase
+        await h.wait_said("C'est acheté")
+
+
+async def test_a_code_captured_while_pilote_was_speaking_is_ignored_and_costs_no_attempt():
+    async with Harness(direct_buy=True, purchase_code="472") as h:
+        await _to_code_prompt(h)
+        await _audio(h, "quatre sept deux", overlapped=True)  # même le bon code : il peut venir de Pilote
+        assert "C'est acheté" not in h.said() and "pas le bon code" not in h.said()
+        await _audio(h, "un un un")  # un vrai mauvais essai : il reste bien 2 essais, aucun n'a été perdu
+        await h.wait_said("Encore 2 essais.")
+        await _audio(h, "quatre sept deux")
+        await h.wait_said("C'est acheté")
+
+
+async def test_a_short_real_answer_after_pilote_finished_is_still_understood():
+    async with Harness() as h:
+        await h.text("Un train de Paris pour Lille demain après 14 h")
+        await h.wait("proposing")
+        await _audio(h, "la deuxième")  # reprend un mot de la phrase des options, mais sans chevauchement
+        await h.wait("confirm_1")

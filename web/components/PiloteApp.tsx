@@ -27,6 +27,7 @@ import {
   type ServerMessage,
   type State,
 } from "./protocol";
+import { OverlapTracker, overlapField } from "./echoGuard";
 import { PushToTalkRecorder, RELEASE_TAIL_MS } from "./recorder";
 import { Speaker, listFrenchVoices, setBrowserVoice } from "./speech";
 import { ORCHESTRATOR_HTTP, usePilote } from "./usePilote";
@@ -151,11 +152,16 @@ export default function PiloteApp() {
   const wakeRef = useRef<WakeWordListener | null>(null);
   const sayCountRef = useRef(0); // numéro de la dernière phrase de Pilote
   const autoForRef = useRef(-1); // phrase après laquelle on a déjà réécouté (une seule fois)
+  const overlapRef = useRef(new OverlapTracker()); // la voix de Pilote a-t-elle chevauché l'enregistrement ?
   const endedRef = useRef(true); // conversation terminée : on attend « Bonjour Pilote » ou un appui
 
   useEffect(() => {
     const speaker = new Speaker();
-    speaker.onChange = setSpeaking;
+    speaker.onChange = (isSpeaking) => {
+      setSpeaking(isSpeaking);
+      // Pilote se met à parler micro ouvert : l'enregistrement est marqué, le serveur se méfiera
+      if (isSpeaking && recorderRef.current?.isRecording) overlapRef.current.pilotStartedSpeaking();
+    };
     speakerRef.current = speaker;
     recorderRef.current = new PushToTalkRecorder();
     const saved = getPrefs();
@@ -343,7 +349,12 @@ export default function PiloteApp() {
       playEarcon("thinking");
       awaitingReplyRef.current = true;
       if (
-        !send({ type: "audio", data: recording.data, mime: recording.mime })
+        !send({
+          type: "audio",
+          data: recording.data,
+          mime: recording.mime,
+          ...overlapField(overlapRef.current),
+        })
       ) {
         awaitingReplyRef.current = false;
         tell("Je ne suis pas connecté à Pilote pour le moment.");
@@ -373,6 +384,7 @@ export default function PiloteApp() {
       await new Promise((r) => setTimeout(r, EARCON_GAP_MS));
       if (gen !== hushGenRef.current) return; // « Stop » pendant la cloche : on n'ouvre pas le micro
       await recorderRef.current?.start();
+      overlapRef.current.begin(speakerRef.current?.speaking ?? false);
       if (gen !== hushGenRef.current) return recorderRef.current?.discard(); // « Stop » pendant l'ouverture
       setRecording(true);
     } catch {
@@ -414,6 +426,7 @@ export default function PiloteApp() {
       await new Promise((r) => setTimeout(r, EARCON_GAP_MS));
       try {
         await rec.start();
+        overlapRef.current.begin(speakerRef.current?.speaking ?? false);
       } catch {
         return;
       }
