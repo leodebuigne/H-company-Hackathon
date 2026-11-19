@@ -86,6 +86,11 @@ UNSURE = (
     "Le paiement a été autorisé, mais j'ai perdu le contact avec le site avant de voir le résultat. "
     "Je ne sais pas si l'achat est passé : vérifiez vos e-mails ou le site avant de recommencer."
 )
+# Arrêt demandé alors que le paiement avait été autorisé : le clic a pu avoir lieu, on ne dit jamais « rien ».
+UNSURE_STOPPED = (
+    "J'arrête, mais le paiement avait été autorisé : je ne sais pas si l'achat est passé. "
+    "Vérifiez vos e-mails ou le site avant de recommencer."
+)
 # États où Pilote attend une réponse de la personne.
 WAITING: set[State] = {"listening", "proposing", "confirm_1", "confirm_2", "human_needed"}
 SITE_NAMES = {"www.sncf-connect.com": "SNCF Connect", "www.ubereats.com": "Uber Eats"}
@@ -738,12 +743,20 @@ class Session:
     async def cancel_order(self, message: str) -> None:
         """Arrête tout de suite la commande en cours, dans n'importe quel état."""
         async with self._cancelling:
+            unsure = self._payment_unsure()  # à lire avant d'arrêter la commande
             if self._flow is not None and not self._flow.done():
                 self._flow.cancel()
                 with contextlib.suppress(asyncio.CancelledError, Exception):
                     await self._flow
-            await self._end_order("cancelled", message, code="user_cancel")
+            if unsure:
+                await self._end_order("done", UNSURE_STOPPED, code="user_cancel_after_payment_cleared")
+            else:
+                await self._end_order("cancelled", message, code="user_cancel")
             self._flow = asyncio.create_task(self._flow_loop(), name="pilote-flow")
+
+    def _payment_unsure(self) -> bool:
+        """Le verrou a autorisé le clic de paiement dans la commande en cours : l'achat a pu avoir lieu."""
+        return self._payment_cleared and self._order_started is not None
 
     async def reset_conversation(self) -> None:
         """Nouvelle conversation : commande en cours arrêtée, conversation oubliée, écrans vidés.
@@ -756,9 +769,11 @@ class Session:
                 with contextlib.suppress(asyncio.CancelledError, Exception):
                     await self._flow
             busy = self._order_started is not None or self._agent is not None  # une commande tournait
+            unsure = self._payment_unsure()
             await self._close_agent()
             self._journal("reset", state_before=self.state, step=self._last_step)
             self._order_started, self._last_step = None, None
+            self._payment_cleared = False
             self.history.clear()
             self._recent.clear()
             self._context_start = 0
@@ -771,7 +786,14 @@ class Session:
             self.session_id = uuid.uuid4().hex[:8]
             await self._emit(ServerReady(session_id=self.session_id))
             await self._set_state("listening")
-            stopped = " J'ai arrêté ce que je faisais, rien n'a été acheté." if busy else ""
+            stopped = ""
+            if unsure:
+                stopped = (
+                    " J'ai arrêté ce que je faisais, mais le paiement avait été autorisé : je ne sais pas "
+                    "si l'achat est passé. Vérifiez vos e-mails ou le site."
+                )
+            elif busy:
+                stopped = " J'ai arrêté ce que je faisais, rien n'a été acheté."
             await self._say(
                 f"C'est fait, on repart de zéro : j'ai oublié notre conversation.{stopped} Je garde ce "
                 "que j'ai appris sur les sites, pour aller vite. Que puis-je faire pour vous ?"
@@ -801,6 +823,7 @@ class Session:
             seconds=round(time.monotonic() - started) if started else None,
         )
         self._order_started, self._last_step = None, None
+        self._payment_cleared = False  # la commande est finie : le prochain état de paiement repart de zéro
         for key in ("options", "summary", "intent"):
             self._snapshot.pop(key, None)
         self._intent = None

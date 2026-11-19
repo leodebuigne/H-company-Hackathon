@@ -1010,3 +1010,47 @@ async def test_a_new_train_request_is_not_glued_to_a_question_waiting_for_a_prec
         await h.text("Un train de Paris pour Lille demain après 14 h")
         await h.wait("proposing")  # le train est cherché, pas « la CAF (précision : un train…) »
         assert all("CAF" not in t["text"] for t in h.session._context())
+
+
+async def _pay_button_reached_then_hang(h: Harness) -> None:
+    """Direct buy : le code est donné, le verrou autorise le clic, puis l'agent ne répond plus."""
+    await h.text("Un train de Paris pour Lille demain après 14 h")
+    await h.wait("proposing")
+    agent = h.agents[-1]
+
+    async def authorised_then_hang():
+        summary = await agent.checkout()
+        assert await h.session.approve_payment(summary) == "approved"
+        await asyncio.sleep(60)
+
+    agent.buy = authorised_then_hang  # type: ignore[method-assign]
+    await h.text("La deuxième")
+    await h.wait("confirm_1")
+    await h.text("472")
+    await _until(lambda: h.session._payment_cleared, 5)
+
+
+async def test_cancelling_after_the_payment_was_authorised_never_says_nothing_was_bought():
+    async with Harness(direct_buy=True, purchase_code="472") as h:
+        await _pay_button_reached_then_hang(h)
+        await h.session.receive({"type": "cancel"})
+        await h.wait_said("je ne sais pas si l'achat est passé")
+        assert "Rien n'a été acheté" not in h.said()
+        assert h.session._payment_cleared is False  # la commande suivante repart de zéro
+
+
+async def test_resetting_after_the_payment_was_authorised_never_says_nothing_was_bought():
+    async with Harness(direct_buy=True, purchase_code="472") as h:
+        await _pay_button_reached_then_hang(h)
+        await h.text("Nouvelle conversation")
+        await h.wait_said("je ne sais pas si l'achat est passé")
+        assert "rien n'a été acheté" not in h.said().lower()
+        assert h.session._payment_cleared is False
+
+
+async def test_cancelling_before_any_payment_authorisation_still_says_nothing_was_bought():
+    async with Harness() as h:
+        await h.text("Un train de Paris pour Lille demain après 14 h")
+        await h.wait("proposing")
+        await h.session.receive({"type": "cancel"})
+        await h.wait_said("Rien n'a été acheté")
