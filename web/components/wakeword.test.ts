@@ -30,3 +30,33 @@ describe("« OK Pilote » coupe Pilote", () => {
     expect(isStopWord("D'accord, je m'en occupe")).toBe(false);
   });
 });
+
+describe("« stop », « attends » coupent aussi Pilote", () => {
+  it("reconnaît les mots pour couper", () => {
+    for (const phrase of ["stop", "Stop !", "attends", "Attendez un instant", "tais-toi", "silence", "ok pilote stop"]) {
+      expect(isStopWord(phrase), phrase).toBe(true);
+    }
+  });
+
+  it("ignore les phrases ordinaires, même proches", () => {
+    for (const phrase of ["Un train pour Lille", "Je prends le bus pour la gare", "C'est silencieux ici", "attention"]) {
+      expect(isStopWord(phrase), phrase).toBe(false);
+    }
+  });
+
+  it("n'obéit pas à sa propre voix : un mot qui fait partie de la phrase en cours n'est pas la personne", () => {
+    const saying = "Dites stop si vous voulez que je m'arrête, ou annule pour tout arrêter.";
+    expect(isStopWord("dites stop si vous voulez", saying)).toBe(false);
+    expect(isStopWord("stop", saying)).toBe(false);
+  });
+
+  it("obéit à la personne quand le mot n'est pas dans ce que Pilote est en train de dire", () => {
+    const saying = "J'ai trouvé trois trains. Le premier part à quatorze heures.";
+    expect(isStopWord("stop", saying)).toBe(true);
+    expect(isStopWord("OK Pilote", saying)).toBe(true);
+  });
+
+  it("sans phrase en cours, tout mot pour couper compte", () => {
+    expect(isStopWord("stop", "")).toBe(true);
+  });
+});

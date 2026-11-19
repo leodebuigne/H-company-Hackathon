@@ -108,6 +108,7 @@ export class Speaker {
   private queue: Item[] = [];
   private current: HTMLAudioElement | null = null;
   private busy = false;
+  private nowText = ""; // phrase en cours de lecture (le micro peut la capter : voir isStopWord)
   // Chaque stop() ouvre une nouvelle génération : une phrase coupée ne relance jamais la file,
   // sinon deux lectures pouvaient se superposer après une interruption.
   private generation = 0;
@@ -116,6 +117,11 @@ export class Speaker {
 
   get speaking() {
     return this.busy;
+  }
+
+  /** Ce que Pilote est en train de dire, phrases en attente comprises. */
+  get sayingText() {
+    return this.busy ? [this.nowText, ...this.queue.map((item) => item.text)].join(" ") : "";
   }
 
   enqueue(text: string, audio?: string | null, mime?: string | null) {
@@ -145,6 +151,7 @@ export class Speaker {
     if (generation !== this.generation) return;
     const item = this.queue.shift();
     if (!item) return this.setBusy(false);
+    this.nowText = item.text;
     this.setBusy(true);
     try {
       if (item.audio) await this.playAudio(item.audio, item.mime);

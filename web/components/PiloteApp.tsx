@@ -452,12 +452,14 @@ export default function PiloteApp() {
 
   // Écoute mains libres lancée par Pilote ou par « Bonjour Pilote » : on parle, Pilote répond au silence.
   const listenHandsFree = useCallback(
-    async (auto: boolean) => {
+    async (auto: boolean, immediate = false) => {
       const rec = recorderRef.current;
       if (!rec || rec.isRecording || mutedRef.current) return;
       wakeRef.current?.stop();
-      playEarcon("listening"); // avant le micro : la cloche ne doit pas être enregistrée
-      await new Promise((r) => setTimeout(r, EARCON_GAP_MS));
+      if (!immediate) {
+        playEarcon("listening"); // avant le micro : la cloche ne doit pas être enregistrée
+        await new Promise((r) => setTimeout(r, EARCON_GAP_MS));
+      }
       try {
         await rec.start();
         overlapRef.current.begin(speakerRef.current?.speaking ?? false);
@@ -513,11 +515,13 @@ export default function PiloteApp() {
   useEffect(() => {
     const wake = (wakeRef.current ??= new WakeWordListener());
     wake.isSpeaking = () => !!speakerRef.current?.speaking;
+    wake.spokenText = () => speakerRef.current?.sayingText ?? "";
     wake.onStop = () => {
-      // « OK Pilote » : il se tait et écoute ce qu'on veut lui dire
+      // « OK Pilote », « stop » : il se tait et écoute ce qu'on veut lui dire. Le micro s'ouvre tout de suite,
+      // sans cloche : la personne continue de parler, la cloche et son délai couperaient le début de sa phrase.
       speakerRef.current?.stop();
       endedRef.current = false;
-      void listenHandsFree(false);
+      void listenHandsFree(false, true);
     };
     wake.onWake = (rest) => {
       endedRef.current = false;

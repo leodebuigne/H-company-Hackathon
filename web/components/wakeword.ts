@@ -37,11 +37,26 @@ export function findWakeWord(text: string): { found: boolean; rest: string } {
   return { found: true, rest };
 }
 
-// « OK Pilote » pendant que Pilote parle : il se tait tout de suite.
-const STOP = /\b(ok|okay|ok[ée]|o\.k\.?|au ?qu[ée])[\s,!.-]*pilot(e|es)?\b/i;
+// « OK Pilote », « stop », « attends » pendant que Pilote parle : il se tait tout de suite.
+const STOP = /\b(?:(?:ok|okay|ok[ée]|o\.k\.?|au ?qu[ée])[\s,!.-]*pilot(?:e|es)?|stop|attends|attendez|tais[- ]toi|silence)\b/i;
 
-export function isStopWord(text: string): boolean {
-  return STOP.test(text);
+const plainText = (text: string) =>
+  text
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+
+/**
+ * Le mot pour couper a-t-il été dit ? `spoken` : ce que Pilote est en train de dire. Le micro capte sa propre
+ * voix : si le mot fait partie de sa phrase (« dites stop pour… »), ce n'est pas la personne qui coupe.
+ */
+export function isStopWord(text: string, spoken = ""): boolean {
+  const match = STOP.exec(text);
+  if (!match) return false;
+  const phrase = plainText(match[0]);
+  return !(spoken && phrase && ` ${plainText(spoken)} `.includes(` ${phrase} `));
 }
 
 export function wakeWordSupported(): boolean {
@@ -55,6 +70,8 @@ export class WakeWordListener {
   onWake: (rest: string) => void = () => {};
   // Appelé quand on dit « OK Pilote » pendant qu'il parle
   onStop: () => void = () => {};
+  // Ce que Pilote est en train de dire : un mot pour couper qui en fait partie est de l'écho, pas la personne
+  spokenText: () => string = () => "";
   // Pilote est-il en train de parler ? (on guette alors « OK Pilote », pas « Bonjour Pilote »)
   isSpeaking: () => boolean = () => false;
   private stopped = -1; // dernier résultat qui a déjà coupé Pilote
@@ -94,7 +111,7 @@ export class WakeWordListener {
         const text = result[0]?.transcript ?? "";
         if (this.isSpeaking()) {
           // Pilote parle : seul « OK Pilote » compte (sa propre voix ne dit jamais ces mots)
-          if (i !== this.stopped && isStopWord(text)) {
+          if (i !== this.stopped && isStopWord(text, this.spokenText())) {
             this.stopped = i;
             this.onStop();
           }
