@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import collections
 import contextlib
 import datetime as dt
 import hmac
@@ -359,6 +360,9 @@ class Session:
         self.history: list[HistoryTurn] = []
         self._clients: set[SendFn] = set()
         self._snapshot: dict[str, dict[str, Any]] = {}
+        # Dernières phrases de la conversation, rejouées à un écran qui arrive en cours de route
+        # (l'écran du jury ouvert après le début). Le code secret y est déjà « ••• ».
+        self._recent: collections.deque[dict[str, Any]] = collections.deque(maxlen=12)
         self._inbox: asyncio.Queue[ClientMessage] = asyncio.Queue()
         self._answers: asyncio.Queue[Intent] = asyncio.Queue()
         self._waiting = False
@@ -400,6 +404,9 @@ class Session:
         """Nouvel écran : il reçoit l'état courant, puis la phrase d'accueil (à lui seul)."""
         self._clients.add(send)
         await self._send_to(send, ServerReady(session_id=self.session_id))
+        # Entre « ready » et « state » : l'écran sait que c'est du passé (il l'ignore s'il l'a déjà)
+        for past in list(self._recent):
+            await self._send_raw(send, past)
         for key in ("state", "intent", "options", "summary", "agent_view"):
             if key in self._snapshot:
                 await self._send_raw(send, self._snapshot[key])
@@ -437,6 +444,8 @@ class Session:
         key = data["type"]
         if key in ("state", "intent", "options", "summary", "agent_view"):
             self._snapshot[key] = data
+        elif key == "transcript":
+            self._recent.append(data)
         for send in list(self._clients):
             await self._send_raw(send, data)
 

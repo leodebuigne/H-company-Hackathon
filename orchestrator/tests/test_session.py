@@ -659,3 +659,20 @@ async def test_everything_missing_is_asked_in_one_question_and_answered_in_one_s
         await h.wait_said("De quelle ville partez-vous, pour quelle ville, et quel jour ?")
         await h.text("Un train de Paris pour Lille demain")  # l'IA factice ne comprend qu'avec « train »
         await h.wait("proposing")
+
+
+async def test_a_screen_opened_midway_gets_the_recent_conversation_before_the_state():
+    async with Harness() as h:
+        await h.text("Un train de Paris pour Lille demain après 14 h")
+        await h.wait("proposing")
+        late: list[dict[str, Any]] = []
+
+        async def collect(data: dict[str, Any]) -> None:
+            WS.validate(data)
+            late.append(data)
+
+        await h.session.attach(collect)
+        kinds = [m["type"] for m in late]
+        assert kinds[0] == "ready" and "transcript" in kinds
+        assert kinds.index("transcript") < kinds.index("state")  # rejoué avant l'état courant
+        assert any("Paris pour Lille" in m["text"] for m in late if m["type"] == "transcript")

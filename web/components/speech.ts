@@ -13,9 +13,14 @@ const PREFERRED_NAMES = ["Audrey", "Amélie", "Thomas", "Denise", "Henri", "Mari
 let frenchVoice: SpeechSynthesisVoice | null = null;
 let chosenVoiceName: string | null = null;
 
+// Voix fantaisie de macOS (robot, grand-mère…) : peu compréhensibles, on ne les propose pas
+const NOVELTY_VOICE = /^(Eddy|Flo|Grandma|Grandpa|Reed|Rocko|Sandy|Shelley)\b/;
+
 function frenchVoices(): SpeechSynthesisVoice[] {
   if (typeof window === "undefined" || !("speechSynthesis" in window)) return [];
-  return window.speechSynthesis.getVoices().filter((v) => v.lang.toLowerCase().startsWith("fr"));
+  return window.speechSynthesis
+    .getVoices()
+    .filter((v) => v.lang.toLowerCase().startsWith("fr") && !NOVELTY_VOICE.test(v.name));
 }
 
 function score(v: SpeechSynthesisVoice): number {

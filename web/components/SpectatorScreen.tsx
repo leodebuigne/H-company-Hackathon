@@ -4,17 +4,23 @@
 // Il ne fait que regarder : il n'envoie aucune commande et ne parle pas.
 
 import { useEffect, useRef } from "react";
-import { STATE_LABELS, STEPS, formatCents, type Intent } from "./protocol";
+import { STATE_LABELS, STEPS, formatCents, formatDate, formatHour, priceLabel, type Intent } from "./protocol";
 import { usePilote } from "./usePilote";
 
-/** « billet de train · Paris → Lille · 2026-11-18 après 14:00 » */
+/** « billet de train · Paris → Lille · mercredi 18 novembre après 14 h » */
 function describeIntent(intent: Intent): string {
   const parts: string[] = [];
   if (intent.object) parts.push(intent.quantity ? `${intent.quantity} × ${intent.object}` : intent.object);
   const { origin, destination } = intent.details;
   if (origin || destination) parts.push(`${origin ?? "?"} → ${destination ?? "?"}`);
   const w = intent.when;
-  const when = [w.date, w.after && `après ${w.after}`, w.before && `avant ${w.before}`, w.asap && "au plus vite"]
+  const when = [
+    w.date && formatDate(w.date),
+    intent.details.time && `à ${formatHour(intent.details.time)}`,
+    w.after && `après ${formatHour(w.after)}`,
+    w.before && `avant ${formatHour(w.before)}`,
+    w.asap && "au plus vite",
+  ]
     .filter(Boolean)
     .join(" ");
   if (when) parts.push(when);
@@ -104,12 +110,14 @@ export default function SpectatorScreen() {
           ) : (
             <section className="spectator-panel" aria-label="Options">
               <h2>Options trouvées</h2>
-              {options.length === 0 && <p className="muted">Aucune pour l&apos;instant</p>}
+              {options.length === 0 && (
+                <p className="muted">{state === "searching" ? "Recherche en cours…" : "Aucune pour l'instant"}</p>
+              )}
               <ol className="spectator-options">
                 {options.slice(0, 3).map((o) => (
                   <li key={o.id}>
                     <span>{o.title}</span>
-                    <strong>{formatCents(o.price_cents)}</strong>
+                    <strong>{priceLabel(o.price_cents)}</strong>
                   </li>
                 ))}
               </ol>

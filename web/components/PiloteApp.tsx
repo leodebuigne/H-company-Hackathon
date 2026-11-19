@@ -220,7 +220,7 @@ export default function PiloteApp() {
     [tell],
   );
 
-  const { connected, state, options, summary, lastSay, log, send } =
+  const { connected, state, options, summary, lastSay, log, question, send } =
     usePilote(onMessage);
   // Pilote demande le code secret à 3 chiffres (même état que la confirmation, voir session._check_code)
   const askingCode =
@@ -616,7 +616,31 @@ export default function PiloteApp() {
         : started
           ? ""
           : "is-idle";
-  const orbSize = 360;
+  // Une fois démarré, l'orbe rétrécit : la conversation et le champ de texte tiennent à l'écran
+  const orbSize = started ? 220 : 360;
+  // Ce que l'écran annonce : jamais « J'écoute » avant d'avoir démarré ni quand la connexion est coupée
+  const stateLabel = !connected
+    ? "Connexion perdue, je réessaie…"
+    : !started
+      ? "Prêt"
+      : question && state === "searching"
+        ? "Je cherche la réponse"
+        : STATE_LABELS[state];
+  // Commentaire en direct (« Je lance la recherche ») : dit à l'oral mais absent de la conversation,
+  // on l'affiche dans la bulle d'attente à la place des trois points.
+  const lastPilote = [...log].reverse().find((e) => e.who === "pilote")?.text;
+  // Seulement une phrase arrivée pendant le travail en cours (pas la phrase d'avant, comme l'accueil)
+  const [sayBeforeWork, setSayBeforeWork] = useState("");
+  if (!busy && sayBeforeWork !== lastSay) setSayBeforeWork(lastSay);
+  const liveNote =
+    busy && lastSay && lastSay !== lastPilote && lastSay !== sayBeforeWork
+      ? lastSay
+      : "";
+  const threadRef = useRef<HTMLElement>(null);
+  useEffect(() => {
+    const box = threadRef.current;
+    if (box) box.scrollTo({ top: box.scrollHeight, behavior: "smooth" });
+  }, [log.length, liveNote, busy]);
   const orbMode: OrbMode = listening
     ? "listening"
     : speaking
@@ -626,7 +650,7 @@ export default function PiloteApp() {
         : "idle";
 
   return (
-    <main className="pilote">
+    <main className={`pilote ${started ? "is-started" : ""}`}>
       <div className="pilote-backdrop" aria-hidden="true">
         <span />
         <span />
@@ -686,46 +710,53 @@ export default function PiloteApp() {
               </button>
             </div>
             <p className="pilote-state">
-              {STATE_LABELS[state]}
-              {busy && elapsed >= 3 && (
+              {stateLabel}
+              {connected && busy && elapsed >= 3 && (
                 <span className="pilote-elapsed"> · {elapsed} s</span>
               )}
             </p>
             <p className="pilote-talk-label" aria-hidden="true">
               {talkLabel}
             </p>
-            {speaking && (
-              <button
-                type="button"
-                className="pilote-stop"
-                onClick={hush}
-                aria-label="Faire taire Pilote"
-              >
-                <span aria-hidden="true">■</span> Stop
-              </button>
-            )}
-            <p id="pilote-help" className="pilote-help">
-              {started && wakeWordSupported() && (
-                <>Dites « Bonjour Pilote » · </>
-              )}
-              <kbd>Espace</kbd> pour parler · <kbd>Espace</kbd> ×2 pour faire
-              taire · <kbd>Échap</kbd> pour annuler
-              {lastSay && started && (
-                <>
-                  {" · "}
+            {started && (speaking || lastSay) && (
+              <div className="pilote-actions">
+                {speaking && (
                   <button
                     type="button"
-                    className="pilote-link"
+                    className="pilote-stop"
+                    onClick={hush}
+                    aria-label="Faire taire Pilote"
+                  >
+                    <span aria-hidden="true">■</span> Stop
+                  </button>
+                )}
+                {lastSay && !speaking && (
+                  <button
+                    type="button"
+                    className="pilote-repeat"
                     onClick={repeat}
                   >
                     Répéter
                   </button>
-                </>
-              )}
+                )}
+              </div>
+            )}
+            <p id="pilote-help" className="pilote-help">
+              {started && wakeWordSupported() && <>Dites « Bonjour Pilote »</>}
+              <span className="pilote-keys">
+                {started && wakeWordSupported() && " · "}
+                <kbd>Espace</kbd> pour parler · <kbd>Espace</kbd> ×2 pour faire
+                taire · <kbd>Échap</kbd> pour annuler
+              </span>
             </p>
           </section>
 
-          <ol className="pilote-steps" aria-label="Étapes de la commande">
+          {/* Une simple question n'a ni choix ni achat : pas d'étapes */}
+          <ol
+            className="pilote-steps"
+            aria-label="Étapes de la commande"
+            hidden={question}
+          >
             {STEPS.map((step, i) => (
               <li
                 key={step.label}
@@ -744,7 +775,11 @@ export default function PiloteApp() {
             ))}
           </ol>
 
-          <section className="pilote-thread" aria-label="Conversation">
+          <section
+            ref={threadRef}
+            className="pilote-thread"
+            aria-label="Conversation"
+          >
             {recentLog.length === 0 && (
               <p className="pilote-bubble is-pilote">
                 {lastSay ||
@@ -763,16 +798,24 @@ export default function PiloteApp() {
                 {entry.text}
               </p>
             ))}
-            {busy && (
-              <p
-                className="pilote-bubble is-pilote is-typing"
-                aria-hidden="true"
-              >
-                <i />
-                <i />
-                <i />
-              </p>
-            )}
+            {busy &&
+              (liveNote ? (
+                <p
+                  className="pilote-bubble is-pilote is-live"
+                  aria-hidden="true"
+                >
+                  {liveNote}
+                </p>
+              ) : (
+                <p
+                  className="pilote-bubble is-pilote is-typing"
+                  aria-hidden="true"
+                >
+                  <i />
+                  <i />
+                  <i />
+                </p>
+              ))}
           </section>
 
           <form
