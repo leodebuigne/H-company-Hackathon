@@ -6,7 +6,8 @@ un accord. Deux gardes, sans horloge (l'heure d'arrivée d'un enregistrement ne 
 il a été fait) :
 
 - une transcription qui reprend une longue suite de mots d'une phrase récente de Pilote est de l'écho ;
-- un enregistrement que l'interface déclare chevauché par la voix de Pilote ne peut pas valoir « oui »,
+- un enregistrement que l'interface déclare chevauché (paramètre `overlapped=1` du type du son) par la voix
+  de Pilote ne peut pas valoir « oui »,
   « non » ni code : ces mots-là peuvent venir de Pilote.
 """
 
@@ -27,6 +28,20 @@ _BARE_ANSWERS = {
     "oui", "ouais", "ok", "okay", "non", "nan", "d", "accord", "daccord", "c", "est", "bon", "confirme",
     "vas", "y", "allez", "valide", "paie", "payez", "achete", "exactement", "stop",
 }  # fmt: skip
+
+
+def split_overlap(mime: str) -> tuple[str, bool]:
+    """« audio/webm;codecs=opus;overlapped=1 » -> (« audio/webm;codecs=opus », True).
+
+    L'interface signale un enregistrement chevauché par la voix de Pilote dans le type du son, sans champ
+    de plus dans le contrat. Le serveur retire ce paramètre avant de transcrire."""
+    kept, overlapped = [], False
+    for part in mime.split(";"):
+        if part.strip().lower() == "overlapped=1":
+            overlapped = True
+        else:
+            kept.append(part)
+    return ";".join(kept), overlapped
 
 
 def words(text: str) -> list[str]:

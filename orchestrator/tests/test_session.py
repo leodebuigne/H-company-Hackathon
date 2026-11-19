@@ -1061,7 +1061,8 @@ async def test_cancelling_before_any_payment_authorisation_still_says_nothing_wa
 
 async def _audio(h: Harness, transcript: str, overlapped: bool = False) -> None:
     h.session.ai.transcript = transcript  # type: ignore[attr-defined]
-    await h.session.receive({"type": "audio", "data": "AAAA", "mime": "audio/webm", "overlapped": overlapped})
+    mime = "audio/webm;codecs=opus;overlapped=1" if overlapped else "audio/webm;codecs=opus"
+    await h.session.receive({"type": "audio", "data": "AAAA", "mime": mime})
     await asyncio.sleep(0.15)
 
 
@@ -1156,3 +1157,17 @@ async def test_a_reset_phrase_works_even_while_the_code_is_being_asked():
         await h.text("On recommence")
         await h.wait_said("on repart de zéro")
         assert "C'est acheté" not in h.said() and h.session._secret_mode is False
+
+
+async def test_the_transcriber_never_sees_the_overlap_parameter():
+    async with Harness() as h:
+        seen: list[str] = []
+        original = h.session.ai.transcribe
+
+        async def spy(audio, mime):
+            seen.append(mime)
+            return await original(audio, mime)
+
+        h.session.ai.transcribe = spy  # type: ignore[method-assign]
+        await _audio(h, "Un train pour Lille", overlapped=True)
+        assert seen == ["audio/webm;codecs=opus"]

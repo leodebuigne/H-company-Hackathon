@@ -79,3 +79,13 @@ def test_an_overlapped_recording_with_new_content_is_kept():
 def test_nothing_to_compare_with_means_nothing_is_dropped():
     assert not should_drop("Un train pour Lille demain", [], overlapped=False)
     assert not is_echo("Un train pour Lille demain", [])
+
+
+def test_the_overlap_flag_travels_in_the_sound_type_and_is_removed_before_transcription():
+    from orchestrator.echo import split_overlap
+
+    assert split_overlap("audio/webm;codecs=opus;overlapped=1") == ("audio/webm;codecs=opus", True)
+    assert split_overlap("audio/webm;codecs=opus") == ("audio/webm;codecs=opus", False)
+    assert split_overlap("audio/mp4;overlapped=1") == ("audio/mp4", True)
+    assert split_overlap("audio/mp4; OVERLAPPED=1") == ("audio/mp4", True)
+    assert split_overlap("audio/mp4;overlapped=0") == ("audio/mp4;overlapped=0", False)

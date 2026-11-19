@@ -27,7 +27,7 @@ import {
   type ServerMessage,
   type State,
 } from "./protocol";
-import { OverlapTracker, overlapField } from "./echoGuard";
+import { OverlapTracker, overlapMime } from "./echoGuard";
 import {
   MIC_PROFILES,
   MIC_PROFILE_LABELS,
@@ -386,8 +386,7 @@ export default function PiloteApp() {
         !send({
           type: "audio",
           data: recording.data,
-          mime: recording.mime,
-          ...overlapField(overlapRef.current),
+          mime: overlapMime(recording.mime, overlapRef.current),
         })
       ) {
         awaitingReplyRef.current = false;

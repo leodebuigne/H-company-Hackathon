@@ -65,7 +65,7 @@ from orchestrator.contracts import (
     State,
     When,
 )
-from orchestrator.echo import should_drop
+from orchestrator.echo import should_drop, split_overlap
 from orchestrator.ports import (
     AI,
     AgentFactory,
@@ -714,10 +714,12 @@ class Session:
         if self._waiting:
             self._resume_state = self.state
             await self._set_state("understanding")
+        overlapped = False
         if isinstance(message, ClientAudio):
+            mime, overlapped = split_overlap(message.mime)  # « …;overlapped=1 » : la voix de Pilote jouait
             audio = base64.b64decode(message.data)
             try:
-                text = await self.ai.transcribe(audio, message.mime)
+                text = await self.ai.transcribe(audio, mime)
             except AIError:
                 return None
             finally:
@@ -725,9 +727,9 @@ class Session:
         else:
             assert isinstance(message, ClientText)
             text = message.text
-        if isinstance(message, ClientAudio) and should_drop(text, list(self._spoken), message.overlapped):
+        if isinstance(message, ClientAudio) and should_drop(text, list(self._spoken), overlapped):
             # La voix de Pilote captée par le micro : ni réponse, ni affichage, ni essai de code consommé
-            self._journal("echo_dropped", overlapped=message.overlapped)  # jamais le texte
+            self._journal("echo_dropped", overlapped=overlapped)  # jamais le texte
             return DROPPED
         if self._secret_mode:
             # Code secret : ni modèle de langage, ni historique, ni affichage. Comparé puis oublié.

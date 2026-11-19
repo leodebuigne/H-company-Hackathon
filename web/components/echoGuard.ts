@@ -2,6 +2,9 @@
 // serveur n'acceptera alors ni « oui », ni « non », ni code, et écartera ce qui ressemble à ce que Pilote
 // vient de dire (voir orchestrator/echo.py). Un appui sur le bouton ou l'espace coupe d'abord Pilote : un
 // « oui » dit juste après est bien celui de la personne, il n'est donc pas marqué.
+//
+// Le signal passe dans le type du son (« audio/webm;codecs=opus;overlapped=1 ») : le contrat des messages
+// ne change pas.
 
 export class OverlapTracker {
   private flag = false;
@@ -21,7 +24,7 @@ export class OverlapTracker {
   }
 }
 
-/** Champ à joindre au message audio : absent quand il n'y a rien à signaler (message inchangé). */
-export function overlapField(tracker: OverlapTracker): { overlapped?: true } {
-  return tracker.overlapped ? { overlapped: true } : {};
+/** Type du son à envoyer : inchangé quand il n'y a rien à signaler. */
+export function overlapMime(mime: string, tracker: OverlapTracker): string {
+  return tracker.overlapped ? `${mime};overlapped=1` : mime;
 }
