@@ -28,6 +28,13 @@ import {
   type State,
 } from "./protocol";
 import { OverlapTracker, overlapField } from "./echoGuard";
+import {
+  MIC_PROFILES,
+  MIC_PROFILE_LABELS,
+  describeCalibration,
+  isMicProfile,
+  type MicProfile,
+} from "./micProfile";
 import { PushToTalkRecorder, RELEASE_TAIL_MS } from "./recorder";
 import { Speaker, listFrenchVoices, setBrowserVoice } from "./speech";
 import { ORCHESTRATOR_HTTP, usePilote } from "./usePilote";
@@ -74,14 +81,22 @@ const ACKS = [
 
 // Réglages gardés dans ce navigateur seulement (aucune donnée personnelle).
 const PREFS_KEY = "pilote-prefs";
-type Prefs = { rate: number; browserVoice: string | null };
+type Prefs = { rate: number; browserVoice: string | null; micProfile: MicProfile; noiseFloor: number };
 // 1,2× : vitesse retenue à l'écoute pour la voix Jerem (2026-11-19)
-const DEFAULT_PREFS: Prefs = { rate: 1.2, browserVoice: null };
+const DEFAULT_PREFS: Prefs = { rate: 1.2, browserVoice: null, micProfile: "normal", noiseFloor: 0 };
 
 function loadPrefs(): Prefs {
   try {
     const raw = window.localStorage.getItem(PREFS_KEY);
-    return raw ? { ...DEFAULT_PREFS, ...JSON.parse(raw) } : DEFAULT_PREFS;
+    if (!raw) return DEFAULT_PREFS;
+    const stored = { ...DEFAULT_PREFS, ...JSON.parse(raw) };
+    // Un réglage enregistré par une ancienne version peut être absent ou périmé : on le remplace
+    const floor = Number(stored.noiseFloor);
+    return {
+      ...stored,
+      micProfile: isMicProfile(stored.micProfile) ? stored.micProfile : "normal",
+      noiseFloor: Number.isFinite(floor) ? Math.min(1, Math.max(0, floor)) : 0,
+    };
   } catch {
     return DEFAULT_PREFS;
   }
@@ -166,6 +181,7 @@ export default function PiloteApp() {
     recorderRef.current = new PushToTalkRecorder();
     const saved = getPrefs();
     speaker.rate = saved.rate;
+    recorderRef.current.setProfile(saved.micProfile, saved.noiseFloor);
     setBrowserVoice(saved.browserVoice);
     // La liste des voix arrive parfois après le chargement de la page
     const refresh = () => setVoices(listFrenchVoices());
@@ -184,7 +200,25 @@ export default function PiloteApp() {
   const updatePrefs = (patch: Partial<Prefs>) => {
     const next = writePrefs(patch);
     if (speakerRef.current) speakerRef.current.rate = next.rate;
+    recorderRef.current?.setProfile(next.micProfile, next.noiseFloor);
     setBrowserVoice(next.browserVoice);
+  };
+
+  // Mesure le bruit de fond puis règle le seuil de parole. Pilote se tait d'abord : sa voix fausserait la mesure.
+  const calibrateMic = async () => {
+    const rec = recorderRef.current;
+    if (!rec || rec.isRecording) return;
+    speakerRef.current?.stop();
+    tell("Ne dites rien pendant deux secondes, je mesure le bruit autour de vous.");
+    for (let i = 0; i < 60 && speakerRef.current?.speaking; i += 1) await new Promise((r) => setTimeout(r, 100));
+    await new Promise((r) => setTimeout(r, 400)); // la fin de la phrase ne doit pas entrer dans la mesure
+    try {
+      const floor = await rec.calibrate(1500);
+      updatePrefs({ noiseFloor: floor });
+      tell(describeCalibration(floor));
+    } catch {
+      tell("Je n'ai pas pu mesurer : le micro n'est pas accessible. Autorisez-le dans le navigateur.");
+    }
   };
 
   // Une phrase à dire : à voix haute (mode voix) ou via la région ARIA live (mode lecteur d'écran)
@@ -1194,6 +1228,27 @@ export default function PiloteApp() {
             onChange={(e) => updatePrefs({ rate: Number(e.target.value) })}
             onPointerUp={() => tell("Voici la nouvelle vitesse.")}
           />
+        </div>
+
+        <div className="pilote-setting">
+          <label htmlFor="pilote-mic-profile">Sensibilité du micro</label>
+          <select
+            id="pilote-mic-profile"
+            value={prefs.micProfile}
+            onChange={(e) => updatePrefs({ micProfile: e.target.value as MicProfile })}
+          >
+            {MIC_PROFILES.map((profile) => (
+              <option key={profile} value={profile}>
+                {MIC_PROFILE_LABELS[profile]}
+              </option>
+            ))}
+          </select>
+          <button type="button" className="pilote-link" onClick={() => void calibrateMic()}>
+            Régler le micro maintenant
+          </button>
+          <p className="pilote-muted">
+            « Je parle doucement » entend une voix basse. « Pièce bruyante » ignore mieux le bruit autour.
+          </p>
         </div>
 
         <div className="pilote-setting">
