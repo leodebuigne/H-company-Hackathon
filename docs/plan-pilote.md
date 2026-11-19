@@ -180,7 +180,7 @@ Contrat : les fichiers de contracts/ font foi (Intent, Option, OrderSummary, Sit
 Règles absolues :
 - N'écris que dans les dossiers de ta partie.
 - Aucune clé dans le code : lis les variables d'environnement et ajoute leur nom, sans valeur, à .env.example.
-- L'agent ne tape jamais de numéro de carte, de cryptogramme ni de mot de passe, ne résout jamais de CAPTCHA, ne crée jamais de compte, et ne clique jamais sur un bouton qui engage de l'argent sans approbation.
+- L'agent ne tape jamais de mot de passe, ne résout jamais de CAPTCHA, ne crée jamais de compte, et ne clique jamais sur un bouton qui engage de l'argent sans approbation. Une carte dictée à voix haute est permise : c'est Pilote qui la tape dans la page (`orchestrator/agent_h/card.py`), l'agent H ne la voit pas.
 - Aucune donnée de santé ou de handicap stockée. L'audio est supprimé dès qu'il est transcrit.
 - Si une API externe ne se comporte pas comme décrit ici, lis la documentation officielle au lieu de deviner (H : https://hub.hcompany.ai/llms.txt, Hugging Face : https://huggingface.co/docs/inference-providers) et note l'écart dans docs/decisions.md.
 - Travaille sur ta branche, en petits commits, avec des tests à côté du code. Pose-moi une question dès qu'une décision n'est pas couverte par ce prompt.

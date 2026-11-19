@@ -26,7 +26,7 @@ Traductions des contrats : `orchestrator/contracts.py` (pydantic), `orchestrator
 - Ne modifie jamais un contrat seul : ouvre une issue GitHub, le membre 5 tranche.
 - N'écris que dans les dossiers de ta partie (voir `.github/CODEOWNERS`).
 - Aucune clé dans le code : lis les variables d'environnement et ajoute leur nom, sans valeur, à `.env.example`.
-- L'agent ne tape jamais de numéro de carte, de cryptogramme ni de mot de passe, ne résout jamais de CAPTCHA, ne crée jamais de compte, et ne clique jamais sur un bouton qui engage de l'argent sans approbation.
+- L'agent ne tape jamais de mot de passe, ne résout jamais de CAPTCHA, ne crée jamais de compte, et ne clique jamais sur un bouton qui engage de l'argent sans approbation. Une carte dictée à voix haute est permise : c'est Pilote qui la tape dans la page (`orchestrator/agent_h/card.py`), l'agent H ne la voit pas.
 - Une commande à la fois, déclenchée par une personne. 2 tentatives de paiement par site et par jour au maximum. Aucune collecte de données en masse.
 - Aucune donnée de santé ou de handicap stockée. L'audio est supprimé dès qu'il est transcrit.
 - Pilote annonce à l'oral qu'il est une IA : « Je suis Pilote, un assistant automatique ».
