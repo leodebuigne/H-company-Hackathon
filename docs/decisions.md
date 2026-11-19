@@ -149,3 +149,10 @@ Base : `partie-5` (contrats et squelette), puis `partie-2` (IA), `partie-4` (int
 - Dès que l'agent a atteint ce bouton (récapitulatif lisible envoyé), l'étape d'achat compte comme réussie pour la
   mémoire des chemins : si la personne dit non ou se trompe de code, rien n'est payé mais le chemin est appris.
 - Un panier plus cher que l'option choisie est toujours refusé, sans poser la question.
+
+## 2026-11-19 — Total plus cher que le prix annoncé : on explique, la personne décide
+
+- Achat direct : si le total au bouton de paiement diffère du prix annoncé (frais de livraison, de service…),
+  Pilote dit le détail (« le produit à 5 euros, comme annoncé, frais de livraison : 99 centimes, frais de
+  service : 5 euros 49 ») puis demande le code (ou un oui). Avant, l'achat était refusé d'office.
+- Le plafond de l'agent (PILOTE_MAX_TOTAL_EUR) s'applique toujours, avant toute question.

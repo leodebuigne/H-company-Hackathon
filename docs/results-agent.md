@@ -23,3 +23,4 @@ Une ligne par commande, ajoutée automatiquement par orchestrator/agent_h/metric
 | 2026-11-18 17:17 | www.sncf-connect.com | pilote-shopper | achat direct | 180 | 9 | accepted |
 | 2026-11-19 09:11 | www.ubereats.com | inline | achat non effectué | 168 | 15 | - |
 | 2026-11-19 09:24 | www.sncf-connect.com | inline | achat direct | 372 | 28 | refused |
+| 2026-11-19 09:31 | www.ubereats.com | inline | achat non effectué | 142 | 16 | - |

@@ -209,7 +209,9 @@ def buy_message(option: Option) -> str:
         "prix annoncé), ajoute-la au panier, garde les informations voyageur déjà proposées par le compte, "
         "passe le placement et les services (« Continuer », « Passer l'étape ») jusqu'au bouton qui valide "
         "l'achat (« Valider et payer », « Payer », « Commander »…). Appelle alors request_payment_approval avec "
-        "le récapitulatif exact affiché (Pilote demande alors son accord à l'utilisateur : la réponse peut "
+        "le récapitulatif exact affiché, avec chaque frais sur sa ligne dans fees (livraison, service, "
+        "réservation, petite commande…) et le total à payer (Pilote dit ce détail à l'utilisateur et lui "
+        "demande son accord : la réponse peut "
         'prendre une minute). Si la réponse est "approved", clique une seule fois sur ce bouton ; '
         "si la banque demande une validation dans son application, attends jusqu'à 5 minutes. Renvoie "
         "order_summary (le récapitulatif affiché avant le clic), payment_result (refused, accepted ou "

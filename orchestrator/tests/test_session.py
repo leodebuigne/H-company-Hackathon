@@ -5,6 +5,7 @@ Chaque message envoyé aux écrans est vérifié contre contracts/schemas/ws-mes
 
 import asyncio
 import datetime as dt
+import uuid
 from typing import Any
 
 import pytest
@@ -13,7 +14,7 @@ from orchestrator.agent_h.fake import FakeShoppingAgent
 from orchestrator.ai.fake import FakeAI
 from orchestrator.approvals import FakeApprovals
 from orchestrator.config import Settings
-from orchestrator.contracts import Relative
+from orchestrator.contracts import Fee, Option, OrderItem, OrderSummary, Relative
 from orchestrator.session import WAITING, Session, merge_answer
 
 from .test_contracts import _validator
@@ -340,14 +341,47 @@ async def test_direct_buy_asks_once_for_a_paid_ticket_then_says_it():
         assert "done" in h.states()
 
 
-async def test_direct_buy_refuses_a_cart_more_expensive_than_the_choice():
+async def test_direct_buy_explains_a_higher_total_and_lets_the_person_decide():
     async with Harness(direct_buy=True, agent={"price_change_on_recheck": True}) as h:
         await h.text("Un train de Paris pour Lille demain après 14 h")
         await h.wait("proposing")
         await h.text("La deuxième")
-        await h.wait_said("Je n'ai pas acheté")  # panier plus cher : refusé sans même demander l'accord
-        assert "au lieu de" in h.said() and "C'est acheté" not in h.said()
-        assert "J'achète bien" not in h.said()
+        await h.wait_said("le total est plus cher")
+        assert "au lieu de" in h.said() and "au total ?" in h.said()
+        await h.confirm(False)
+        await h.wait_said("je n'achète rien")
+        assert h.paid == 0 and "C'est acheté" not in h.said()
+
+
+def test_the_price_breakdown_names_each_fee():
+    from orchestrator.session import price_breakdown
+
+    option = Option(
+        id="o1", rank=1, title="Burger", price_cents=500, currency="EUR", rating=None,
+        description=None, conditions=None, details={}, url=None,
+    )  # fmt: skip
+    summary = OrderSummary(
+        order_id=str(uuid.uuid4()),
+        site="www.ubereats.com",
+        page_url="https://www.ubereats.com/checkout",
+        items=[OrderItem(name="Burger", quantity=1, unit_price_cents=500, total_cents=500, options=[])],
+        fees=[
+            Fee(label="Frais de livraison", amount_cents=99),
+            Fee(label="Frais de service", amount_cents=549),
+        ],
+        total_cents=1148,
+        currency="EUR",
+        when_label=None,
+        conditions=None,
+        payment_button_label="Commander",
+        hash="0" * 64,
+        read_at=dt.datetime.now(dt.UTC),
+    )
+    said = price_breakdown(option, summary)
+    assert said == (
+        "Attention, le total est plus cher : 11 euros 48. Il comprend Burger à 5 euros, comme annoncé, "
+        "frais de livraison : 99 centimes, frais de service : 5 euros 49."
+    )
 
 
 async def test_direct_buy_asks_the_code_only_once_the_agent_is_at_the_pay_button():

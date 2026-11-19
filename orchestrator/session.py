@@ -92,6 +92,37 @@ CLIENT_MESSAGE: TypeAdapter[ClientMessage] = TypeAdapter(ClientMessage)
 SendFn = Callable[[dict[str, Any]], Awaitable[None]]
 
 
+def spoken_euros(cents: int) -> str:
+    """« 99 centimes », « 5 euros 49 » : à l'oral, « 0 euros 99 » se comprend mal."""
+    return f"{cents} centimes" if 0 < cents < 100 else euros(cents)
+
+
+def price_breakdown(option: Option, summary: OrderSummary) -> str:
+    """Phrase qui explique pourquoi le total payé n'est pas le prix annoncé à la recherche."""
+    items = sum(item.total_cents for item in summary.items)
+    parts = []
+    if items == option.price_cents:
+        parts.append(f"{option.title} à {spoken_euros(items)}, comme annoncé")
+    else:
+        parts.append(
+            f"les articles à {spoken_euros(items)} au lieu de {spoken_euros(option.price_cents)} annoncés"
+        )
+    parts += [
+        f"{fee.label.strip().rstrip('.').lower()} : {spoken_euros(fee.amount_cents)}" for fee in summary.fees
+    ]
+    gap = summary.total_cents - items - sum(fee.amount_cents for fee in summary.fees)
+    if gap > 0:
+        parts.append(f"et {spoken_euros(gap)} d'autres frais que la page ne détaille pas")
+    elif gap < 0:
+        parts.append(f"et une réduction de {spoken_euros(-gap)}")
+    head = "plus cher" if summary.total_cents > option.price_cents else "différent"
+    return (
+        f"Attention, le total est {head} : {spoken_euros(summary.total_cents)}. Il comprend "
+        + ", ".join(parts)
+        + "."
+    )
+
+
 class Abort(Exception):
     """Fin anticipée de la commande. `message` est dit à l'oral ; `code` part aussi en message error."""
 
@@ -838,14 +869,16 @@ class Session:
     async def approve_payment(self, summary: OrderSummary) -> ApprovalDecision:
         """Outil request_payment_approval. Dernier verrou avant le clic qui engage de l'argent."""
         if self._direct_limit is not None and self.state == "paying":
-            # Achat direct : l'ordre vaut accord, mais jamais plus cher que l'option choisie
-            approved = summary.total_cents <= self._direct_limit
-            if not approved:
+            # Achat direct : si le total dépasse le prix annoncé (frais de livraison, de service…), on dit
+            # le détail et c'est la personne qui décide, avec son code ou un oui. Jamais sans son accord.
+            if self._direct_option is not None:
+                approved = await self._direct_consent(self._direct_option, summary)
+            else:
+                approved = summary.total_cents <= self._direct_limit
+            if not approved and self._payment_refusal is None:
                 self._payment_refusal = (
                     f"le panier affichait {euros(summary.total_cents)} au lieu de {euros(self._direct_limit)}"
                 )
-            if approved and self._direct_option is not None:
-                approved = await self._direct_consent(self._direct_option, summary.total_cents)
             self._journal("payment_approval", decision="approved" if approved else "denied", direct=True)
             return "approved" if approved else "denied"
         approved = (
@@ -863,13 +896,25 @@ class Session:
         self._journal("payment_approval", decision="approved" if approved else "denied")
         return "approved" if approved else "denied"
 
-    async def _direct_consent(self, option: Option, total_cents: int) -> bool:
-        """Achat direct, agent arrêté sur le bouton de paiement : le code, ou un oui (rien si gratuit)."""
+    async def _direct_consent(self, option: Option, summary: OrderSummary) -> bool:
+        """Achat direct, agent arrêté sur le bouton de paiement : le code, ou un oui (rien si gratuit).
+
+        Si le total diffère du prix annoncé, le détail est dit d'abord (produit, frais de livraison, de
+        service…) et la personne décide en connaissant le vrai total.
+        """
+        total_cents = summary.total_cents
+        explained = total_cents != option.price_cents
         try:
+            if explained:
+                await self._say(price_breakdown(option, summary))
             if self.settings.purchase_code:
                 await self._check_code(option, total_cents)  # le code vaut accord, même si c'est gratuit
-            elif total_cents > 0:
-                question = f"J'achète bien {option.title}, {euros(total_cents)} ?"
+            elif total_cents > 0 or explained:
+                question = (
+                    f"On paie {spoken_euros(total_cents)} au total ?"
+                    if explained
+                    else f"J'achète bien {option.title}, {euros(total_cents)} ?"
+                )
                 if not await self._yes_no("confirm_1", question):
                     raise Abort("D'accord, je n'achète rien.")
             return True
