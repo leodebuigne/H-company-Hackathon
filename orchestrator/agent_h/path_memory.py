@@ -230,7 +230,8 @@ def briefing_text(b: Briefing | None) -> str:
         lines += [show(t) for t in b.fallback]
     lines.append(
         "Dans ta réponse : tips_feedback = pour chaque [T…] que tu as réellement essayé, worked true ou false. "
-        "new_tips = si l'étape a réussi, le chemin que tu as réellement suivi, résumé en 1 à 3 astuces (kind "
+        "new_tips = si l'étape a réussi (pour l'achat : dès que tu as atteint le bouton de paiement, même si "
+        "l'achat a ensuite été refusé), le chemin que tu as réellement suivi, résumé en 1 à 3 astuces (kind "
         "raccourci pour ce qui fait gagner des actions, étape sinon), plus chaque piège évité (kind piège), "
         "seulement s'ils ne sont pas déjà ci-dessus. Chaque astuce est générale et précise : texte exact des "
         "boutons et champs, place à l'écran, avec <ville>, <date>, <heure>, <plat> à la place des vraies valeurs ; "

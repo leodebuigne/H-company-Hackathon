@@ -383,6 +383,26 @@ async def test_gate_denies_outside_pay_step():
     assert await agent._decide_payment(raw_summary()) == "approved"
 
 
+async def test_the_purchase_path_is_remembered_even_when_the_person_refuses(tmp_path):
+    from orchestrator.agent_h.models import AgentAnswer, NewTip
+    from orchestrator.agent_h.path_memory import PathMemory
+
+    async def refuse(_summary: OrderSummary) -> str:
+        return "denied"  # la personne dit non, ou se trompe de code
+
+    tip = NewTip(text="Bouton « Commander » en bas du panier, puis « Payer »", kind="étape", phase="achat")
+    for reached in (True, False):
+        agent = paying_agent(approval_callback=refuse)
+        agent._paths = PathMemory(tmp_path / f"mem-{reached}.json")
+        agent._briefing = agent._paths.begin_visit(domain_of(agent._site))
+        agent._paying = True
+        if reached:  # l'agent est arrivé au bouton de paiement et a montré le panier
+            assert await agent._decide_payment(raw_summary()) == "denied"
+        agent._learn(AgentAnswer(blocked_reason="refusé", new_tips=[tip]), "buy")
+        tips = [t.text for t in agent._paths.sites[domain_of(agent._site)].tips.values()]
+        assert tips == ([tip.text] if reached else [])  # pas arrivé au paiement : rien d'appris
+
+
 async def test_gate_denies_by_default_without_orchestrator_callback(monkeypatch):
     monkeypatch.delenv("PILOTE_AUTO_APPROVE", raising=False)
     agent = paying_agent()

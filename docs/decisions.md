@@ -141,3 +141,11 @@ Base : `partie-5` (contrats et squelette), puis `partie-2` (IA), `partie-4` (int
 - La recherche rapide reste valable sur tous les sites (texte tapé d'un coup, budget par les filtres).
 - Mesuré : « un pull marinière sur le site de Petit Bateau » (site inconnu) : site officiel trouvé, 3 options en 69 s et 10 actions.
 
+
+## 2026-11-19 — Le chemin d'achat est retenu même sans achat
+
+- En achat direct, l'agent va d'abord jusqu'au bouton de paiement ; le code à 3 chiffres (ou le « oui » sans code)
+  est demandé à ce moment-là, sur le total réellement affiché, via request_payment_approval.
+- Dès que l'agent a atteint ce bouton (récapitulatif lisible envoyé), l'étape d'achat compte comme réussie pour la
+  mémoire des chemins : si la personne dit non ou se trompe de code, rien n'est payé mais le chemin est appris.
+- Un panier plus cher que l'option choisie est toujours refusé, sans poser la question.

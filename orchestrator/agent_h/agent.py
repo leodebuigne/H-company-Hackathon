@@ -179,6 +179,9 @@ class ShoppingAgent:
         self._chosen: Option | None = None
         self._paying = False
         self._pay_denied = False  # le garde-fou a refusé pendant pay()
+        # L'agent a atteint le bouton de paiement (récapitulatif lisible envoyé) : le chemin d'achat est
+        # bon et va en mémoire, même si la personne refuse ensuite ou se trompe de code.
+        self._reached_payment = False
         self._tool_cache: dict[tuple[str, str], str] = {}
         self._metrics: RunMetrics | None = None
         self._last_answer: AgentAnswer | None = None
@@ -267,7 +270,7 @@ class ShoppingAgent:
         ok = (
             (searching and bool(answer.options))
             or (phase in ("checkout", "recheck") and answer.order_summary is not None)
-            or (phase in ("buy", "pay") and answer.payment_result is not None)
+            or (phase in ("buy", "pay") and (answer.payment_result is not None or self._reached_payment))
         )
         known = self._briefing.ids
         feedback = [(f.id.strip("[] "), f.worked) for f in answer.tips_feedback if f.id.strip("[] ") in known]
@@ -316,6 +319,7 @@ class ShoppingAgent:
             self.last_denial_reason = "le récapitulatif du panier était illisible"
             self._pay_denied = self._pay_denied or self._paying
             return "denied"  # récapitulatif illisible : on ne paie pas
+        self._reached_payment = self._reached_payment or self._paying
         key = ("pay", order.hash)
         if key in self._tool_cache:  # appels répétés pour la même action : même réponse
             return self._tool_cache[key]
@@ -663,7 +667,7 @@ class ShoppingAgent:
 
     async def pay(self) -> PaymentResult:
         """Clique sur le bouton de paiement ; la validation se fait dans l'application bancaire."""
-        self._paying, self._pay_denied = True, False
+        self._paying, self._pay_denied, self._reached_payment = True, False, False
         try:
             answer = await self._send(prompts.pay_message(), "pay")
         except NeedsHuman as blocked:
@@ -692,7 +696,7 @@ class ShoppingAgent:
         self.last_payment_message = None
         self.last_denial_reason = None
         self.last_card_saved = None
-        self._paying, self._pay_denied = True, False
+        self._paying, self._pay_denied, self._reached_payment = True, False, False
         try:
             answer = await self._send(prompts.buy_message(self._chosen), "buy")
         except NeedsHuman as blocked:

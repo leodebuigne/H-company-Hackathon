@@ -242,6 +242,8 @@ class Session:
         self._summary: OrderSummary | None = None
         self._armed_hash: str | None = None
         self._direct_limit: int | None = None  # achat direct : prix maximal accepté (centimes)
+        self._direct_option: Option | None = None  # achat direct en cours : accord demandé au bouton
+        self._direct_abort: Abort | None = None  # refus ou code faux au bouton de paiement
         self._last_progress = 0.0
         self._secret_mode = False  # pendant la demande du code secret ou de la carte
         self._card_dictated = False  # une carte a été dictée pour la commande en cours
@@ -738,12 +740,11 @@ class Session:
                 "price_changed",
             )
 
-    async def _check_code(self, option: Option) -> None:
+    async def _check_code(self, option: Option, total_cents: int | None = None) -> None:
         """Demande le code secret à 3 chiffres. Trois essais, puis rien n'est acheté."""
         assert self.settings.purchase_code is not None
-        await self._say(
-            f"Pour acheter {option.title}, {euros(option.price_cents)}, dites votre code à 3 chiffres."
-        )
+        total = option.price_cents if total_cents is None else total_cents
+        await self._say(f"Pour acheter {option.title}, {euros(total)}, dites votre code à 3 chiffres.")
         attempts = CODE_ATTEMPTS
         self._secret_mode = True
         try:
@@ -768,21 +769,27 @@ class Session:
             self._secret_mode = False
 
     async def _buy_direct(self, option: Option) -> None:
-        """Achat direct : le choix vaut ordre d'achat. Le résultat est toujours dit à l'oral."""
+        """Achat direct : le choix vaut ordre d'achat. Le résultat est toujours dit à l'oral.
+
+        L'agent va d'abord jusqu'au bouton de paiement ; le code (ou le oui) est demandé là, dans
+        approve_payment, sur le total réellement affiché. Si la personne refuse ou se trompe de code, rien
+        n'est payé, mais l'agent a parcouru le chemin d'achat et la mémoire des sites le retient.
+        """
         assert self._agent is not None
-        if self.settings.purchase_code:
-            await self._check_code(option)  # le code vaut confirmation, même pour un billet gratuit
-        elif option.price_cents > 0:  # sans code : un billet gratuit s'achète sans question
-            question = f"J'achète bien {option.title}, {euros(option.price_cents)} ?"
-            if not await self._yes_no("confirm_1", question):
-                raise Abort("D'accord, je n'achète rien.")
         self._direct_limit, self._payment_refusal = option.price_cents, None
+        self._direct_option, self._direct_abort = option, None
         await self._set_state("paying")
-        await self._say(f"J'achète {option.title}, {euros(option.price_cents)}.")
+        ask = "votre code" if self.settings.purchase_code else "votre accord"
+        await self._say(
+            f"Je prépare l'achat de {option.title}, {euros(option.price_cents)}. "
+            f"Je vous demanderai {ask} juste avant de payer."
+        )
         try:
             await self._step("choose", self._agent.choose(option.id))
             result = await self._step("buy", self._agent.buy())
         except PaymentDenied as error:
+            if self._direct_abort is not None:  # la personne a dit non, ou code faux trois fois
+                raise self._direct_abort from error
             reason = (
                 self._payment_refusal
                 or getattr(self._agent, "last_denial_reason", None)
@@ -790,7 +797,7 @@ class Session:
             )
             raise Abort(f"Je n'ai pas acheté : {reason}. Rien n'a été payé.") from error
         finally:
-            self._direct_limit = None
+            self._direct_limit, self._direct_option = None, None
         self._journal("payment", result=result, direct=True)
         site = site_message_for_speech(getattr(self._agent, "last_payment_message", None))
         messages = {
@@ -837,6 +844,8 @@ class Session:
                 self._payment_refusal = (
                     f"le panier affichait {euros(summary.total_cents)} au lieu de {euros(self._direct_limit)}"
                 )
+            if approved and self._direct_option is not None:
+                approved = await self._direct_consent(self._direct_option, summary.total_cents)
             self._journal("payment_approval", decision="approved" if approved else "denied", direct=True)
             return "approved" if approved else "denied"
         approved = (
@@ -853,6 +862,24 @@ class Session:
             )
         self._journal("payment_approval", decision="approved" if approved else "denied")
         return "approved" if approved else "denied"
+
+    async def _direct_consent(self, option: Option, total_cents: int) -> bool:
+        """Achat direct, agent arrêté sur le bouton de paiement : le code, ou un oui (rien si gratuit)."""
+        try:
+            if self.settings.purchase_code:
+                await self._check_code(option, total_cents)  # le code vaut accord, même si c'est gratuit
+            elif total_cents > 0:
+                question = f"J'achète bien {option.title}, {euros(total_cents)} ?"
+                if not await self._yes_no("confirm_1", question):
+                    raise Abort("D'accord, je n'achète rien.")
+            return True
+        except Abort as abort:
+            self._direct_abort = abort
+            self._payment_refusal = "vous n'avez pas confirmé"
+            return False
+        finally:
+            with contextlib.suppress(Exception):
+                await self._set_state("paying")
 
     # --- carte dictée (outil request_card de l'agent) -------------------------------------
 

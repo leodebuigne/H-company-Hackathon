@@ -345,10 +345,17 @@ async def test_direct_buy_refuses_a_cart_more_expensive_than_the_choice():
         await h.text("Un train de Paris pour Lille demain après 14 h")
         await h.wait("proposing")
         await h.text("La deuxième")
-        await h.wait("confirm_1")
-        await h.confirm(True)
-        await h.wait_said("Je n'ai pas acheté")
+        await h.wait_said("Je n'ai pas acheté")  # panier plus cher : refusé sans même demander l'accord
         assert "au lieu de" in h.said() and "C'est acheté" not in h.said()
+        assert "J'achète bien" not in h.said()
+
+
+async def test_direct_buy_asks_the_code_only_once_the_agent_is_at_the_pay_button():
+    async with Harness(direct_buy=True, purchase_code="472") as h:
+        await _to_code_prompt(h)
+        assert h.session._direct_option is not None  # dans l'étape d'achat : l'agent a le panier
+        assert "juste avant de payer" in h.said()
+        assert h.said().index("juste avant de payer") < h.said().index("dites votre code")
 
 
 async def test_direct_buy_saying_no_buys_nothing():
