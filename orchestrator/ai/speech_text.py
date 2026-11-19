@@ -23,6 +23,31 @@ def _rating(value: float) -> str:
     return f"{value:g}".replace(".", ",")
 
 
+_CLOCK = re.compile(r"\b(\d{1,2})\s*(?:[:h]|heures?)\s*(\d{2})?\b", re.IGNORECASE)
+
+
+def _clock(value: str) -> tuple[int, int] | None:
+    match = _CLOCK.search(value or "")
+    if not match or int(match[1]) > 23:
+        return None
+    return int(match[1]), int(match[2] or 0)
+
+
+def _train_times(option: Option) -> str:
+    """« , départ à 14 heures 44, arrivée à 15 heures 48 » : les heures des détails, toujours dites.
+
+    L'agent les met parfois dans le titre, parfois seulement dans details (departure, arrival) : sans
+    elles, une personne aveugle ne peut pas choisir son train. Rien n'est répété si le titre les a déjà.
+    """
+    in_title = {(h, m) for h, m in ((int(a), int(b or 0)) for a, b in _CLOCK.findall(option.title))}
+    parts = []
+    for key, word in (("departure", "départ"), ("arrival", "arrivée")):
+        time = _clock(str(option.details.get(key) or ""))
+        if time is not None and time not in in_title:
+            parts.append(f"{word} à {_hours(str(time[0]), f'{time[1]:02d}')}")
+    return "".join(f", {part}" for part in parts)
+
+
 def options_summary(options: list[Option]) -> str:
     """3 options au maximum : numéro, nom, prix, note. Se termine en proposant les détails."""
     if not options:
@@ -34,7 +59,7 @@ def options_summary(options: list[Option]) -> str:
     for number, option in enumerate(spoken, start=1):
         note = f", noté {_rating(option.rating)} sur 5" if option.rating is not None else ""
         price = "" if all_free else f", {euros(option.price_cents)}"
-        extra = ""
+        extra = _train_times(option)
         if option.details.get("address"):
             extra += f", {option.details['address']}"
         if option.details.get("slots"):
@@ -93,10 +118,13 @@ _SPOKEN_REPLACEMENTS = [
     (re.compile(r"\s+[·•|—–]\s+"), ", "),
     (re.compile(r"\b1(?:re|ère)\b"), "première"),
     (re.compile(r"\b2(?:de|nde)\b"), "seconde"),
+    (re.compile(r"\b2(?:e|ème)\s+classe\b", re.IGNORECASE), "seconde classe"),
     (re.compile(r"\b(\d+)(?:e|ème)\b"), r"\1ième"),
     # « h » seul est épelé par Kokoro (« 14, H44 ») : on écrit « heures » en toutes lettres.
     (re.compile(r"\b(\d{1,2})\s*[:h]\s*(\d{2})\b"), lambda m: _hours(m.group(1), m.group(2))),
     (re.compile(r"\b(\d{1,2})\s*h\b"), lambda m: _hours(m.group(1), "00")),
+    # « 7 heures52 » (écrit par le modèle de langage) : la voix lit mal sans l'espace
+    (re.compile(r"\b(heures?)(\d)"), r"\1 \2"),
     (re.compile(r"(\d+),00\s*(?:€|EUR\b)"), r"\1 euros"),
     (re.compile(r"(\d+),(\d{2})\s*(?:€|EUR\b)"), r"\1 euros \2"),
     (re.compile(r"(\d+)\s*(?:€|EUR\b)"), r"\1 euros"),
@@ -116,6 +144,8 @@ _MONTHS = (
 )  # fmt: skip
 _DATE_ISO = re.compile(r"\b(\d{4})-(\d{2})-(\d{2})\b")
 _DATE_SLASH = re.compile(r"\b(\d{1,2})/(\d{1,2})/(\d{4})\b")
+# « 20/11 » sans année (le mois sur deux chiffres : « 24h/24 » et « 2/3 » ne sont pas des dates)
+_DATE_SHORT = re.compile(r"(?<![\d/])(\d{1,2})/(0[1-9]|1[0-2])(?![\d/])")
 # Identifiants internes de l'agent : « o2 », « opt-3 », « option o1 »
 _OPTION_ID = re.compile(r"\b(?:opt-?|o)(\d{1,2})\b", re.IGNORECASE)
 # Jargon -> mots de tous les jours (en minuscules, comparés sans tenir compte de la casse)
@@ -156,6 +186,14 @@ def for_speech(text: str) -> str:
     """
     text = _DATE_ISO.sub(lambda m: _date(int(m[3]), int(m[2]), int(m[1])), text)
     text = _DATE_SLASH.sub(_slash_date, text)
+    text = _DATE_SHORT.sub(
+        lambda m: (
+            f"{'1er' if int(m[1]) == 1 else int(m[1])} {_MONTHS[int(m[2]) - 1]}"
+            if 1 <= int(m[1]) <= 31
+            else m[0]
+        ),
+        text,
+    )
     text = _OPTION_ID.sub(lambda m: f"numéro {int(m[1])}", text)
     for pattern, plain in _JARGON.items():
         text = re.sub(pattern, plain, text, flags=re.IGNORECASE)
@@ -163,6 +201,7 @@ def for_speech(text: str) -> str:
         text = pattern.sub(replacement, text)
     text = re.sub(r"(\d+)\s*×\s*", r"\1 ", text)
     text = text.replace("**", "").replace("`", "")
+    text = re.sub(r"(?<!\.)\.\.(?!\.)", ".", text)  # « .. » : un seul point
     return re.sub(r"\s{2,}", " ", text).strip()
 
 

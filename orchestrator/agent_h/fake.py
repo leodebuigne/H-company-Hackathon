@@ -82,6 +82,12 @@ FOOD_OPTIONS = [
 ]
 
 
+# Reste d'un essai précédent dans le panier simulé (stale_cart)
+STALE_ITEM = AgentOrderItem(
+    name="Billet Paris → Lyon, départ 10 h 12", quantity=1, unit_price_eur=35.0, total_eur=35.0
+)
+
+
 class FakeShoppingAgent:
     """Mêmes sorties que ShoppingAgent (contrats communs). Sans callback, "pay" réussit : c'est un faux."""
 
@@ -93,10 +99,20 @@ class FakeShoppingAgent:
         price_change_on_recheck: bool = False,
         need_human_at: str | None = None,
         speed: float | None = None,
+        needs_card: bool = False,
+        stale_cart: bool = False,
+        cart_fixable: bool = True,
     ) -> None:
         logging.getLogger(__name__).warning("Agent FACTICE : aucune action sur un vrai site.")
         self.order_id = ""
         self.last_payment_message: str | None = None
+        # Carte dictée : le site simulé n'a pas de carte enregistrée si needs_card
+        self.on_card_needed = None  # posé par l'orchestrateur
+        self._needs_card = needs_card
+        # Panier d'un essai précédent : un billet (ou un plat) déjà là, que l'agent sait retirer ou non
+        self._stale_cart, self._cart_fixable = stale_cart, cart_fixable
+        self.card_used = None  # dernière carte « tapée » (tests), effacée comme dans le vrai agent
+        self.last_card_saved: bool | None = None
         self.agent_view_url: str | None = None
         self._approval_callback = approval_callback
         self._need_human_callback = need_human_callback
@@ -152,10 +168,11 @@ class FakeShoppingAgent:
         price = self._chosen.price_cents / 100 + extra_eur
         raw = AgentOrderSummary(
             items=[
-                AgentOrderItem(name=self._chosen.title, quantity=1, unit_price_eur=price, total_eur=price)
+                AgentOrderItem(name=self._chosen.title, quantity=1, unit_price_eur=price, total_eur=price),
+                *([STALE_ITEM] if self._stale_cart else []),
             ],
             fees=[AgentFee(label="Frais de livraison", amount_eur=fee)] if fee else [],
-            total_eur=round(price + fee, 2),
+            total_eur=round(price + fee + (STALE_ITEM.total_eur if self._stale_cart else 0), 2),
             page_url=f"https://{site}/paiement",
             when_label=self._chosen.details.get("delivery") or self._chosen.details.get("departure"),
             conditions="Billet non remboursable" if self._is_train() else None,
@@ -175,24 +192,49 @@ class FakeShoppingAgent:
 
     async def pay(self) -> PaymentResult:
         summary = await self.recheck()
-        decision = "approved"
-        if self._approval_callback is not None:
-            decision = await self._approval_callback(summary)
+        decision = await self._approve(summary, self.recheck)
         if decision != "approved":
             raise PaymentDenied("Paiement non approuvé : rien n'a été cliqué.")
         await self._wait(4.0, "pay")  # le temps de valider dans l'application bancaire
         return "accepted"  # simulation : aucune commande réelle
 
+    async def _direct_summary(self) -> OrderSummary:
+        return self._summary(extra_eur=8.0 if self._price_change else 0.0)
+
+    async def _approve(self, summary: OrderSummary, reread) -> str:  # noqa: ANN001
+        """Comme le vrai agent : sur "fix_cart", retire ce qui n'a pas été choisi et redemande l'accord."""
+        if self._approval_callback is None:
+            return "approved"
+        for _ in range(3):
+            decision = await self._approval_callback(summary)
+            if decision != "fix_cart":
+                return decision
+            self.cart_fix_requests = getattr(self, "cart_fix_requests", 0) + 1
+            if self._cart_fixable:
+                self._stale_cart = False
+            summary = await reread()
+        return "denied"
+
+    async def _use_dictated_card(self) -> None:
+        """Comme le vrai agent : sans carte enregistrée, on fait dicter la carte, puis on l'oublie."""
+        if not self._needs_card:
+            return
+        result = await self.on_card_needed("card") if self.on_card_needed else None
+        if not result:
+            raise PaymentDenied("carte non fournie")
+        card, save = result
+        self.card_used = card
+        self.last_card_saved = bool(save)
+
     async def buy(self) -> PaymentResult:
         """Achat direct simulé : approbation demandée sur le récapitulatif du panier, puis « accepté »."""
         if not self.order_id:
             self.order_id = str(uuid.uuid4())
-        summary = self._summary(extra_eur=8.0 if self._price_change else 0.0)
-        decision = "approved"
-        if self._approval_callback is not None:
-            decision = await self._approval_callback(summary)
+        summary = await self._direct_summary()
+        decision = await self._approve(summary, lambda: self._direct_summary())
         if decision != "approved":
             raise PaymentDenied("Achat non approuvé : rien n'a été cliqué.")
+        await self._use_dictated_card()
         await self._wait(4.0, "pay")
         self.last_payment_message = "Votre commande est confirmée."
         return "accepted"

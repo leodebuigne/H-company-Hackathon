@@ -12,11 +12,12 @@ import os
 import re
 from pathlib import Path
 from typing import Protocol
+from urllib.parse import urlencode
 
 import httpx
 from pydantic import ValidationError
 
-from orchestrator.contracts import SiteCard
+from orchestrator.contracts import Intent, SiteCard
 
 from .models import SiteNotes
 
@@ -25,14 +26,17 @@ MAX_LINES = 12
 _PERSONAL = re.compile(r"@|\d{4,}|\b\d{1,4}\s*(rue|avenue|bd|boulevard|chemin|place|allée)\b", re.IGNORECASE)
 
 
-def sanitize(lines: list[str]) -> list[str]:
-    """Garde seulement des lignes génériques sur l'usage du site, sans donnée personnelle."""
+def sanitize(lines: list[str], keep: str = "first") -> list[str]:
+    """Garde seulement des lignes génériques sur l'usage du site, sans donnée personnelle.
+
+    MAX_LINES au plus : les premières (keep="first") ou les plus récentes, en fin de liste (keep="last").
+    """
     clean = []
     for line in lines:
         text = " ".join(str(line).split())[:200]
         if text and not _PERSONAL.search(text) and text not in clean:
             clean.append(text)
-    return clean[:MAX_LINES]
+    return clean[-MAX_LINES:] if keep == "last" else clean[:MAX_LINES]
 
 
 def domain_of(site: str) -> str:
@@ -53,10 +57,23 @@ def merge_card(
     seconds: float,
     steps: int | None = None,
     now: dt.datetime | None = None,
+    *,
+    success: bool = True,
+    blocked: str | None = None,
 ) -> SiteCard:
-    """Ajoute une commande menée jusqu'au paiement à la fiche du site (contrat SiteCard)."""
+    """Ajoute une commande à la fiche du site (contrat SiteCard), achetée ou non.
+
+    Une commande qui n'aboutit pas apprend aussi : ses pièges, ses boutons, et la raison du blocage,
+    pour que la suivante l'évite. Seul un achat réussi compte dans successful_runs. On garde les
+    lignes les plus récentes.
+    """
     runs = old.runs if old else 0
-    buttons = sanitize((old.useful_buttons if old else []) + (notes.useful_buttons if notes else []))
+    buttons = sanitize(
+        (old.useful_buttons if old else []) + (notes.useful_buttons if notes else []), keep="last"
+    )
+    learned = (notes.pitfalls if notes else []) + (
+        [f"Blocage d'une commande précédente : {blocked}"] if blocked else []
+    )
     return SiteCard(
         domain=domain,
         # L'adresse de recherche directe apprise est gardée même quand l'agent rapporte de nouvelles étapes
@@ -66,9 +83,9 @@ def merge_card(
             or [s for s in (old.steps if old else []) if not s.startswith("Recherche directe : ")]
         ),
         useful_buttons=[button[:80] for button in buttons],
-        pitfalls=sanitize((old.pitfalls if old else []) + (notes.pitfalls if notes else [])),
+        pitfalls=sanitize((old.pitfalls if old else []) + learned, keep="last"),
         runs=runs + 1,
-        successful_runs=(old.successful_runs if old else 0) + 1,
+        successful_runs=(old.successful_runs if old else 0) + (1 if success else 0),
         avg_duration_s=_mean(old.avg_duration_s if old else None, runs, seconds),
         avg_steps=_mean(old.avg_steps if old else None, runs, steps),
         updated_at=now or dt.datetime.now(dt.UTC),
@@ -102,30 +119,74 @@ STARTER_CARDS: dict[str, dict[str, list[str]]] = {
 
 
 # Variante « recherche rapide » : tout le trajet tapé d'un coup dans « Tout rechercher »
-# (5 actions au lieu de 12 à 17 : 47 s au lieu de 88 s, mesuré le 2026-11-18). Par défaut ;
+# (5 actions au lieu de 12 à 17 : 47 s au lieu de 88 s, mesuré le 2026-11-18). Le 2026-11-19, Entrée ne
+# lance plus rien et les suggestions sont des adresses : il faut cliquer « Rechercher ». Par défaut ;
 # PILOTE_SNCF_QUICK_SEARCH=0 revient au formulaire Trains.
 QUICK_SEARCH_SNCF: dict[str, list[str]] = {
     "steps": [
         "Part de la page d'accueil https://www.sncf-connect.com, attends qu'elle soit chargée.",
         "Reste sur l'onglet « Tout rechercher ». Clique dans le champ « Entrez une destination, un trajet… » et "
         "tape d'un coup le trajet, la date et l'heure, par exemple « Paris Nantes 19 novembre 8h ».",
-        "Puis clique tout de suite sur le bouton bleu « Rechercher » à droite du champ (ou tape avec Entrée).",
-        "La liste sous le champ (« Points d'intérêts », « Adresses ») est normale : n'y choisis rien, ce ne "
-        "sont pas des trajets, et ne passe pas à l'onglet « Trains ».",
-        "Sur la page de résultats, vérifie les gares, la date et l'heure ; corrige seulement ce qui ne va pas.",
+        "Ne choisis aucune suggestion (ce sont des adresses) et n'appuie pas sur Entrée (ça ne fait rien).",
+        "Clique tout de suite sur le bouton bleu « Rechercher » à droite du champ, puis attends le chargement "
+        "(une dizaine de secondes) : la page des trains s'ouvre.",
+        "Sur les résultats, lis directement les trains : ne refais pas la recherche et ne reconfirme pas "
+        "Départ, Arrivée ni la date.",
+        "Ne corrige que si la gare ou la date affichée en haut des résultats est fausse.",
     ],
     "useful_buttons": ["Tout rechercher", "Rechercher", "Choisir ce tarif", "Passer l'étape"],
     "pitfalls": [
         "Le grand bandeau « Ouverture des ventes » sous le champ est une publicité : ne clique jamais dessus. "
         "S'il t'emmène sur une page /bons-plans/, retourne sur https://www.sncf-connect.com.",
-        "Seulement si la page de résultats ne s'affiche pas après « Rechercher », utilise l'onglet « Trains » et son "
-        "formulaire.",
+        "Seulement si la page des trains ne s'ouvre pas après le clic sur « Rechercher », utilise l'onglet "
+        "« Trains » et son formulaire.",
         "Sur le panier, « Valider et payer » est le bouton final, même pour un billet à 0 € : ne clique dessus "
         "qu'à l'étape « achat » ou « paiement », après approbation.",
         "Pour choisir un train, clique sur la ligne du train puis « Choisir ce tarif » ; le badge « Meilleur prix » "
         "n'est pas un bouton. Le questionnaire « Océane » qui s'ouvre parfois se ferme avec la croix.",
     ],
 }
+
+
+# Lien direct vers les résultats SNCF Connect (mesuré le 2026-11-19 : résultats affichés en 9 à 14 s,
+# sans rien taper). Sans lui, le bouton « Rechercher » passe par l'assistant du site, qui met 30 à 40 s
+# pendant lesquelles l'agent ne peut qu'attendre.
+DIRECT_RESULTS_STEPS = [
+    "La page s'ouvre directement sur la recherche demandée : ne tape rien et ne clique sur rien. Si elle "
+    "charge encore (points qui tournent), attends 5 secondes à la fois, 20 secondes au maximum.",
+    "Dès que la liste des trains est affichée, lis les premiers trains visibles et réponds tout de suite : "
+    "un seul défilement au plus, les trois premiers trains qui conviennent suffisent.",
+    "Vérifie seulement les gares et la date affichées en haut ; ne refais pas la recherche si elles sont "
+    "justes.",
+    "Seulement si tu te retrouves sur l'accueil sans résultats : tape le trajet, la date et l'heure dans "
+    "« Tout rechercher » puis clique sur le bouton bleu « Rechercher ».",
+]
+_FR_MONTHS = (
+    "janvier", "février", "mars", "avril", "mai", "juin",
+    "juillet", "août", "septembre", "octobre", "novembre", "décembre",
+)  # fmt: skip
+
+
+def direct_search_url(intent: Intent, site: str) -> str | None:
+    """Adresse qui ouvre directement les résultats de la demande, ou None si le site n'en a pas.
+
+    SNCF Connect, pour un train avec départ, arrivée et date : la recherche en texte libre du site
+    (« Paris Lyon 20 novembre 10h »). PILOTE_SNCF_QUICK_SEARCH=0 la coupe.
+    """
+    if domain_of(site) != "www.sncf-connect.com" or intent.category != "train":
+        return None
+    if os.getenv("PILOTE_SNCF_QUICK_SEARCH", "").strip() == "0":
+        return None
+    origin, destination = intent.details.get("origin"), intent.details.get("destination")
+    date = intent.when.date
+    if not origin or not destination or date is None:
+        return None
+    words = [origin, destination, f"{date.day} {_FR_MONTHS[date.month - 1]}"]
+    hour = intent.details.get("time") or intent.when.after
+    if hour:
+        hours, _, minutes = hour.partition(":")
+        words.append(f"{int(hours)}h{minutes if minutes not in ('', '00') else ''}")
+    return f"https://www.sncf-connect.com/home/search?{urlencode({'userInput': ' '.join(words)})}"
 
 
 def starter_card(domain: str) -> SiteCard | None:
@@ -160,6 +221,21 @@ def with_starter(learned: SiteCard | None, domain: str) -> SiteCard | None:
             "steps": (starter.steps + learned_steps)[: MAX_LINES + len(starter.steps)],
             "useful_buttons": list(dict.fromkeys(starter.useful_buttons + learned.useful_buttons)),
             "pitfalls": list(dict.fromkeys(starter.pitfalls + learned.pitfalls)),
+        }
+    )
+
+
+def card_for_order(learned: SiteCard | None, starter: SiteCard | None) -> SiteCard | None:
+    """Fiche donnée à l'agent : les étapes de départ écrites à la main (le speedrun SNCF) passent
+    toujours en premier, et la mémoire ajoute ce qu'elle a appris (pièges, boutons, statistiques).
+    Sans fiche de départ, la mémoire seule ; sans mémoire, la fiche de départ seule."""
+    if learned is None or starter is None:
+        return learned or starter
+    return learned.model_copy(
+        update={
+            "steps": starter.steps,
+            "pitfalls": sanitize(starter.pitfalls + learned.pitfalls),
+            "useful_buttons": sanitize(starter.useful_buttons + learned.useful_buttons),
         }
     )
 

@@ -21,6 +21,8 @@ const empty: PiloteSnapshot = {
   log: [],
   agentViewUrl: null,
   lastSay: "",
+  question: false,
+  replay: null,
 };
 
 describe("reduce", () => {
@@ -62,5 +64,44 @@ describe("reduce", () => {
     let s = reduce(empty, { type: "intent", intent: { ...request.intent, kind: "new_request" } });
     s = reduce(s, { type: "intent", intent: { ...request.intent, kind: "choose", choice_index: 2 } });
     expect(s.intent?.kind).toBe("new_request");
+  });
+});
+
+describe("reduce : conversation rejouée, question, options périmées", () => {
+  const say = (text: string): ServerMessage => ({ type: "transcript", role: "pilote", text });
+  const ready: ServerMessage = { type: "ready", session_id: "s1" };
+  const listening: ServerMessage = { type: "state", state: "listening" };
+
+  it("un écran neuf accepte la conversation rejouée, un écran qui se reconnecte l'ignore", () => {
+    let fresh = reduce(empty, ready);
+    fresh = reduce(fresh, say("Bonjour"));
+    expect(fresh.log.map((e) => e.text)).toEqual(["Bonjour"]);
+
+    let back = reduce({ ...fresh, replay: null }, ready);
+    back = reduce(back, say("Bonjour"));
+    expect(back.log).toHaveLength(1);
+    back = reduce(back, listening);
+    back = reduce(back, say("Nouvelle phrase"));
+    expect(back.log).toHaveLength(2);
+  });
+
+  it("« on repart de zéro » (nouvel identifiant) vide la conversation affichée", () => {
+    let s = reduce(empty, ready);
+    s = reduce(s, say("Je cherche la CAF de Lyon."));
+    s = reduce(s, { type: "ready", session_id: "s2" });
+    expect(s.log).toHaveLength(0);
+    s = reduce(s, say("C'est fait, on repart de zéro."));
+    expect(s.log.map((e) => e.text)).toEqual(["C'est fait, on repart de zéro."]);
+  });
+
+  it("une question n'a pas d'étapes d'achat, et une recherche affinée vide les options", () => {
+    const base = serverExamples.find((e) => e.msg.type === "intent")!.msg as Extract<ServerMessage, { type: "intent" }>;
+    const asked = reduce(empty, { ...base, intent: { ...base.intent, kind: "question" } });
+    expect(asked.question).toBe(true);
+    const options = serverExamples.find((e) => e.msg.type === "options")!.msg;
+    let s = reduce(reduce(empty, { type: "state", state: "proposing" }), options);
+    expect(s.options.length).toBeGreaterThan(0);
+    s = reduce(s, { type: "state", state: "searching" });
+    expect(s.options).toEqual([]);
   });
 });

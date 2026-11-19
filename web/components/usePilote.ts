@@ -19,6 +19,10 @@ export interface PiloteSnapshot {
   log: LogEntry[];
   agentViewUrl: string | null;
   lastSay: string;
+  /** La demande en cours est une simple question (pas d'achat) : pas d'étapes Choix / Achat. */
+  question: boolean;
+  /** Entre « ready » et le premier « state », le serveur rejoue la conversation récente. */
+  replay: "accept" | "skip" | null;
 }
 
 const INITIAL: PiloteSnapshot = {
@@ -31,6 +35,8 @@ const INITIAL: PiloteSnapshot = {
   log: [],
   agentViewUrl: null,
   lastSay: "",
+  question: false,
+  replay: null,
 };
 
 let logId = 0;
@@ -39,7 +45,24 @@ const entry = (who: LogEntry["who"], text: string): LogEntry => ({ id: ++logId, 
 export function reduce(s: PiloteSnapshot, msg: ServerMessage): PiloteSnapshot {
   switch (msg.type) {
     case "ready":
-      return { ...s, sessionId: msg.session_id };
+      // Nouvelle conversation (« on repart de zéro », ou orchestrateur relancé) : nouvel
+      // identifiant, l'écran vide ce qu'il affichait.
+      if (s.sessionId !== null && msg.session_id !== s.sessionId) {
+        return {
+          ...s,
+          sessionId: msg.session_id,
+          log: [],
+          intent: null,
+          options: [],
+          summary: null,
+          agentViewUrl: null,
+          question: false,
+          replay: "accept",
+        };
+      }
+      // Un écran neuf (conversation vide) accepte la conversation rejouée ; un écran qui se
+      // reconnecte l'a déjà : il l'ignore pour ne pas afficher les phrases en double.
+      return { ...s, sessionId: msg.session_id, replay: s.log.length === 0 ? "accept" : "skip" };
     case "say":
       // L'historique vient des messages transcript (role pilote), pour ne pas doubler les phrases.
       return { ...s, lastSay: msg.text };
@@ -49,14 +72,21 @@ export function reduce(s: PiloteSnapshot, msg: ServerMessage): PiloteSnapshot {
       return {
         ...s,
         state: msg.state,
-        ...(fresh ? { intent: null, options: [], summary: null, agentViewUrl: null } : {}),
+        replay: null,
+        ...(fresh ? { intent: null, options: [], summary: null, agentViewUrl: null, question: false } : {}),
+        // Nouvelle recherche (demande affinée) : les anciennes options ne sont plus valables
+        ...(msg.state === "searching" && s.state === "proposing" ? { options: [] } : {}),
       };
     }
     case "transcript":
+      if (s.replay === "skip") return s;
       return { ...s, log: [...s.log, entry(msg.role, msg.text)] };
     case "intent":
       // L'écran du jury montre la demande ; « la deuxième » ou « oui » ne la remplacent pas.
-      return ["new_request", "refine"].includes(msg.intent.kind) ? { ...s, intent: msg.intent } : s;
+      if (msg.intent.kind === "question") return { ...s, question: true };
+      return ["new_request", "refine"].includes(msg.intent.kind)
+        ? { ...s, intent: msg.intent, question: false }
+        : s;
     case "options":
       return { ...s, options: msg.options };
     case "summary":

@@ -63,6 +63,19 @@ def open_pages() -> int:
     return sum(1 for target in targets if target.get("type") == "page")
 
 
+def current_url() -> str | None:
+    """Adresse de l'onglet ouvert dans le Chrome dédié (None si injoignable ou page vide)."""
+    try:
+        targets = json.load(urllib.request.urlopen(f"http://127.0.0.1:{PORT}/json", timeout=3))
+    except Exception:
+        return None
+    for target in targets:
+        url = target.get("url") or ""
+        if target.get("type") == "page" and url.startswith("http"):
+            return url
+    return None
+
+
 def ensure_page(url: str = "about:blank") -> None:
     """H ferme l'onglet à la fin d'une session : sans onglet, la session suivante échoue
     (« no such window: target window already closed »). On en rouvre un."""

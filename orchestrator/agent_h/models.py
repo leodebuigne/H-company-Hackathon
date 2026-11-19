@@ -13,7 +13,7 @@ import datetime as dt
 import json
 from decimal import ROUND_HALF_UP, Decimal
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from orchestrator.contracts import Fee, Option, OrderItem, OrderSummary, summary_hash
 from orchestrator.ports import PaymentResult
@@ -24,7 +24,10 @@ MAX_OPTIONS = 8
 
 
 class OptionDetails(BaseModel):
-    """Détails d'une option, à champs fixes : un dictionnaire libre est moins sûr en sortie structurée."""
+    """Détails d'une option. Champs connus pour les trains et les repas ; pour un produit, d'autres clés
+    (color, size, dimensions…) sont acceptées : rejeter la réponse ferait perdre toute la boutique."""
+
+    model_config = ConfigDict(extra="allow")
 
     departure: str | None = Field(default=None, description="Train : heure de départ, HH:MM")
     arrival: str | None = Field(default=None, description="Train : heure d'arrivée, HH:MM")
@@ -40,6 +43,9 @@ class OptionDetails(BaseModel):
     avg_price: str | None = Field(default=None, description="Restaurant : prix moyen affiché, en texte")
     phone: str | None = Field(default=None, description="Restaurant, lieu : numéro de téléphone")
     booking: str | None = Field(default=None, description="« oui » si la réservation en ligne est possible")
+    shop: str | None = Field(default=None, description="Achat en boutique : nom du site ou du vendeur")
+    color: str | None = Field(default=None, description="Produit : couleur ou motif choisi")
+    size: str | None = Field(default=None, description="Produit : taille, pointure ou dimensions")
 
 
 class AgentOption(BaseModel):
@@ -50,6 +56,19 @@ class AgentOption(BaseModel):
     description: str | None = None
     conditions: str | None = Field(default=None, description="Conditions d'échange ou de remboursement")
     details: OptionDetails = Field(default_factory=OptionDetails)
+
+    @field_validator("details", mode="before")
+    @classmethod
+    def _lenient_details(cls, value: object) -> object:
+        """Texte libre ou valeurs non textuelles : on garde ce qui est lisible au lieu de tout rejeter."""
+        if value is None:
+            return {}
+        if isinstance(value, str):
+            return {"info": value[:200]} if value.strip() else {}
+        if isinstance(value, dict):
+            return {str(k): str(v)[:200] for k, v in value.items() if v not in (None, "", [], {})}
+        return {}
+
     url: str | None = None
 
     @field_validator("details", mode="before")
@@ -133,6 +152,17 @@ def summary_from_cents(value: object) -> object:
     return converted
 
 
+class TipFeedback(BaseModel):
+    id: str = Field(description="Identifiant [T…] d'une astuce de la mémoire du site que tu as essayée")
+    worked: bool = Field(description="true si elle a mené au résultat attendu, false sinon")
+
+
+class NewTip(BaseModel):
+    text: str = Field(description="Chemin ou piège, général et précis, avec <ville>, <date>, <plat>…")
+    kind: str = Field(default="étape", description="raccourci, étape ou piège")
+    phase: str = Field(default="recherche", description="recherche ou achat")
+
+
 class AgentAnswer(BaseModel):
     """Format unique de réponse de l'agent, quelle que soit la phase."""
 
@@ -154,6 +184,10 @@ class AgentAnswer(BaseModel):
     )
     payment_message: str | None = Field(default=None, description="Message exact du site ou de la banque")
     blocked_reason: str | None = Field(default=None, description="Raison si tu n'as pas pu continuer")
+    card_saved_on_site: bool | None = Field(
+        default=None,
+        description="Carte dictée : true si l'enregistrement sur le site est coché, sinon false",
+    )
     site_notes: SiteNotes | str | None = None
     results_url: str | None = Field(
         default=None, description="Adresse exacte de la page de résultats de la recherche"
@@ -162,6 +196,17 @@ class AgentAnswer(BaseModel):
         default=None, description="Réponse à une question : 1 à 3 phrases simples, à dire à voix haute"
     )
     reply_source: str | None = Field(default=None, description="Nom du site où la réponse a été trouvée")
+    tips_feedback: list[TipFeedback] = Field(
+        default_factory=list, description="Pour chaque astuce [T…] de la mémoire essayée : a-t-elle marché ?"
+    )
+    new_tips: list[NewTip] = Field(
+        default_factory=list, description="Chemins plus rapides ou pièges découverts, absents de la mémoire"
+    )
+
+    @field_validator("tips_feedback", "new_tips", mode="before")
+    @classmethod
+    def _null_list(cls, value: object) -> object:
+        return [] if value is None else value
 
     @field_validator("order_summary", "site_notes", mode="before")
     @classmethod

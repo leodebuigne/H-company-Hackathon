@@ -136,6 +136,31 @@ body {
 .pilote-help { margin: 4px 0 0; text-align: center; color: var(--muted); font-size: 0.82rem; }
 .pilote-link { background: none; border: 0; padding: 0; color: var(--blue); font: inherit; font-weight: 600; cursor: pointer; }
 .pilote-link:hover { text-decoration: underline; text-underline-offset: 3px; }
+.pilote-stop {
+  display: inline-flex; align-items: center; gap: 8px; min-height: 44px; padding: 8px 20px; border-radius: 999px;
+  border: 0; background: var(--text); color: var(--bg); font: inherit; font-weight: 700; cursor: pointer;
+}
+.pilote-stop:hover { opacity: 0.85; }
+.pilote-actions { display: flex; justify-content: center; gap: 10px; min-height: 44px; }
+.pilote-repeat {
+  min-height: 44px; padding: 8px 20px; border-radius: 999px; border: 1px solid var(--line); background: #fff;
+  color: var(--text); font: inherit; font-weight: 600; cursor: pointer;
+}
+.pilote-repeat:hover { border-color: var(--blue); color: var(--blue-deep); }
+.pilote-repeat:focus-visible { outline: 3px solid var(--focus); outline-offset: 3px; }
+.pilote-steps[hidden] { display: none; }
+/* Une fois démarré : en-tête compact, la conversation et le champ de texte tiennent à l'écran */
+.pilote.is-started { gap: 12px; padding-top: 10px; }
+.pilote.is-started .pilote-header { padding-top: 6px; gap: 0; }
+.pilote.is-started .pilote-title { font-size: clamp(2rem, 5vw, 2.8rem); animation: none; }
+.pilote.is-started .pilote-tagline { display: none; }
+/* Le champ de texte reste en bas de l'écran pendant la conversation */
+.pilote.is-started .pilote-text { position: sticky; bottom: 12px; z-index: 5; }
+.pilote.is-started .pilote-main { gap: 14px; }
+.pilote.is-started .pilote-hero { margin-top: -18px; gap: 4px; }
+/* Écran tactile : pas de clavier, donc pas de raccourcis affichés */
+@media (pointer: coarse) { .pilote-keys { display: none; } }
+.pilote-stop:focus-visible { outline: 3px solid var(--focus); outline-offset: 3px; }
 kbd {
   display: inline-block; padding: 0 6px; border-radius: 6px; border: 1px solid var(--line); border-bottom-width: 2px;
   background: #fff; color: var(--text); font: 600 0.76rem/1.6 var(--font);
@@ -143,6 +168,7 @@ kbd {
 
 /* Conversation façon messagerie */
 .pilote-thread {
+  max-height: min(46vh, 440px); overflow-y: auto; overscroll-behavior: contain;
   display: flex; flex-direction: column; gap: 6px; padding: 18px; border-radius: 26px;
   background: rgba(255, 255, 255, 0.72); border: 1px solid rgba(230, 232, 236, 0.9); backdrop-filter: blur(18px);
   box-shadow: 0 20px 60px rgba(10, 124, 255, 0.07);
@@ -153,7 +179,9 @@ kbd {
 }
 @keyframes bubble-in { from { opacity: 0; transform: translateY(8px) scale(0.98); } }
 .pilote-bubble.is-pilote { align-self: flex-start; background: var(--bubble-in); color: var(--text); border-bottom-left-radius: 6px; }
-.pilote-bubble.is-user { align-self: flex-end; background: var(--blue); color: #fff; border-bottom-right-radius: 6px; }
+/* Bleu foncé : contraste 5,6 avec le texte blanc (le bleu clair faisait 3,9, sous le seuil de 4,5) */
+.pilote-bubble.is-user { align-self: flex-end; background: var(--blue-deep); color: #fff; border-bottom-right-radius: 6px; }
+.pilote-bubble.is-live { color: var(--muted); font-style: italic; }
 .pilote-bubble.is-system {
   align-self: center; max-width: 92%; background: #fff4ed; color: var(--warn); font-size: 0.95rem; border-radius: 14px;
 }
@@ -237,16 +265,16 @@ kbd {
 /* Écrire au lieu de parler : champ de messagerie */
 .pilote-text {
   display: flex; align-items: center; gap: 6px; padding: 5px 5px 5px 16px; border-radius: 999px;
-  background: #fff; border: 1px solid var(--line);
+  background: #fff; border: 1px solid var(--line); box-shadow: 0 6px 24px rgba(16, 24, 40, 0.08);
 }
 .pilote-text:focus-within { border-color: rgba(10, 124, 255, 0.6); box-shadow: 0 0 0 4px rgba(10, 124, 255, 0.1); }
 .pilote-text input {
-  flex: 1; min-width: 0; padding: 8px 0; font: 400 1.05rem var(--font); border: 0; background: transparent; color: var(--text);
+  flex: 1; min-width: 0; min-height: 44px; padding: 8px 0; font: 400 1.05rem var(--font); border: 0; background: transparent; color: var(--text);
 }
 .pilote-text input::placeholder { color: #9a9ca3; }
 .pilote-text input:focus { outline: none; }
 .pilote-text button {
-  display: grid; place-items: center; width: 36px; height: 36px; flex: none; border-radius: 50%; border: 0;
+  display: grid; place-items: center; width: 44px; height: 44px; flex: none; border-radius: 50%; border: 0;
   background: var(--blue); color: #fff; cursor: pointer;
 }
 .pilote-text button:disabled { background: #c9ccd2; cursor: default; }
@@ -275,7 +303,7 @@ kbd {
 .pilote-shortcuts { display: grid; grid-template-columns: auto 1fr; gap: 10px 14px; margin: 0 0 16px; align-items: baseline; }
 .pilote-shortcuts dt { white-space: nowrap; }
 .pilote-shortcuts dd { margin: 0; color: var(--muted); }
-.pilote-spectator-link { color: var(--blue); font-weight: 600; text-decoration: none; }
+.pilote-spectator-link { display: inline-block; padding: 12px 0; color: var(--blue-deep); font-weight: 600; text-decoration: none; }
 
 @media (max-width: 560px) {
   .pilote-step-label { font-size: 0.7rem; }

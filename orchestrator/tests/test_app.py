@@ -70,3 +70,30 @@ def test_two_screens_share_one_session():
             _until(jury, lambda m: m["type"] == "say")
             main.send_json({"type": "text", "text": "Un train de Paris pour Lille demain"})
             _until(jury, _state("proposing"))
+
+
+async def test_a_screen_closed_during_the_greeting_ends_quietly(caplog):
+    """Page rechargée pendant l'accueil : l'envoi échoue, puis la lecture ; aucune erreur au journal."""
+    from starlette.websockets import WebSocketDisconnected, WebSocketState
+
+    app = create_app(session_factory=_session)
+
+    class ClosedScreen:
+        client_state = WebSocketState.CONNECTED
+
+        async def accept(self) -> None:
+            pass
+
+        async def send_json(self, data) -> None:
+            self.client_state = WebSocketState.DISCONNECTED
+            raise WebSocketDisconnected("fermé")
+
+        async def receive_json(self):
+            raise WebSocketDisconnected('WebSocket is not connected. Need to call "accept" first.')
+
+    route = next(r for r in app.router.routes if getattr(r, "path", "") == "/ws")
+    with TestClient(app):  # démarre la session
+        session = app.state.session
+        await route.endpoint(ClosedScreen())
+        assert not session._clients, "l'écran fermé est oublié"
+    assert "Exception in ASGI application" not in caplog.text
