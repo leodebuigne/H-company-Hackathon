@@ -25,14 +25,17 @@ MAX_LINES = 12
 _PERSONAL = re.compile(r"@|\d{4,}|\b\d{1,4}\s*(rue|avenue|bd|boulevard|chemin|place|allée)\b", re.IGNORECASE)
 
 
-def sanitize(lines: list[str]) -> list[str]:
-    """Garde seulement des lignes génériques sur l'usage du site, sans donnée personnelle."""
+def sanitize(lines: list[str], keep: str = "first") -> list[str]:
+    """Garde seulement des lignes génériques sur l'usage du site, sans donnée personnelle.
+
+    MAX_LINES au plus : les premières (keep="first") ou les plus récentes, en fin de liste (keep="last").
+    """
     clean = []
     for line in lines:
         text = " ".join(str(line).split())[:200]
         if text and not _PERSONAL.search(text) and text not in clean:
             clean.append(text)
-    return clean[:MAX_LINES]
+    return clean[-MAX_LINES:] if keep == "last" else clean[:MAX_LINES]
 
 
 def domain_of(site: str) -> str:
@@ -53,17 +56,30 @@ def merge_card(
     seconds: float,
     steps: int | None = None,
     now: dt.datetime | None = None,
+    *,
+    success: bool = True,
+    blocked: str | None = None,
 ) -> SiteCard:
-    """Ajoute une commande menée jusqu'au paiement à la fiche du site (contrat SiteCard)."""
+    """Ajoute une commande à la fiche du site (contrat SiteCard), achetée ou non.
+
+    Une commande qui n'aboutit pas apprend aussi : ses pièges, ses boutons, et la raison du blocage,
+    pour que la suivante l'évite. Seul un achat réussi compte dans successful_runs. On garde les
+    lignes les plus récentes.
+    """
     runs = old.runs if old else 0
-    buttons = sanitize((old.useful_buttons if old else []) + (notes.useful_buttons if notes else []))
+    buttons = sanitize(
+        (old.useful_buttons if old else []) + (notes.useful_buttons if notes else []), keep="last"
+    )
+    learned = (notes.pitfalls if notes else []) + (
+        [f"Blocage d'une commande précédente : {blocked}"] if blocked else []
+    )
     return SiteCard(
         domain=domain,
         steps=sanitize((notes.steps if notes else []) or (old.steps if old else [])),
         useful_buttons=[button[:80] for button in buttons],
-        pitfalls=sanitize((old.pitfalls if old else []) + (notes.pitfalls if notes else [])),
+        pitfalls=sanitize((old.pitfalls if old else []) + learned, keep="last"),
         runs=runs + 1,
-        successful_runs=(old.successful_runs if old else 0) + 1,
+        successful_runs=(old.successful_runs if old else 0) + (1 if success else 0),
         avg_duration_s=_mean(old.avg_duration_s if old else None, runs, seconds),
         avg_steps=_mean(old.avg_steps if old else None, runs, steps),
         updated_at=now or dt.datetime.now(dt.UTC),
@@ -135,6 +151,21 @@ def starter_card(domain: str) -> SiteCard | None:
         avg_duration_s=None,
         avg_steps=None,
         updated_at=dt.datetime(2026, 11, 18, tzinfo=dt.UTC),
+    )
+
+
+def card_for_order(learned: SiteCard | None, starter: SiteCard | None) -> SiteCard | None:
+    """Fiche donnée à l'agent : les étapes de départ écrites à la main (le speedrun SNCF) passent
+    toujours en premier, et la mémoire ajoute ce qu'elle a appris (pièges, boutons, statistiques).
+    Sans fiche de départ, la mémoire seule ; sans mémoire, la fiche de départ seule."""
+    if learned is None or starter is None:
+        return learned or starter
+    return learned.model_copy(
+        update={
+            "steps": starter.steps,
+            "pitfalls": sanitize(starter.pitfalls + learned.pitfalls),
+            "useful_buttons": sanitize(starter.useful_buttons + learned.useful_buttons),
+        }
     )
 
 

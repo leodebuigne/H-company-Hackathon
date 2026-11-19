@@ -29,6 +29,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import logging
 import os
 import re
 import time
@@ -62,8 +63,10 @@ from .models import (
     to_order_summary,
 )
 from .narration import actions_in, describe_action
-from .site_memory import SiteMemory, domain_of, merge_card, site_memory_from_env, starter_card
+from .site_memory import SiteMemory, card_for_order, domain_of, merge_card, site_memory_from_env, starter_card
 from .watch import StepWatch, StuckCallback, screenshot_in
+
+log = logging.getLogger(__name__)
 
 OK_STATUSES = {"idle", "completed"}
 
@@ -504,7 +507,7 @@ class ShoppingAgent:
         self._paying = False
         domain = domain_of(self._site)
         if site_card is None:
-            site_card = await self._memory.get(domain) or starter_card(domain)
+            site_card = card_for_order(await self._memory.get(domain), starter_card(domain))
         self._site_card = site_card
         await self._load_portal_agent(client)
         self._metrics = RunMetrics(site=domain, agent=self._agent_name or "inline", started=time.monotonic())
@@ -672,9 +675,25 @@ class ShoppingAgent:
         except Exception:
             pass
         now = time.monotonic()
-        if answer is not None and answer.payment_result is not None:
-            old = await self._memory.get(metrics.site)
-            card = merge_card(old, metrics.site, answer.site_notes, now - metrics.started, metrics.steps)
-            await self._memory.put(card)
+        # Mémoire gardée à chaque fin de commande, achetée ou non : un échec apprend aussi (pièges,
+        # raison du blocage). Seul un achat accepté compte comme réussi. Pas pour les questions libres.
+        answer = answer or self._last_answer
+        notes = answer.site_notes if answer is not None else None
+        blocked = answer.blocked_reason if answer is not None and payment != "accepted" else None
+        if outcome != "question" and (notes or blocked or payment == "accepted"):
+            try:
+                old = await self._memory.get(metrics.site)
+                card = merge_card(
+                    old,
+                    metrics.site,
+                    notes,
+                    now - metrics.started,
+                    metrics.steps,
+                    success=payment == "accepted",
+                    blocked=blocked,
+                )
+                await self._memory.put(card)
+            except Exception:
+                log.warning("mémoire du site non enregistrée", exc_info=True)
         if self._record:
             append_result(metrics, now)

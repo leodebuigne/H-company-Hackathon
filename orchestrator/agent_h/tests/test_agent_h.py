@@ -878,3 +878,67 @@ def test_option_with_null_details_is_accepted():
         {"options": [{"id": "o1", "title": "Carmelo", "price_eur": 0, "details": None}]}
     )
     assert answer.options[0].details.address is None
+
+
+# --- mémoire : speedrun toujours en premier, échecs retenus ------------------------------------
+
+
+def test_order_card_keeps_the_sncf_speedrun_steps_and_adds_what_memory_learned(monkeypatch):
+    from orchestrator.agent_h.site_memory import card_for_order, starter_card
+
+    monkeypatch.delenv("PILOTE_SNCF_QUICK_SEARCH", raising=False)
+    starter = starter_card("www.sncf-connect.com")
+    learned = merge_card(
+        None,
+        "www.sncf-connect.com",
+        SiteNotes(
+            steps=["Cliquer sur l'onglet Trains"], pitfalls=["Pop-up de fidélité"], useful_buttons=["Fermer"]
+        ),
+        90,
+    )
+    card = card_for_order(learned, starter)
+    assert card.steps == starter.steps  # le speedrun, pas les étapes apprises
+    assert (
+        "Pop-up de fidélité" in card.pitfalls and card.pitfalls[: len(starter.pitfalls)] == starter.pitfalls
+    )
+    assert "Fermer" in card.useful_buttons and card.runs == 1
+    assert card_for_order(None, starter) == starter and card_for_order(learned, None) == learned
+
+
+def test_a_failed_order_is_remembered_but_not_counted_as_a_success():
+    card = merge_card(
+        None,
+        "www.sncf-connect.com",
+        SiteNotes(pitfalls=["Bandeau promo"]),
+        60,
+        success=False,
+        blocked="tarif introuvable",
+    )
+    assert (card.runs, card.successful_runs) == (1, 0)
+    assert card.pitfalls == ["Bandeau promo", "Blocage d'une commande précédente : tarif introuvable"]
+    bought = merge_card(card, "www.sncf-connect.com", None, 40)
+    assert (bought.runs, bought.successful_runs) == (2, 1)
+    assert "Bandeau promo" in bought.pitfalls  # la mémoire de l'échec est gardée
+
+
+def test_memory_keeps_the_most_recent_pitfalls():
+    card = None
+    for i in range(20):
+        card = merge_card(card, "x.test", SiteNotes(pitfalls=[f"piège {i}"]), 1)
+    assert card.pitfalls[-1] == "piège 19" and len(card.pitfalls) == 12
+
+
+async def test_cancelled_order_saves_what_the_agent_learned(monkeypatch):
+    monkeypatch.delenv("PILOTE_H_AGENT", raising=False)
+    memory = InMemorySiteMemory()
+    agent = ShoppingAgent(memory=memory, record_metrics=False, browser_host="cloud")
+    blocked = {"blocked_reason": "le tarif n'apparaît pas", "site_notes": {"pitfalls": ["Pub plein écran"]}}
+    agent._client = _FakeClient(lambda: _FakeSession([blocked], agent))  # type: ignore[assignment]
+    await agent.start(TRAIN.model_copy(update={"category": "train"}))
+    with pytest.raises(NeedsHuman):
+        await agent.search()
+    await agent.cancel()
+    card = await memory.get("www.sncf-connect.com")
+    assert card is not None and card.successful_runs == 0
+    assert "Pub plein écran" in card.pitfalls
+    assert any("le tarif n'apparaît pas" in p for p in card.pitfalls)
