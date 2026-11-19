@@ -1017,8 +1017,11 @@ class Session:
         assert self._agent is not None
         if self.settings.purchase_code:
             await self._check_code(option)  # le code vaut confirmation, même pour un billet gratuit
-        elif option.price_cents > 0:  # sans code : un billet gratuit s'achète sans question
-            question = f"J'achète bien {option.title}, {euros(option.price_cents)} ?"
+        else:
+            # Sans code : toujours un « oui » avant d'acheter, même un billet gratuit (une réservation
+            # à 0 € engage aussi : une place est prise au nom du compte)
+            price = "gratuit" if option.price_cents == 0 else euros(option.price_cents)
+            question = f"J'achète bien {option.title}, {price} ?"
             if not await self._yes_no("confirm_1", question):
                 raise Abort("D'accord, je n'achète rien.")
         self._direct_limit, self._payment_refusal = option.price_cents, None

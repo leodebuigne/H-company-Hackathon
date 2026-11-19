@@ -676,3 +676,37 @@ async def test_a_screen_opened_midway_gets_the_recent_conversation_before_the_st
         assert kinds[0] == "ready" and "transcript" in kinds
         assert kinds.index("transcript") < kinds.index("state")  # rejoué avant l'état courant
         assert any("Paris pour Lille" in m["text"] for m in late if m["type"] == "transcript")
+
+
+async def test_a_free_ticket_also_needs_a_yes_and_a_no_buys_nothing(monkeypatch):
+    """Sans code secret : un billet à 0 € ne s'achète jamais sur le seul choix de l'option."""
+    import orchestrator.agent_h.fake as fake
+
+    free = [o.model_copy(update={"price_eur": 0.0}) for o in fake.TRAIN_OPTIONS]
+    monkeypatch.setattr(fake, "TRAIN_OPTIONS", free)
+    bought = 0
+    async with Harness(direct_buy=True) as h:
+        factory = h.session.agent_factory
+
+        def counting(approve, need_human):
+            agent = factory(approve, need_human)
+            buy = agent.buy
+
+            async def counted():
+                nonlocal bought
+                bought += 1
+                return await buy()
+
+            agent.buy = counted
+            return agent
+
+        h.session.agent_factory = counting
+        await h.text("Un train de Paris pour Lille demain après 14 h")
+        await h.wait("proposing")
+        await h.text("La deuxième")
+        await h.wait("confirm_1")
+        assert "J'achète bien" in h.said() and "gratuit ?" in h.said()
+        assert bought == 0  # rien n'est acheté tant que la personne n'a pas dit oui
+        await h.confirm(False)
+        await h.wait("listening")
+        assert bought == 0 and "je n'achète rien" in h.said()
