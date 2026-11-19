@@ -2,17 +2,17 @@
 
 > Topil, c'est « pilote » en verlan. Le dépôt, les fichiers et les réglages (`PILOTE_…`) gardent l'ancien nom.
 
-> Brouillon du 19 novembre 2026, pour le checkpoint 3 (vendredi avant 11 h). Les passages entre
-> crochets sont à compléter par l'équipe.
+> Fiche du 19 novembre 2026, pour le checkpoint 3 (vendredi 20 novembre avant 11 h). Seul le lien de
+> la vidéo de démo reste à ajouter, entre crochets.
 
 **Internet, à portée de voix.** Topil est un assistant vocal en français qui fait les démarches en
 ligne à la place d'une personne aveugle ou malvoyante : on lui parle, il agit sur les vrais sites, il
 dit ce qu'il fait, et il n'achète jamais sans accord.
 
 - **Équipe 3 :** Antonin Fonteneau, Léo Debuigne, Victor Smiernow, Benjamin Chabanis, Rubens Le Scao
-- **Dépôt :** https://github.com/leodebuigne/H-company-Hackathon (branche `version-2`, PR #10)
+- **Dépôt :** https://github.com/leodebuigne/H-company-Hackathon (dernière version : branche `last_last_version`)
 - **Prototype :** il tourne sur l'ordinateur de démo (voir « Comment tester ») ; [lien vers la vidéo de démo]
-- **Pitch deck :** [lien vers le diaporama une fois partagé]
+- **Pitch deck :** https://claude.ai/artifact/ATsZ6Zf7pMjkcq15bpcaLP (sources dans [`docs/pitch-deck/`](pitch-deck/README.md))
 
 ## Le problème
 
@@ -46,7 +46,7 @@ restaurant (TheFork), et répondre à une question en cherchant sur le web.
 | Comprendre | La phrase devient une demande (trajet, jour, heure) | Llama 3.3 70B, via Hugging Face |
 | Agir | Clique et lit sur les vrais sites | Agent Holo de H Company, dans un vrai Chrome |
 | Voir | Lit une capture quand l'agent est bloqué | Qwen3-VL, via Hugging Face |
-| Répondre | Dit la réponse à voix haute | Kyutai Pocket TTS (voix « Jerem »), sur l'ordinateur ; Kokoro en ligne en secours |
+| Répondre | Dit la réponse à voix haute | Kyutai Pocket TTS (voix « Jerem »), sur l'ordinateur ; Kokoro en ligne si le paquet voix n'est pas installé |
 | Orchestrer | Enchaîne les étapes et applique les garde-fous | Python 3.12, FastAPI, machine à états |
 | Interface | Micro, conversation, écran du jury | Next.js, reliée par WebSocket |
 
@@ -79,9 +79,6 @@ Deux idées qui font la vitesse :
 - **Jamais de faux semblant** : Topil annonce qu'il est un assistant automatique, et dit toujours si
   l'achat a eu lieu ou non.
 
-[À vérifier avant le rendu : la branche `pilote-V72` ajoute une carte bancaire dictée à voix haute. Si
-elle est fusionnée, reformuler le troisième point.]
-
 ## Ce que nous avons mesuré
 
 Mesures du 19 novembre 2026, sur les vrais sites, sur un Mac M1, sans achat.
@@ -103,7 +100,7 @@ Hugging Face (`HF_TOKEN`).
 
 ```bash
 git clone https://github.com/leodebuigne/H-company-Hackathon.git && cd H-company-Hackathon
-git switch version-2
+git switch last_last_version
 python3.12 -m venv .venv && . .venv/bin/activate && pip install -e ".[dev,agent,ai,voix]"
 cp .env.example .env        # puis renseigner HAI_API_KEY et HF_TOKEN
 (cd web && npm install)
@@ -140,6 +137,5 @@ Vérifier le code : `ruff check . && ruff format --check . && pytest -q`, puis d
 - La voix locale demande une installation lourde (`.[voix]`, qui installe torch). Sans elle, Topil garde
   la voix en ligne, qui a eu des pannes le 19 novembre.
 - Le vrai micro et le mot de réveil « Bonjour Topil » ont été peu testés dans la dernière tournée.
-- Le travail de l'équipe est réparti sur deux branches (`version-2` et `latence-max`) qui restent à
-  réunir.
+- La dernière version est sur la branche `last_last_version`, pas encore sur `main`.
 - Topil n'a pas encore été essayé par des personnes aveugles.
