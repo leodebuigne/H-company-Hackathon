@@ -109,3 +109,12 @@ def test_free_reservations_are_read_without_zero_euro_but_with_address_and_slots
     )
     assert "0 euro" not in text and "gratuite" in text
     assert "Presqu'île" in text and "disponible à 19 h 30, 20 h" in text and "noté 4,6 sur 5" in text
+
+
+def test_spoken_fixes_heard_in_live_tests():
+    assert for_speech("à 7 heures52 qui arrive") == "à 7 heures 52 qui arrive"
+    assert for_speech("2e classe dès 69 €, 1re classe dès 180 €.. 09:00.") == (
+        "seconde classe dès 69 euros, première classe dès 180 euros. 9 heures."
+    )
+    assert for_speech("le 20/11 à 8h") == "le 20 novembre à 8 heures"
+    assert "2/3" in for_speech("2/3 des places") and "7j/7" in for_speech("ouvert 7j/7")

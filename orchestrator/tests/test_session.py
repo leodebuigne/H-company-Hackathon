@@ -605,3 +605,49 @@ async def test_journal_says_why_and_where_an_order_ended(tmp_path):
     assert last["state_before"] == "searching" and last["step"] in ("start", "search")
     assert isinstance(last["seconds"], int)
     assert "Rien" not in json.dumps(last)  # jamais la phrase dite
+
+
+def test_answer_for_speech_says_the_source_simply():
+    from orchestrator.session import answer_for_speech
+
+    said = answer_for_speech("La tour ferme à 23 heures. (Source : toureiffel.paris (site officiel).)")
+    assert said == "La tour ferme à 23 heures. C'est d'après toureiffel.paris."
+    assert answer_for_speech("Réponse sans source.") == "Réponse sans source."
+
+
+def test_describe_has_no_repeated_information():
+    from orchestrator.contracts import Option
+
+    option = Option(
+        id="o2",
+        rank=2,
+        title="TGV INOUI 09:00 → 10:56 Lyon Part Dieu",
+        price_cents=6900,
+        currency="EUR",
+        rating=None,
+        description="Direct, 1h56, TGV INOUI.",
+        conditions=None,
+        details={"departure": "09:00", "arrival": "10:56", "duration": "1h56", "stops": "Direct"},
+        url=None,
+    )
+    said = Session._describe(option)
+    assert said.count("1h56") == 1 and said.count("09:00") == 1 and ".." not in said
+
+
+async def test_repeat_rereads_the_options_and_a_new_screen_gets_no_stale_options():
+    async with Harness() as h:
+        await h.text("Un train de Paris pour Lille demain après 14 h")
+        await h.wait("proposing")
+        before = h.said().count("14")
+        await h.text("Répète les options s'il te plaît")
+        await _until(lambda: h.said().count("14") > before, 5)
+        assert "entre 1 et" not in h.said()  # pas « Dites le numéro de l'option, entre 1 et 3 »
+        await h.session.receive({"type": "cancel"})
+        await h.wait("listening")
+        late: list[dict[str, Any]] = []
+
+        async def collect(data: dict[str, Any]) -> None:
+            late.append(data)
+
+        await h.session.attach(collect)
+        assert not [m for m in late if m["type"] in ("options", "summary")]

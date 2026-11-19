@@ -173,6 +173,8 @@ def describe_request(intent: Intent, today: dt.date) -> str:
         else:
             day = f", {_WEEKDAYS[date.weekday()]} {date.day} {_MONTHS[date.month - 1]}"
     hours = ""
+    if intent.details.get("time"):  # heure exacte (réservation, rendez-vous)
+        hours += f" à {intent.details['time']}"
     if intent.when.after:
         hours += f" après {intent.when.after}"
     if intent.when.before:
@@ -237,6 +239,26 @@ def spoken_digits(text: str) -> str:
 # Commentaire en direct : seulement pendant que l'agent travaille seul, une phrase toutes les 6 s au plus.
 PROGRESS_STATES = ("searching", "cart", "paying")
 PROGRESS_GAP_S = 6.0
+
+
+# « Répète », « redis-moi les options », « tu peux relire ? » pendant le choix
+REPEAT = re.compile(r"\b(repet\w*|redi\w*|reli[srt]\w*|rappel\w*|encore une fois)\b")
+# Source ajoutée par l'agent à la fin d'une réponse : « (Source : toureiffel.paris (site officiel).) »
+_SOURCE = re.compile(r"\s*\(?\s*sources?\s*:\s*(.+?)\s*\)?\.?\)?\s*$", re.IGNORECASE | re.DOTALL)
+
+
+def answer_for_speech(reply: str) -> str:
+    """Réponse à une question, dite simplement : « …, d'après le site toureiffel.paris. »"""
+    text = " ".join(reply.split())
+    found = _SOURCE.search(text)
+    if not found:
+        return text
+    body = text[: found.start()].rstrip()
+    source = re.sub(r"\s*\([^)]*\)?", "", found.group(1)).strip(" .)(")
+    source = re.sub(r"^https?://(www\.)?", "", source).split("/")[0]
+    if not body or not source or len(source) > 60:
+        return body or text
+    return f"{body} C'est d'après {source}."
 
 
 class Purchased(Exception):
@@ -602,7 +624,9 @@ class Session:
             with contextlib.suppress(Exception):
                 await asyncio.wait_for(agent.cancel(), self.settings.step_timeouts["cancel"])
 
-    async def _end_order(self, state: State, message: str, code: str | None = None) -> None:
+    async def _end_order(
+        self, state: State, message: str, code: str | None = None, closing: bool = True
+    ) -> None:
         await self._close_agent()
         # Pourquoi et où la commande s'arrête (codes, jamais la phrase dite) : sans ça, le journal
         # ne disait que « cancelled » et on ne savait pas si c'était la personne, un délai ou le site.
@@ -616,11 +640,14 @@ class Session:
             seconds=round(time.monotonic() - started) if started else None,
         )
         self._order_started, self._last_step = None, None
+        for key in ("options", "summary", "intent"):
+            self._snapshot.pop(key, None)
         self._intent = None
         self._summary = None
         await self._set_state(state)
         # La personne doit savoir que Pilote a fini sa tâche : on le dit clairement à chaque fin.
-        done = " C'est terminé." if state == "done" else ""
+        # (pas après une simple réponse à une question : la réponse suffit)
+        done = " C'est terminé." if state == "done" and closing else ""
         await self._say(f"{message}{done} {NEXT}")
 
     # --- déroulé d'une commande ---------------------------------------------------------
@@ -705,7 +732,7 @@ class Session:
         )
         reply = await self._step("search", self._agent.ask(question))
         self._journal("question_answered")
-        await self._end_order("done", reply)
+        await self._end_order("done", answer_for_speech(reply), code="answered", closing=False)
 
     async def _get_request(self) -> Intent:
         pending: Intent | None = None
@@ -845,7 +872,9 @@ class Session:
             option = self._option_at(options, answer.choice_index)
             if answer.kind == "choose" and option is not None:
                 return option
-            if answer.kind == "details" and option is not None:
+            if option is None and REPEAT.search(_plain(answer.text)):
+                await self._present(options)  # « répète », « redis-moi les options »
+            elif answer.kind == "details" and option is not None:
                 details = self._describe(option)
                 await self._talk(
                     details, "Détaille cette option, puis demande si elle convient.", details, answer.text
@@ -923,11 +952,12 @@ class Session:
         parts = [f"{option.title}, {euros(option.price_cents)}"]
         if option.rating is not None:
             parts.append(f"noté {option.rating:g} sur 5".replace(".", ","))
-        if option.description:
-            parts.append(option.description)
-        parts.extend(f"{value}" for value in option.details.values())
-        if option.conditions:
-            parts.append(option.conditions)
+        extras = [option.description, *option.details.values(), option.conditions]
+        for extra in extras:
+            text = " ".join(str(extra or "").split()).strip(" .")
+            # Pas deux fois la même information (l'heure et la durée sont souvent déjà dans le titre)
+            if text and _plain(text) not in _plain(" ".join(parts)):
+                parts.append(text)
         return ". ".join(parts) + ". Voulez-vous celle-ci ?"
 
     async def _checkout(self, option: Option) -> OrderSummary:

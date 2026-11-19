@@ -362,3 +362,21 @@ def test_model_flagged_essential_is_asked():
     assert out["missing"] == ["details.phone_model"] and out["question"] == "Pour quel téléphone ?"
     case["needs"] = {"key": "color", "question": "Quelle couleur"}  # pas une question : ignorée
     assert complete_intent(case, "une coque")["missing"] == []
+
+
+def test_complete_intent_drops_an_invented_hour_and_keeps_a_spoken_one():
+    raw = {"kind": "new_request", "category": "repas", "object": "pizza", "when": {"after": "18:00"}}
+    assert complete_intent(dict(raw), "Je voudrais une pizza margherita")["when"]["after"] is None
+    assert complete_intent(dict(raw), "Une pizza pour ce soir")["when"]["after"] == "18:00"
+
+
+def test_an_exact_time_is_neither_before_nor_after():
+    raw = {
+        "kind": "new_request",
+        "category": "reservation",
+        "object": "table pour 2",
+        "when": {"before": "20:00"},
+        "details": {"time": "20:00"},
+    }
+    intent = complete_intent(raw, "Une table pour deux à 20 heures")
+    assert intent["details"]["time"] == "20:00" and intent["when"]["before"] is None

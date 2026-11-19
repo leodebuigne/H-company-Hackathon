@@ -130,6 +130,10 @@ chez un dentiste », « chambre d'hôtel »).
 aujourd'hui ; « midi » = 12:00 ; « avant 20 h » pour un repas = before 20:00 aujourd'hui ; \
 « à partir de 18 h » ou « après 14 h » = after ; « pour 19 h 30 » pour un repas = before 19:30 \
 aujourd'hui ; « le plus vite possible » = asap true.
+- Heure exacte d'une réservation ou d'un rendez-vous (« une table à 20 h », « rendez-vous à 9 h 30 ») : \
+details.time = "20:00", et after et before restent null (ce n'est ni « avant » ni « après »).
+- Aucune heure ni moment de la journée dans la phrase : after et before restent null. N'invente jamais \
+une heure (un repas demandé sans heure n'est pas « après 18 h »).
 - Date : un repas sans autre jour se commande aujourd'hui. Calcule « demain », « vendredi », \
 « le 24 novembre » à partir de la date du jour fournie (jamais une date passée).
 - Argent : 60 euros = 6000 centimes.
@@ -305,6 +309,12 @@ def _is_filled(data: dict[str, Any], path: str) -> bool:
     return value not in (None, "", [], {})
 
 
+# Une heure ou un moment de la journée a été dit (chiffres, « matin », « ce soir », « tôt »…)
+_MENTIONS_TIME = re.compile(
+    r"\d|\b(matin\w*|midi|apr[eè]s-midi|soir\w*|nuit|heures?|minuit|t[oô]t|tard|d[ée]jeuner|d[iî]ner)\b"
+)
+
+
 def complete_intent(data: dict[str, Any], text: str) -> dict[str, Any]:
     """Rend la sortie du modèle conforme au contrat, sans lui faire confiance pour ce qui se calcule.
 
@@ -334,6 +344,13 @@ def complete_intent(data: dict[str, Any], text: str) -> dict[str, Any]:
         "missing": [],
         "question": None,
     }
+    if intent["kind"] == "new_request" and not _MENTIONS_TIME.search(text.lower()):
+        # Le modèle invente parfois une heure (« après 18 h » pour un repas sans heure) : sans heure
+        # ni moment de la journée dans ce que la personne a dit, il n'y en a pas.
+        intent["when"]["after"] = intent["when"]["before"] = None
+        intent["details"].pop("time", None)
+    if intent["details"].get("time"):  # heure exacte : ni « avant » ni « après »
+        intent["when"]["after"] = intent["when"]["before"] = None
     if intent["kind"] == "new_request":
         required = REQUIRED.get(intent["category"], REQUIRED[None])
         intent["missing"] = [path for path in required if not _is_filled(intent, path)]

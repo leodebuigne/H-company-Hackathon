@@ -123,7 +123,12 @@ def intent_text(intent: Intent, site: str) -> str:
         "demande (voir « Choix du site »)"
     )
     parts = [f"Site : {where}", f"Demande : {what}"]
-    parts += [f"{key} : {value}" for key, value in intent.details.items()]
+    parts += [f"{key} : {value}" for key, value in intent.details.items() if key != "time"]
+    if intent.details.get("time"):
+        parts.append(
+            f"Heure souhaitée : {intent.details['time']} exactement ; si elle n'est pas disponible, "
+            "propose les créneaux les plus proches de cette heure"
+        )
     when = intent.when
     if when.date:
         parts.append(f"Date : {when.date.isoformat()}")
