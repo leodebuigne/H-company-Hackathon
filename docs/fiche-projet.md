@@ -21,8 +21,8 @@ d'écrans, des bandeaux publicitaires, des menus qui s'ouvrent, des boutons sans
 lit tout dans l'ordre, sans dire ce qui compte. Pendant nos essais, une seule recherche de train sur
 SNCF Connect demandait 12 à 17 clics.
 
-La France compte environ 1,7 million de personnes déficientes visuelles, dont 207 000 aveugles ou
-malvoyantes profondes (DREES, Études et résultats n° 416, enquête de 2005). Depuis le 28 juin 2025, la
+L'Europe compte plus de 30 millions de personnes aveugles ou malvoyantes (estimation de l'Union
+européenne des aveugles, pour l'Europe géographique). Depuis le 28 juin 2025, la
 directive européenne 2019/882 impose l'accessibilité au e-commerce, au transport et à la banque.
 
 ## La solution

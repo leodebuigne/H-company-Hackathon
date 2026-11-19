@@ -30,13 +30,12 @@ les diapositives 6 à 10 si une prise déborde.
 
 ### 0:08 — 2. Le problème (25 s)
 
-> « En France, 1,7 million de personnes sont déficientes visuelles, dont 207 000 aveugles ou malvoyantes
-> profondes. Pour elles, acheter un billet de train en ligne reste un parcours d'obstacles : une dizaine
+> « En Europe, 30 millions de personnes sont aveugles ou malvoyantes. Pour elles, acheter un billet de train en ligne reste un parcours d'obstacles : une dizaine
 > d'écrans, des bandeaux publicitaires, des boutons sans nom. Nous avons compté douze à dix-sept clics
 > pour une seule recherche. Et depuis juin 2025, la loi impose l'accessibilité au e-commerce et au
 > transport. »
 
-Source du chiffre : DREES, enquête de 2005.
+Source du chiffre : Union européenne des aveugles (EBU), estimation pour l'Europe géographique.
 
 ### 0:33 — 3. La solution (22 s)
 
