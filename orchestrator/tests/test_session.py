@@ -1107,3 +1107,52 @@ async def test_a_short_real_answer_after_pilote_finished_is_still_understood():
         await h.wait("proposing")
         await _audio(h, "la deuxième")  # reprend un mot de la phrase des options, mais sans chevauchement
         await h.wait("confirm_1")
+
+
+# --- redémarrer et annuler ---------------------------------------------------------------------
+
+
+def test_recommence_alone_restarts_but_a_longer_request_does_not():
+    from orchestrator.session import wants_reset
+
+    for phrase in (
+        "Recommence",
+        "On recommence",
+        "Recommence tout",
+        "Tout recommencer",
+        "On repart",
+        "Repartons !",
+    ):
+        assert wants_reset(phrase), phrase
+    for phrase in (
+        "Recommence la recherche avec un train plus tôt",
+        "Je veux recommencer avec un autre billet",
+        "Un train pour Lille",
+    ):
+        assert not wants_reset(phrase), phrase
+
+
+async def test_cancel_during_a_long_search_does_not_wait_for_the_language_model():
+    async with Harness(agent={"speed": 1}) as h:  # la recherche factice dure 6 s
+        asked: list[str] = []
+        original = h.session.ai.parse_intent
+
+        async def spy(text, today, history):
+            asked.append(text)
+            return await original(text, today, history)
+
+        h.session.ai.parse_intent = spy  # type: ignore[method-assign]
+        await h.text("Un train de Paris pour Lille demain")
+        await h.wait("searching")
+        await h.text("Annule")
+        await h.wait("listening", limit_s=2)
+        assert "cancelled" in h.states()
+        assert not any("nnule" in t for t in asked)  # compris tout de suite, sans appeler le modèle
+
+
+async def test_a_reset_phrase_works_even_while_the_code_is_being_asked():
+    async with Harness(direct_buy=True, purchase_code="472") as h:
+        await _to_code_prompt(h)
+        await h.text("On recommence")
+        await h.wait_said("on repart de zéro")
+        assert "C'est acheté" not in h.said() and h.session._secret_mode is False

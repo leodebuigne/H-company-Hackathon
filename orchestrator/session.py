@@ -143,9 +143,26 @@ _RESET = re.compile(
 )
 
 
+# « Recommence » dit seul : repartir de zéro. Plus long (« recommence la recherche… »), c'est une demande
+# ordinaire : seules ces phrases exactes comptent.
+_SHORT_RESET = {
+    "recommence", "recommencer", "recommencons", "on recommence", "recommence tout", "tout recommencer",
+    "on recommence tout", "on repart", "repartons", "on repart de zero", "repars de zero",
+}  # fmt: skip
+
+
 def wants_reset(text: str) -> bool:
     """La personne demande de repartir de zéro (conversation oubliée, pas la mémoire des sites)."""
-    return bool(_RESET.search(" ".join(_words(text))))
+    joined = " ".join(_words(text))
+    return joined in _SHORT_RESET or bool(_RESET.search(joined))
+
+
+def is_cancel(text: str) -> bool:
+    """« Annule », « stop », « laisse tomber » en tête de phrase : arrêter la commande, sans modèle."""
+    words = _words(text)
+    return bool(words) and (
+        words[0] in ("annule", "annuler", "annulez", "stop") or " ".join(words).startswith("laisse tomber")
+    )
 
 
 def quick_intent(state: State, text: str) -> Intent | None:
@@ -159,7 +176,7 @@ def quick_intent(state: State, text: str) -> Intent | None:
     if not words:
         return None
     joined = " ".join(words)
-    if words[0] in ("annule", "annuler", "annulez", "stop") or joined.startswith("laisse tomber"):
+    if is_cancel(text):
         return _intent("cancel", text)
     if state in ("confirm_1", "confirm_2", "human_needed"):
         if _YES.match(joined):
@@ -715,6 +732,9 @@ class Session:
         if self._secret_mode:
             # Code secret : ni modèle de langage, ni historique, ni affichage. Comparé puis oublié.
             await self._emit(ServerTranscript(role="user", text="•••"))
+            if wants_reset(text):  # « nouvelle conversation » à la place du code : on repart de zéro
+                self._reset_asked = True
+                return _intent("cancel", "nouvelle conversation")
             plain = _plain(text)
             if "annul" in plain:
                 return _intent("cancel", "annule")
@@ -724,6 +744,9 @@ class Session:
         await self._emit(ServerTranscript(role="user", text=text))
         if wants_reset(text):
             self._reset_asked = True
+            return _intent("cancel", text)
+        if not self._waiting and is_cancel(text):
+            # Pendant une recherche ou un achat : « annule » arrête tout de suite, sans attendre le modèle
             return _intent("cancel", text)
         quick = quick_intent(self._resume_state, text) if self._waiting else None
         if quick is not None:
