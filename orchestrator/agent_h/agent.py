@@ -215,7 +215,7 @@ class ShoppingAgent:
                 answer = "denied"  # erreur ou délai dépassé côté orchestrateur : refus
             decision = "approved" if answer == "approved" else "denied"
             if decision == "denied":
-                self.last_denial_reason = "Pilote n'a pas autorisé ce paiement"
+                self.last_denial_reason = "Topil n'a pas autorisé ce paiement"
         else:
             decision = "approved" if self._auto_approve else "denied"
         self._tool_cache[key] = decision

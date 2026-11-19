@@ -74,11 +74,11 @@ async def check_voice() -> tuple[str, str]:
     from orchestrator.ai.hf import HFAI
 
     started = time.monotonic()
-    audio = await HFAI().speak("Je suis Pilote, un assistant automatique.")
+    audio = await HFAI().speak("Je suis Topil, un assistant automatique.")
     took = time.monotonic() - started
     if not audio:
-        return WARN, "la voix de Pilote ne répond pas : la voix du navigateur prendra le relais"
-    return (OK if took < 4 else WARN), f"voix de Pilote en {took:.1f} s"
+        return WARN, "la voix de Topil ne répond pas : la voix du navigateur prendra le relais"
+    return (OK if took < 4 else WARN), f"voix de Topil en {took:.1f} s"
 
 
 async def check_chrome() -> tuple[str, str]:

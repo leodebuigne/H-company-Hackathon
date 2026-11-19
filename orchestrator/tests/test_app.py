@@ -48,7 +48,7 @@ def test_health_and_full_text_order_over_websocket():
         with client.websocket_connect("/ws") as ws:
             first = _until(ws, lambda m: m["type"] == "say")
             assert first[0]["type"] == "ready"
-            assert "Je suis Pilote, un assistant automatique" in first[-1]["text"]
+            assert "Je suis Topil, un assistant automatique" in first[-1]["text"]
             ws.send_json({"type": "text", "text": "Un train de Paris pour Lille demain après 14 h"})
             seen = _until(ws, _state("proposing"))
             assert any(m["type"] == "options" for m in seen)

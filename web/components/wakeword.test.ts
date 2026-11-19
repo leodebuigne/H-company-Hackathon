@@ -30,3 +30,28 @@ describe("« OK Pilote » coupe Pilote", () => {
     expect(isStopWord("D'accord, je m'en occupe")).toBe(false);
   });
 });
+
+describe("le nom Topil, tel que la reconnaissance vocale l'écrit", () => {
+  it("se réveille sur « Bonjour Topil » et ses variantes, et garde la demande", () => {
+    for (const heard of [
+      "Bonjour Topil",
+      "bonjour top il",
+      "Bonjour, Topile",
+      "bonjour to pile",
+      "Bonjour taupe il",
+    ]) {
+      expect(findWakeWord(heard).found).toBe(true);
+    }
+    expect(findWakeWord("Bonjour Topil, un train pour Lille")).toEqual({
+      found: true,
+      rest: "un train pour Lille",
+    });
+    expect(findWakeWord("bonjour tout le monde").found).toBe(false);
+  });
+
+  it("« OK Topil » le coupe, pas ses propres phrases", () => {
+    expect(isStopWord("OK Topil")).toBe(true);
+    expect(isStopWord("okay top il")).toBe(true);
+    expect(isStopWord("Je suis Topil, un assistant automatique")).toBe(false);
+  });
+});

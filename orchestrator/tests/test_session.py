@@ -115,7 +115,7 @@ async def _to_confirm_1(h: Harness) -> None:
 
 async def test_full_order_with_two_confirmations():
     async with Harness() as h:
-        assert h.of("ready") and "Je suis Pilote, un assistant automatique" in h.of("say")[0]["text"]
+        assert h.of("ready") and "Je suis Topil, un assistant automatique" in h.of("say")[0]["text"]
         await _to_confirm_1(h)
         assert h.of("options") and h.of("summary")
         await h.confirm(True)

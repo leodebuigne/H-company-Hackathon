@@ -25,7 +25,10 @@ type Recognition = {
 };
 
 // « Bonjour Pilote » (avec ou sans virgule ; « pilot » ou « pilotes » quand la reconnaissance hésite).
-const WAKE = /\bbonjour[\s,!.-]*pilot(e|es)?\b/i;
+// Le nom est « Topil » (« pilote » en verlan). La reconnaissance vocale l'écrit de plusieurs façons :
+// « topil », « top il », « to pile », « taupe il »… L'ancien nom « Pilote » réveille aussi l'assistant.
+const NAME = String.raw`(?:topi(?:l|le|lle|ls)|top[\s-]?(?:il|ile|ils|hill)|taupe?[\s-]?il|to[\s-]?pil(?:e|es)?|pilot(?:e|es)?)`;
+const WAKE = new RegExp(String.raw`\bbonjour[\s,!.-]*${NAME}\b`, "i");
 
 export function findWakeWord(text: string): { found: boolean; rest: string } {
   const match = WAKE.exec(text);
@@ -38,7 +41,10 @@ export function findWakeWord(text: string): { found: boolean; rest: string } {
 }
 
 // « OK Pilote » pendant que Pilote parle : il se tait tout de suite.
-const STOP = /\b(ok|okay|ok[ée]|o\.k\.?|au ?qu[ée])[\s,!.-]*pilot(e|es)?\b/i;
+const STOP = new RegExp(
+  String.raw`\b(ok|okay|ok[ée]|o\.k\.?|au ?qu[ée])[\s,!.-]*${NAME}\b`,
+  "i",
+);
 
 export function isStopWord(text: string): boolean {
   return STOP.test(text);

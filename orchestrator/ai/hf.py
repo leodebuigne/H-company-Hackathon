@@ -71,7 +71,7 @@ ASR_HALLUCINATIONS = (
 WEEKDAYS = ["lundi", "mardi", "mercredi", "jeudi", "vendredi", "samedi", "dimanche"]
 
 INTENT_SYSTEM_PROMPT = """\
-Tu es le module de compréhension de Pilote, un assistant vocal qui aide une personne aveugle à \
+Tu es le module de compréhension de Topil, un assistant vocal qui aide une personne aveugle à \
 faire ses démarches en ligne : acheter (train, repas, n'importe quel produit), réserver (restaurant, \
 hôtel, rendez-vous, spectacle) ou chercher une information. Tu reçois une phrase transcrite à \
 l'oral (elle peut contenir des hésitations ou des noms de villes mal écrits) et tu réponds par \

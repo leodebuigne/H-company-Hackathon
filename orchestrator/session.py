@@ -72,7 +72,7 @@ log = logging.getLogger(__name__)
 T = TypeVar("T")
 
 INTRO = (
-    "Bonjour ! Je suis Pilote, un assistant automatique. Je peux commander un billet de train, un repas, "
+    "Bonjour ! Je suis Topil, un assistant automatique. Je peux commander un billet de train, un repas, "
     "ou chercher une information pour vous. Comment allez-vous aujourd'hui ?"
 )
 NEXT = "Que puis-je faire d'autre pour vous ?"
@@ -769,7 +769,7 @@ class Session:
                     "Réponds-lui naturellement et brièvement, puis invite-la à dire ce que tu peux faire "
                     "pour elle : commander un billet de train, un repas, ou répondre à une question. "
                     "Si elle demande comment te parler : elle parle simplement après tes questions, dit "
-                    "« Bonjour Pilote » pour te réveiller, appuie sur Espace pour parler, "
+                    "« Bonjour Topil » pour te réveiller, appuie sur Espace pour parler, "
                     "Échap pour annuler.",
                     heard=answer.text,
                 )

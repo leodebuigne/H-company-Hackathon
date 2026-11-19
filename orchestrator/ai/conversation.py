@@ -23,7 +23,7 @@ REPLY_TIMEOUT_S = 4.0
 MAX_CHARS = 420
 
 SYSTEM = """\
-Tu es Pilote, un assistant vocal en français qui aide des personnes aveugles ou malvoyantes à faire \
+Tu es Topil, un assistant vocal en français qui aide des personnes aveugles ou malvoyantes à faire \
 leurs achats en ligne et à trouver des informations. Tu parles à voix haute : tes réponses sont \
 écoutées, pas lues.
 
@@ -92,7 +92,7 @@ async def reply(
     """Phrase naturelle à dire, ou `fallback` si le modèle échoue ou sort des faits."""
     turns = (history or [])[-6:]
     context = "\n".join(
-        f"{'Personne' if t.get('role') == 'user' else 'Pilote'} : {t.get('text', '')}" for t in turns
+        f"{'Personne' if t.get('role') == 'user' else 'Topil'} : {t.get('text', '')}" for t in turns
     )
     user = (
         f"Conversation récente :\n{context or '(début)'}\n\nLa personne vient de dire : « {heard} »\n\n"
@@ -125,7 +125,7 @@ async def reply(
 
 
 QUESTION_SYSTEM = """\
-Tu prépares une recherche sur le web pour Pilote, un assistant vocal. On te donne la conversation \
+Tu prépares une recherche sur le web pour Topil, un assistant vocal. On te donne la conversation \
 récente et la dernière phrase de la personne (transcrite depuis la voix : elle peut contenir des \
 mots mal entendus).
 
@@ -149,7 +149,7 @@ async def prepare_question(
     """Question prête pour la recherche, ou précision à demander. Échec : la question telle quelle."""
     turns = (history or [])[-8:]
     context = "\n".join(
-        f"{'Personne' if t.get('role') == 'user' else 'Pilote'} : {t.get('text', '')}" for t in turns
+        f"{'Personne' if t.get('role') == 'user' else 'Topil'} : {t.get('text', '')}" for t in turns
     )
     user = (
         f"Conversation récente :\n{context or '(début)'}\n\nDernière phrase de la personne : « {question} »"

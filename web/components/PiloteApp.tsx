@@ -35,7 +35,7 @@ import { WakeWordListener, wakeWordSupported } from "./wakeword";
 
 // Obligatoire (AI Act, article 50). Normalement dit par l'orchestrateur à la connexion ;
 // répété ici si sa phrase d'accueil n'a pas pu être jouée.
-const AI_DISCLOSURE = "Je suis Pilote, un assistant automatique.";
+const AI_DISCLOSURE = "Je suis Topil, un assistant automatique.";
 
 // "voice" : Pilote parle lui-même. "screenreader" : Pilote se tait et laisse VoiceOver lire les annonces.
 // Jamais les deux à la fois, sinon les deux voix se superposent.
@@ -146,12 +146,12 @@ export default function PiloteApp() {
   const lastSpaceRef = useRef(0);
   const hushGenRef = useRef(0); // augmente à chaque « Stop » : périme un micro en train de s'ouvrir
   const handsFreeRef = useRef(false);
-  const autoListenRef = useRef(false); // écoute lancée par Pilote (pas par un appui) : silence = rien à dire
-  const awaitingReplyRef = useRef(false); // on a parlé, la réponse de Pilote n'est pas encore arrivée
+  const autoListenRef = useRef(false); // écoute lancée par Topil (pas par un appui) : silence = rien à dire
+  const awaitingReplyRef = useRef(false); // on a parlé, la réponse de Topil n'est pas encore arrivée
   const wakeRef = useRef<WakeWordListener | null>(null);
-  const sayCountRef = useRef(0); // numéro de la dernière phrase de Pilote
+  const sayCountRef = useRef(0); // numéro de la dernière phrase de Topil
   const autoForRef = useRef(-1); // phrase après laquelle on a déjà réécouté (une seule fois)
-  const endedRef = useRef(true); // conversation terminée : on attend « Bonjour Pilote » ou un appui
+  const endedRef = useRef(true); // conversation terminée : on attend « Bonjour Topil » ou un appui
 
   useEffect(() => {
     const speaker = new Speaker();
@@ -297,7 +297,7 @@ export default function PiloteApp() {
     unlockAudio(); // le navigateur n'autorise le son qu'après un geste de l'utilisateur
     startedRef.current = true;
     mutedRef.current = false;
-    channelRef.current?.postMessage("je-parle"); // les autres pages Pilote se taisent
+    channelRef.current?.postMessage("je-parle"); // les autres pages Topil se taisent
     setStarted(true);
     const greeting =
       lastSay && lastSay.includes("assistant automatique")
@@ -346,7 +346,7 @@ export default function PiloteApp() {
         !send({ type: "audio", data: recording.data, mime: recording.mime })
       ) {
         awaitingReplyRef.current = false;
-        tell("Je ne suis pas connecté à Pilote pour le moment.");
+        tell("Je ne suis pas connecté à Topil pour le moment.");
       } else acknowledge();
     },
     [send, tell, acknowledge],
@@ -354,7 +354,7 @@ export default function PiloteApp() {
 
   // Appui (barre d'espace ou bouton)
   const startTalking = useCallback(async () => {
-    endedRef.current = false; // on parle à Pilote : la conversation reprend
+    endedRef.current = false; // on parle à Topil : la conversation reprend
     // En écoute continue, un nouvel appui envoie tout de suite
     if (handsFreeRef.current) return void finishTalking("tap");
     if (recorderRef.current?.isRecording) return;
@@ -363,7 +363,7 @@ export default function PiloteApp() {
       mutedRef.current = false;
       channelRef.current?.postMessage("je-parle");
     }
-    speakerRef.current?.stop(); // l'utilisateur peut couper la parole à Pilote
+    speakerRef.current?.stop(); // l'utilisateur peut couper la parole à Topil
     setMicError(null);
     pressedAtRef.current = performance.now();
     const gen = hushGenRef.current;
@@ -622,7 +622,7 @@ export default function PiloteApp() {
     if (startedRef.current && wasConnected.current === true && !connected) {
       playEarcon("error");
       speakerRef.current?.enqueue(
-        "La connexion avec Pilote est coupée. Je réessaie.",
+        "La connexion avec Topil est coupée. Je réessaie.",
       );
     }
     if (startedRef.current && wasConnected.current === false && connected) {
@@ -640,7 +640,7 @@ export default function PiloteApp() {
   };
 
   const talkLabel = !started
-    ? "Démarrer Pilote"
+    ? "Démarrer Topil"
     : handsFree
       ? "Je vous écoute… je réponds quand vous vous taisez"
       : recording
@@ -715,7 +715,7 @@ export default function PiloteApp() {
           {connected ? "En ligne" : "Connexion…"}
         </p>
         <h1 className="pilote-title">
-          Pilote<span aria-hidden="true">.</span>
+          Topil<span aria-hidden="true">.</span>
         </h1>
         <p className="pilote-tagline">
           Internet, à portée de voix. Pour que chacun puisse faire ses démarches
@@ -778,7 +778,7 @@ export default function PiloteApp() {
                     type="button"
                     className="pilote-stop"
                     onClick={hush}
-                    aria-label="Faire taire Pilote"
+                    aria-label="Faire taire Topil"
                   >
                     <span aria-hidden="true">■</span> Stop
                   </button>
@@ -795,7 +795,7 @@ export default function PiloteApp() {
               </div>
             )}
             <p id="pilote-help" className="pilote-help">
-              {started && wakeWordSupported() && <>Dites « Bonjour Pilote »</>}
+              {started && wakeWordSupported() && <>Dites « Bonjour Topil »</>}
               <span className="pilote-keys">
                 {started && wakeWordSupported() && " · "}
                 <kbd>Espace</kbd> pour parler · <kbd>Espace</kbd> ×2 pour faire
@@ -836,7 +836,7 @@ export default function PiloteApp() {
             {recentLog.length === 0 && (
               <p className="pilote-bubble is-pilote">
                 {lastSay ||
-                  "Bonjour, je suis Pilote. Dites-moi ce que vous voulez acheter, ou posez-moi une question."}
+                  "Bonjour, je suis Topil. Dites-moi ce que vous voulez acheter, ou posez-moi une question."}
               </p>
             )}
             {recentLog.map((entry) => (
@@ -845,7 +845,7 @@ export default function PiloteApp() {
                   {entry.who === "user"
                     ? "Vous : "
                     : entry.who === "pilote"
-                      ? "Pilote : "
+                      ? "Topil : "
                       : "Système : "}
                 </span>
                 {entry.text}
@@ -883,7 +883,7 @@ export default function PiloteApp() {
               id="pilote-text-input"
               value={textInput}
               onChange={(e) => setTextInput(e.target.value)}
-              placeholder="Écrire à Pilote…"
+              placeholder="Écrire à Topil…"
               autoComplete="off"
             />
             <button
@@ -917,12 +917,12 @@ export default function PiloteApp() {
           )}
         </div>
         {hasAside && (
-          <aside className="pilote-aside" aria-label="Propositions de Pilote">
+          <aside className="pilote-aside" aria-label="Propositions de Topil">
             {awaitingConfirm && (
               <div
                 className="pilote-confirm"
                 role="group"
-                aria-label="Répondre à Pilote"
+                aria-label="Répondre à Topil"
               >
                 <button
                   type="button"
@@ -1129,7 +1129,7 @@ export default function PiloteApp() {
               checked={voiceMode === "voice"}
               onChange={() => setVoiceMode("voice")}
             />
-            La voix de Pilote
+            La voix de Topil
           </label>
           <label>
             <input
@@ -1147,7 +1147,7 @@ export default function PiloteApp() {
 
         {piloteVoices.available.length > 1 && (
           <fieldset className="pilote-settings" disabled={voiceBusy}>
-            <legend>Voix de Pilote</legend>
+            <legend>Voix de Topil</legend>
             {piloteVoices.available.map((name) => (
               <label key={name}>
                 <input
@@ -1202,7 +1202,7 @@ export default function PiloteApp() {
             ))}
           </select>
           <p className="pilote-muted">
-            Utilisée seulement si la voix de Pilote ne répond pas à temps.
+            Utilisée seulement si la voix de Topil ne répond pas à temps.
           </p>
         </div>
 
@@ -1211,17 +1211,17 @@ export default function PiloteApp() {
             <kbd>Espace</kbd>
           </dt>
           <dd>
-            Une fois puis parlez (Pilote répond quand vous vous taisez), ou
+            Une fois puis parlez (Topil répond quand vous vous taisez), ou
             maintenue pendant que vous parlez
           </dd>
           <dt>
             <kbd>Espace</kbd> ×2
           </dt>
-          <dd>Faire taire Pilote quand il parle (la commande continue)</dd>
+          <dd>Faire taire Topil quand il parle (la commande continue)</dd>
           <dt>
             <kbd>Entrée</kbd> / <kbd>N</kbd>
           </dt>
-          <dd>Oui / non quand Pilote pose une question</dd>
+          <dd>Oui / non quand Topil pose une question</dd>
           <dt>
             <kbd>Échap</kbd>
           </dt>

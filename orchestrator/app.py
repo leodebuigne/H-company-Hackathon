@@ -27,7 +27,7 @@ from orchestrator.session import Session
 log = logging.getLogger(__name__)
 
 
-VOICE_SAMPLE = "Bonjour, je suis Pilote. C'est avec cette voix que je vous parlerai."
+VOICE_SAMPLE = "Bonjour, je suis Topil. C'est avec cette voix que je vous parlerai."
 
 
 class VoiceChoice(BaseModel):
@@ -56,7 +56,7 @@ def create_app(session_factory: Callable[[], Session] | None = None) -> FastAPI:
         app.state.session = session
         app.state.settings = settings
         log.warning(
-            "Pilote prêt. Agent %s, IA %s.",
+            "Topil prêt. Agent %s, IA %s.",
             "FACTICE" if settings.use_fake_agent else "RÉEL (vrais sites)",
             "factice" if settings.use_fake_ai else "Hugging Face",
         )

@@ -53,7 +53,7 @@ export default function SpectatorScreen() {
     <main className="spectator">
       <header className="spectator-header">
         <h1>
-          Pilote <span>· vue jury</span>
+          Topil <span>· vue jury</span>
         </h1>
         <p className={`pilote-connection ${connected ? "is-on" : "is-off"}`}>
           {connected ? "En direct" : "Connexion en cours…"}
@@ -82,7 +82,7 @@ export default function SpectatorScreen() {
           {log.length === 0 && <p className="muted">En attente de la première demande…</p>}
           {log.slice(-12).map((e) => (
             <p key={e.id} className={`bubble bubble-${e.who}`}>
-              <strong>{e.who === "user" ? "Utilisateur" : e.who === "pilote" ? "Pilote" : "Erreur"}</strong>
+              <strong>{e.who === "user" ? "Utilisateur" : e.who === "pilote" ? "Topil" : "Erreur"}</strong>
               {e.text}
             </p>
           ))}
