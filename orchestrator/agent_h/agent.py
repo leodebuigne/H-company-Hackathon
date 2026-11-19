@@ -78,13 +78,22 @@ DEFAULT_SITES = {"train": "https://www.sncf-connect.com", "repas": "https://www.
 NETWORK_RETRIES = 5  # coupures réseau tolérées d'affilée en attendant la réponse de l'agent
 
 
+# Plan B de la démo (PILOTE_PLAN_B=1) : si SNCF Connect ou Uber Eats bloque (CAPTCHA, panne, lenteur),
+# les faux sites de l'équipe prennent le relais en un seul réglage. Aucun vrai paiement n'y est possible.
+PLAN_B_SITES = {
+    "train": "https://h-company-hackathon-rail-demo.vercel.app",
+    "repas": "https://h-company-hackathon-repas-demo.vercel.app",
+}
+
+
 def site_for(intent: Intent) -> str:
     """Adresse du site pour la demande, ou "" si l'agent doit le choisir ; AgentError sans catégorie."""
     category = intent.category
     if category is None:
         raise AgentError("Catégorie d'achat inconnue : l'orchestrateur doit la demander d'abord.")
     # Sans site configuré (une boutique, par exemple), l'agent choisit lui-même le site : "".
-    return os.getenv(f"PILOTE_SITE_{category.upper()}") or DEFAULT_SITES.get(category) or ""
+    sites = PLAN_B_SITES if os.getenv("PILOTE_PLAN_B", "").strip() == "1" else DEFAULT_SITES
+    return os.getenv(f"PILOTE_SITE_{category.upper()}") or sites.get(category) or ""
 
 
 def _fit_effort(spec: dict[str, Any]) -> dict[str, Any]:

@@ -965,3 +965,13 @@ async def test_a_reservation_without_a_fixed_site_does_not_use_an_empty_memory_k
         await agent.search()
     await agent.cancel()  # site inconnu en navigateur cloud : rien n'est rangé, et pas d'erreur
     assert "" not in asked
+
+
+def test_plan_b_switches_train_and_meal_to_the_demo_sites(monkeypatch):
+    monkeypatch.delenv("PILOTE_SITE_TRAIN", raising=False)
+    monkeypatch.delenv("PILOTE_SITE_REPAS", raising=False)
+    train = TRAIN.model_copy(update={"category": "train"})
+    assert "sncf-connect" in site_for(train)
+    monkeypatch.setenv("PILOTE_PLAN_B", "1")
+    assert site_for(train) == "https://h-company-hackathon-rail-demo.vercel.app"
+    assert site_for(PIZZA) == "https://h-company-hackathon-repas-demo.vercel.app"
