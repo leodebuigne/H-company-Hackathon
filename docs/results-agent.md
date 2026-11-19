@@ -50,3 +50,20 @@ Une ligne par commande, ajoutée automatiquement par orchestrator/agent_h/metric
 | 2026-11-18 21:27 | www.sncf-connect.com | pilote-shopper | annulée | 146 | 1 | - |
 | 2026-11-18 21:33 | question | inline | question | 58 | 6 | - |
 | 2026-11-18 21:36 | question | inline | question | 46 | 4 | - |
+| 2026-11-18 21:45 | question | inline | annulée | 29 | 2 | - |
+| 2026-11-18 21:46 | question | pilote-shopper | question | 19 | 1 | - |
+| 2026-11-18 22:05 | www.sncf-connect.com | pilote-shopper | annulée | 509 | 9 | - |
+| 2026-11-18 22:36 | www.sncf-connect.com | pilote-shopper | annulée | 156 | 3 | - |
+| 2026-11-18 22:57 | h-company-hackathon-repas-demo.vercel.app | pilote-shopper | annulée | 43 | 2 | - |
+| 2026-11-18 23:13 | question | pilote-shopper | question | 20 | 2 | - |
+| 2026-11-18 23:16 | www.sncf-connect.com | pilote-shopper | annulée | 133 | 6 | - |
+| 2026-11-18 23:18 | h-company-hackathon-repas-demo.vercel.app | pilote-shopper | annulée | 53 | 6 | - |
+| 2026-11-18 23:34 | www.sncf-connect.com | pilote-shopper | annulée | 202 | 5 | - |
+| 2026-11-18 23:41 | question | pilote-shopper | question | 14 | 1 | - |
+| 2026-11-18 23:42 | question | pilote-shopper | question | 18 | 1 | - |
+| 2026-11-18 23:49 | question | pilote-shopper | question | 45 | 7 | - |
+| 2026-11-18 23:52 | www.ubereats.com | pilote-shopper | annulée | 50 | 5 | - |
+| 2026-11-18 23:57 | www.sncf-connect.com | pilote-shopper | achat direct | 233 | 9 | refused |
+| 2026-11-19 00:44 |  | pilote-shopper | annulée | 91 | 9 | - |
+| 2026-11-19 00:49 |  | pilote-shopper | annulée | 208 | 9 | - |
+| 2026-11-19 09:18 |  | pilote-shopper | annulée | 247 | 22 | - |
