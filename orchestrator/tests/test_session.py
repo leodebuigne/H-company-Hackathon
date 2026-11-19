@@ -318,6 +318,72 @@ async def test_direct_buy_explains_a_higher_total_and_lets_the_person_decide():
         assert h.paid == 0 and "C'est acheté" not in h.said()
 
 
+async def test_a_leftover_ticket_in_the_cart_is_named_and_removed_on_yes():
+    async with Harness(direct_buy=True, agent={"stale_cart": True}) as h:
+        await h.text("Un train de Paris pour Lille demain après 14 h")
+        await h.wait("proposing")
+        await h.text("La deuxième")
+        await h.wait_said("Je le retire du panier ?")
+        assert "Billet Paris → Lyon, départ 10 h 12, 35 euros" in h.said()
+        await h.confirm(True)  # retirer le billet en trop
+        await h.wait_said("J'achète bien")
+        assert "le total est plus cher" not in h.said(), "panier propre : plus rien à expliquer"
+        await h.confirm(True)
+        await h.wait_said("C'est acheté")
+        assert h.agents[0].cart_fix_requests == 1
+
+
+async def test_a_leftover_ticket_kept_on_no_is_paid_only_after_the_full_total_is_said():
+    async with Harness(direct_buy=True, agent={"stale_cart": True}) as h:
+        await h.text("Un train de Paris pour Lille demain après 14 h")
+        await h.wait("proposing")
+        await h.text("La deuxième")
+        await h.wait_said("Je le retire du panier ?")
+        await h.confirm(False)  # la personne garde les deux billets
+        await h.wait_said("au total ?")
+        assert "le total est plus cher" in h.said() and h.paid == 0
+        await h.confirm(False)
+        await h.wait_said("je n'achète rien")
+        assert h.paid == 0 and "C'est acheté" not in h.said()
+
+
+async def test_a_cart_the_agent_cannot_clean_is_said_and_not_asked_twice():
+    async with Harness(direct_buy=True, agent={"stale_cart": True, "cart_fixable": False}) as h:
+        await h.text("Un train de Paris pour Lille demain après 14 h")
+        await h.wait("proposing")
+        await h.text("La deuxième")
+        await h.wait_said("Je le retire du panier ?")
+        await h.confirm(True)
+        await h.wait_said("Je n'ai pas réussi à tout retirer du panier")
+        await h.wait_said("au total ?")
+        assert h.said().count("Je le retire du panier ?") == 1
+
+
+def _cart(*items: tuple[str, int, int]) -> OrderSummary:
+    lines = [
+        OrderItem(name=n, quantity=q, unit_price_cents=u, total_cents=q * u, options=[]) for n, q, u in items
+    ]
+    return OrderSummary(
+        order_id=str(uuid.uuid4()), site="www.ubereats.com", page_url="https://www.ubereats.com/checkout",
+        items=lines, fees=[], total_cents=sum(i.total_cents for i in lines), currency="EUR", when_label=None,
+        conditions=None, payment_button_label="Commander", hash="0" * 64, read_at=dt.datetime.now(dt.UTC),
+    )  # fmt: skip
+
+
+def test_cart_extras_finds_a_doubled_burger_and_a_leftover_ticket_but_not_a_detailed_menu():
+    from orchestrator.session import cart_extras
+
+    big_mac = Option(
+        id="o1", rank=1, title="Big Mac", price_cents=550, currency="EUR", rating=None,
+        description=None, conditions=None, details={}, url=None,
+    )  # fmt: skip
+    assert cart_extras(big_mac, _cart(("Big Mac", 2, 550))) == ["Big Mac en 2 exemplaires au lieu de 1"]
+    assert cart_extras(big_mac, _cart(("Big Mac", 2, 550)), wanted=2) == []
+    assert cart_extras(big_mac, _cart(("Big Mac", 1, 550), ("McFlurry", 1, 350))) == ["McFlurry, 3 euros 50"]
+    menu = big_mac.model_copy(update={"title": "Menu Big Mac", "price_cents": 900})
+    assert cart_extras(menu, _cart(("Big Mac", 1, 550), ("Frites", 1, 350))) == []
+
+
 def test_the_price_breakdown_names_each_fee():
     from orchestrator.session import price_breakdown
 

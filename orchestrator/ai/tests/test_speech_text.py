@@ -118,3 +118,31 @@ def test_spoken_fixes_heard_in_live_tests():
     )
     assert for_speech("le 20/11 à 8h") == "le 20 novembre à 8 heures"
     assert "2/3" in for_speech("2/3 des places") and "7j/7" in for_speech("ouvert 7j/7")
+
+
+def test_train_hours_are_said_even_when_only_in_the_details():
+    from orchestrator.ai.speech_text import options_summary
+    from orchestrator.contracts import Option
+
+    def train(rank: int, title: str, details: dict[str, str]) -> Option:
+        return Option(
+            id=f"o{rank}",
+            rank=rank,
+            title=title,
+            price_cents=4500,
+            currency="EUR",
+            rating=None,
+            description=None,
+            conditions=None,
+            details=details,
+            url="https://www.sncf-connect.com",
+        )
+
+    text = options_summary(
+        [
+            train(1, "TGV INOUI", {"departure": "14:44", "arrival": "15:48"}),
+            train(2, "TGV INOUI 16h12 → 17h20", {"departure": "16:12", "arrival": "17:20"}),
+        ]
+    )
+    assert "TGV INOUI, 45 euros, départ à 14 heures 44, arrivée à 15 heures 48." in text
+    assert "16h12 → 17h20, 45 euros." in text  # déjà dans le titre : pas répété

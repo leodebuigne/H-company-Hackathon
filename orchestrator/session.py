@@ -50,6 +50,7 @@ from orchestrator.contracts import (
     ClientText,
     Intent,
     Option,
+    OrderItem,
     OrderSummary,
     ServerAgentView,
     ServerError,
@@ -242,6 +243,42 @@ def price_breakdown(option: Option, summary: OrderSummary) -> str:
     )
 
 
+def _name_words(text: str) -> set[str]:
+    return {w for w in re.findall(r"[a-z0-9]+", _plain(text)) if len(w) > 1}
+
+
+def cart_extras(option: Option, summary: OrderSummary, wanted: int = 1) -> list[str]:
+    """Ce que le panier contient en plus de l'option choisie, dit simplement (vide si rien en trop).
+
+    Restes d'une commande précédente (un autre billet, un autre plat) ou quantité en trop (deux Big Mac
+    pour un seul demandé). On ne cherche que si les articles coûtent plus que le prix annoncé : un menu
+    détaillé en plusieurs lignes au bon prix n'est pas un panier en trop.
+    """
+    items = summary.items
+    if sum(item.total_cents for item in items) <= option.price_cents:
+        return []
+    wanted_words = _name_words(option.title)
+
+    def closeness(item: OrderItem) -> tuple[int, bool]:
+        unit = (
+            item.unit_price_cents if item.unit_price_cents is not None else item.total_cents // item.quantity
+        )
+        return len(wanted_words & _name_words(item.name)), unit * min(
+            item.quantity, wanted
+        ) == option.price_cents
+
+    main = max(items, key=closeness)
+    extras = []
+    for item in items:
+        if item is main:
+            if item.quantity > wanted:
+                extras.append(f"{item.name} en {item.quantity} exemplaires au lieu de {wanted}")
+            continue
+        quantity = f"{item.quantity} fois " if item.quantity > 1 else ""
+        extras.append(f"{quantity}{item.name}, {spoken_euros(item.total_cents)}")
+    return extras
+
+
 class Abort(Exception):
     """Fin anticipée de la commande. `message` est dit à l'oral ; `code` part aussi en message error."""
 
@@ -419,6 +456,7 @@ class Session:
         self._order_started: float | None = None  # début de la commande en cours (journal)
         self._last_step: str | None = None  # dernière étape de l'agent lancée (journal)
         self._direct_option: Option | None = None  # achat direct en cours : accord demandé au bouton
+        self._cart_fixes = 0  # panier nettoyé à la demande de la personne (une fois par achat)
         self._direct_abort: Abort | None = None  # refus ou code faux au bouton de paiement
         self._last_progress = 0.0
         self._secret_mode = False  # pendant la demande du code secret ou de la carte
@@ -1083,6 +1121,7 @@ class Session:
         assert self._agent is not None
         self._direct_limit, self._payment_refusal = option.price_cents, None
         self._direct_option, self._direct_abort = option, None
+        self._cart_fixes = 0
         await self._set_state("paying")
         try:
             # L'agent sélectionne l'option pendant que Pilote dit ce qui va se passer (le code, ou le oui,
@@ -1180,7 +1219,11 @@ class Session:
             # Achat direct : si le total dépasse le prix annoncé (frais de livraison, de service…), on dit
             # le détail et c'est la personne qui décide, avec son code ou un oui. Jamais sans son accord.
             if self._direct_option is not None:
-                approved = await self._direct_consent(self._direct_option, summary)
+                consent = await self._direct_consent(self._direct_option, summary)
+                if consent == "fix_cart":
+                    self._journal("payment_approval", decision="fix_cart", direct=True)
+                    return "fix_cart"
+                approved = consent == "approved"
             else:
                 approved = summary.total_cents <= self._direct_limit
             if not approved and self._payment_refusal is None:
@@ -1206,7 +1249,7 @@ class Session:
         self._payment_cleared = self._payment_cleared or approved
         return "approved" if approved else "denied"
 
-    async def _direct_consent(self, option: Option, summary: OrderSummary) -> bool:
+    async def _direct_consent(self, option: Option, summary: OrderSummary) -> ApprovalDecision:
         """Achat direct, agent arrêté sur le bouton de paiement : le code, ou un oui (même si gratuit).
 
         Si le total diffère du prix annoncé, le détail est dit d'abord (produit, frais de livraison, de
@@ -1214,7 +1257,21 @@ class Session:
         """
         total_cents = summary.total_cents
         explained = total_cents != option.price_cents
+        wanted = (self._intent.quantity if self._intent is not None else None) or 1
         try:
+            extras = cart_extras(option, summary, wanted)
+            if extras and self._cart_fixes == 0:
+                # Restes d'un essai précédent : on les nomme, et la personne choisit de les retirer ou non
+                await self._say(
+                    "Attention, votre panier contient aussi ce que vous n'avez pas demandé cette fois, sans "
+                    "doute un reste d'une commande précédente : " + " ; ".join(extras) + "."
+                )
+                if await self._yes_no("confirm_1", "Je le retire du panier ?"):
+                    self._cart_fixes += 1
+                    await self._say("D'accord, je le retire, puis je reviens au paiement.")
+                    return "fix_cart"
+            elif extras:
+                await self._say("Je n'ai pas réussi à tout retirer du panier : " + " ; ".join(extras) + ".")
             if explained:
                 await self._say(price_breakdown(option, summary))
             if self.settings.purchase_code:
@@ -1230,11 +1287,11 @@ class Session:
                 )
                 if not await self._yes_no("confirm_1", question):
                     raise Abort("D'accord, je n'achète rien.")
-            return True
+            return "approved"
         except Abort as abort:
             self._direct_abort = abort
             self._payment_refusal = "vous n'avez pas confirmé"
-            return False
+            return "denied"
         finally:
             with contextlib.suppress(Exception):
                 await self._set_state("paying")

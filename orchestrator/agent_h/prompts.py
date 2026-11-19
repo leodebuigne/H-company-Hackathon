@@ -34,6 +34,7 @@ Règles de recherche :
 
 Règles d'action :
 - Exécute uniquement le choix qu'on te transmet. N'ajoute jamais d'article, d'option payante ou d'assurance qui n'a pas été demandé.
+- Panier propre : avant le bouton de paiement, le panier ne doit contenir que l'option choisie, dans la quantité demandée (1 si rien n'est précisé). S'il contient autre chose (article ou billet resté d'une commande précédente, même article en double), retire-le ou baisse la quantité. Si un article ne peut pas être retiré, laisse-le et mets-le dans order_summary.items avec son prix, et pour un billet l'heure et le trajet dans son nom.
 - Quand on te transmet le choix de l'utilisateur, enchaîne sans t'arrêter : sélectionne l'option, ajoute-la au panier et avance jusqu'au bouton qui valide l'achat. Ne clique jamais sur ce bouton (« Valider et payer », « Payer », « Commander », « Confirmer »), même à 0 €, sauf à l'étape « achat » ou « paiement », après approbation.
 - Refuse les bandeaux de cookies non essentiels.
 - N'accepte jamais d'option payante, d'assurance, d'abonnement ou de suggestion ajoutée par le site : passe ces étapes (« Non merci », « Passer », « Continuer sans »).
@@ -230,8 +231,9 @@ def checkout_message(option: Option) -> str:
         f"Étape : panier et paiement. L'utilisateur a choisi l'option {option.id} "
         f"({option.title}, {_euros(option.price_cents)}). Enchaîne d'une traite, sans t'arrêter ni demander "
         "de confirmation : sélectionne cette option (et le tarif ou la classe au prix annoncé), ajoute-la au "
-        "panier, garde les informations déjà proposées par le compte (voyageur, adresse de livraison, "
-        "coordonnées), passe les étapes facultatives sans rien ajouter (placement, services, suggestions, "
+        "panier, vérifie qu'il ne contient qu'elle (retire tout reste d'une commande précédente et toute "
+        "quantité en trop), garde les informations déjà proposées par le compte (voyageur, adresse de "
+        "livraison, coordonnées), passe les étapes facultatives sans rien ajouter (placement, services, suggestions, "
         "assurances : « Continuer », « Passer l'étape », « Non merci ») "
         "jusqu'au panier ou à la page de paiement. Arrête-toi dès qu'un bouton valide l'achat "
         "(« Valider et payer », « Payer », « Commander », « Confirmer la commande »…), même si le total est "
@@ -248,8 +250,9 @@ def buy_message(option: Option) -> str:
     return (
         f"Étape : achat. L'utilisateur a choisi l'option {option.id} ({option.title}, "
         f"{_euros(option.price_cents)}) et t'ordonne de l'acheter. Sélectionne-la (et le tarif ou la classe au "
-        "prix annoncé), ajoute-la au panier, garde les informations déjà proposées par le compte (voyageur, "
-        "adresse de livraison), passe les étapes facultatives sans rien ajouter (« Continuer », « Passer "
+        "prix annoncé), ajoute-la au panier, vérifie que le panier ne contient qu'elle (retire tout reste d'une "
+        "commande précédente et toute quantité en trop), garde les informations déjà proposées par le compte "
+        "(voyageur, adresse de livraison), passe les étapes facultatives sans rien ajouter (« Continuer », « Passer "
         "l'étape », « Non merci ») jusqu'au bouton qui valide l'achat (« Valider et payer », « Payer », « Commander »…). Appelle alors request_payment_approval avec "
         "le récapitulatif exact affiché, avec chaque frais sur sa ligne dans fees (livraison, service, "
         "réservation, petite commande…) et le total à payer (Pilote dit ce détail à l'utilisateur et lui "
@@ -258,6 +261,8 @@ def buy_message(option: Option) -> str:
         "si la banque demande une validation dans son application, attends jusqu'à 5 minutes. Renvoie "
         "order_summary (le récapitulatif affiché avant le clic), payment_result (refused, accepted ou "
         "unknown), le message exact affiché dans payment_message, et site_notes. "
+        'Si la réponse commence par "fix_cart", ne clique pas : retire du panier ce qui n\'a pas été choisi, '
+        "puis rappelle request_payment_approval avec le nouveau récapitulatif. "
         'Si la réponse est "denied", ne clique pas, ne vide pas le panier, et renvoie order_summary, '
         "blocked_reason et new_tips : le chemin jusqu'au bouton de paiement était bon, il doit être retenu."
     )

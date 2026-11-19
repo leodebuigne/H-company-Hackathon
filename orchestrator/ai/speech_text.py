@@ -23,6 +23,31 @@ def _rating(value: float) -> str:
     return f"{value:g}".replace(".", ",")
 
 
+_CLOCK = re.compile(r"\b(\d{1,2})\s*(?:[:h]|heures?)\s*(\d{2})?\b", re.IGNORECASE)
+
+
+def _clock(value: str) -> tuple[int, int] | None:
+    match = _CLOCK.search(value or "")
+    if not match or int(match[1]) > 23:
+        return None
+    return int(match[1]), int(match[2] or 0)
+
+
+def _train_times(option: Option) -> str:
+    """« , départ à 14 heures 44, arrivée à 15 heures 48 » : les heures des détails, toujours dites.
+
+    L'agent les met parfois dans le titre, parfois seulement dans details (departure, arrival) : sans
+    elles, une personne aveugle ne peut pas choisir son train. Rien n'est répété si le titre les a déjà.
+    """
+    in_title = {(h, m) for h, m in ((int(a), int(b or 0)) for a, b in _CLOCK.findall(option.title))}
+    parts = []
+    for key, word in (("departure", "départ"), ("arrival", "arrivée")):
+        time = _clock(str(option.details.get(key) or ""))
+        if time is not None and time not in in_title:
+            parts.append(f"{word} à {_hours(str(time[0]), f'{time[1]:02d}')}")
+    return "".join(f", {part}" for part in parts)
+
+
 def options_summary(options: list[Option]) -> str:
     """3 options au maximum : numéro, nom, prix, note. Se termine en proposant les détails."""
     if not options:
@@ -34,7 +59,7 @@ def options_summary(options: list[Option]) -> str:
     for number, option in enumerate(spoken, start=1):
         note = f", noté {_rating(option.rating)} sur 5" if option.rating is not None else ""
         price = "" if all_free else f", {euros(option.price_cents)}"
-        extra = ""
+        extra = _train_times(option)
         if option.details.get("address"):
             extra += f", {option.details['address']}"
         if option.details.get("slots"):

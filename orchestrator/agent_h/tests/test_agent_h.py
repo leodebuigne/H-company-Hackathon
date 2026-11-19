@@ -1177,3 +1177,20 @@ async def test_agent_starts_on_the_direct_results_page(monkeypatch):
     assert started["agent"]["environments"][0]["start_url"].endswith("userInput=Paris+Lyon+20+novembre+14h")
     assert "ne tape rien" in started["messages"]
     await agent.cancel()
+
+
+async def test_fix_cart_tells_the_agent_to_clean_the_cart_without_paying():
+    from orchestrator.agent_h.agent import FIX_CART_REPLY
+
+    agent = paying_agent()
+    answers = iter(["fix_cart", "approved"])
+
+    async def approve(summary):
+        return next(answers)
+
+    agent._approval_callback = approve
+    agent._paying = True
+    summary = raw_summary()
+    assert await agent._decide_payment(summary) == FIX_CART_REPLY
+    assert not agent._pay_denied, "nettoyer le panier n'est pas un refus"
+    assert await agent._decide_payment(summary) == "approved", "pas mis en cache : l'accord est redemandé"

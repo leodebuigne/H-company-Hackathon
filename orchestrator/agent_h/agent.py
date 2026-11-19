@@ -82,6 +82,13 @@ from .watch import StepWatch, StuckCallback, screenshot_in
 
 log = logging.getLogger(__name__)
 
+FIX_CART_REPLY = (
+    "fix_cart : ne clique pas sur le bouton de paiement. Le panier contient des articles que l'utilisateur "
+    "n'a pas choisis (restes d'une commande précédente, ou quantité en trop). Retire-les ou baisse la "
+    "quantité pour ne garder que l'option choisie, puis rappelle request_payment_approval avec le nouveau "
+    "récapitulatif affiché."
+)
+
 OK_STATUSES = {"idle", "completed"}
 
 # Site visé par catégorie d'achat (docs/sites.md). Le plan B remplace ces adresses par celles des
@@ -225,7 +232,7 @@ class ShoppingAgent:
 
         @tool(name="request_payment_approval")
         async def request_payment_approval(summary: AgentOrderSummary) -> str:
-            """À appeler AVANT tout clic qui engage de l'argent (Payer, Commander, Acheter, Valider la commande, Confirmer), avec le récapitulatif exact affiché. Renvoie "approved" ou "denied". Si "denied", ne clique pas."""
+            """À appeler AVANT tout clic qui engage de l'argent (Payer, Commander, Acheter, Valider la commande, Confirmer), avec le récapitulatif exact affiché. Renvoie "approved", "denied" (ne clique pas) ou "fix_cart : …" (ne clique pas, retire du panier ce qui n'a pas été choisi, puis rappelle cet outil)."""
             return await agent._decide_payment(summary)
 
         @tool(name="need_human")
@@ -365,6 +372,8 @@ class ShoppingAgent:
                 answer = await self._approval_callback(order)
             except Exception:
                 answer = "denied"  # erreur ou délai dépassé côté orchestrateur : refus
+            if answer == "fix_cart":  # pas de mise en cache : l'agent rappelle avec le panier corrigé
+                return FIX_CART_REPLY
             decision = "approved" if answer == "approved" else "denied"
             if decision == "denied":
                 self.last_denial_reason = "Pilote n'a pas autorisé ce paiement"

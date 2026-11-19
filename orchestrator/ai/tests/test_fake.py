@@ -76,7 +76,8 @@ async def test_summarize_options_announces_three_at_most():
     text = await FakeAI().summarize_options(options)
     assert "Numéro 4" not in text and "Numéro 3" in text
     assert text.endswith("« les détails du 1 ».")
-    assert len(text.split()) <= 60
+    assert "arrivée à 15 heures 31" in text  # les heures du train sont toujours dites (retour du 19/11)
+    assert len(text.split()) <= 80
 
 
 async def test_confirm_statement_is_an_assertion_with_total():

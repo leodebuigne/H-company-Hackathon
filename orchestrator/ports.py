@@ -18,7 +18,9 @@ from orchestrator.contracts import (
     SiteCard,
 )
 
-ApprovalDecision = Literal["approved", "denied"]
+# "fix_cart" : ne pas payer encore ; le panier contient des articles que la personne n'a pas choisis
+# (restes d'une commande précédente, quantité en trop), l'agent les retire puis redemande l'accord.
+ApprovalDecision = Literal["approved", "denied", "fix_cart"]
 PaymentResult = Literal["refused", "accepted", "unknown"]
 
 # Appelé par l'outil H request_payment_approval. Ne répond "approved" que si le récapitulatif

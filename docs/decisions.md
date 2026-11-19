@@ -308,3 +308,10 @@ Essai réel : pull → taille ; baskets → pointure ; coque → modèle de tél
 - Base : la fusion de l'équipe (`95cccc0`, version-2 + pilote-V72), plus les 2 derniers commits de `version-2` (lien direct vers les résultats SNCF, toujours un oui avant d'acheter).
 - Achat direct : le code ou le oui reste demandé au bouton de paiement, sur le total réellement affiché (`pilote-V72`), et il est maintenant demandé **même pour un billet gratuit** (« J'achète bien …, gratuit ? ») : règle de `version-2`, appliquée au moment où l'agent est sur le bouton.
 - Page d'arrivée : le lien direct SNCF (`direct_search_url`) passe d'abord, sinon la page de résultats d'Amazon ou d'Uber Eats, ou le lien donné par la personne (`start_url_for`).
+
+## 2026-11-19 : pilote-Vmax, heures des trains et panier propre
+
+- **Heures des trains** : les options ne disaient plus les heures depuis la fusion (l'agent les mettait dans `details.departure` / `arrival`, plus dans le nom). `options_summary` ajoute maintenant « départ à 14 heures 44, arrivée à 15 heures 48 » depuis les détails, sauf si le nom les contient déjà.
+- **Panier propre** : consigne de l'agent, le panier ne doit contenir que l'option choisie, dans la quantité demandée ; il retire les restes d'une commande précédente (un autre billet, un 2e Big Mac).
+- **Filet de sécurité** (achat direct, au bouton de paiement) : si les articles coûtent plus que l'option, Pilote nomme ce qui est en trop (nom, heure, prix) et demande « Je le retire du panier ? ». Oui → réponse `fix_cart` à l'agent, qui nettoie et redemande l'accord. Non → le total complet est expliqué et la personne décide. Une seule tentative de nettoyage ; si l'agent n'y arrive pas, Pilote le dit.
+- Vérification de la fusion : la suite de tests de `pilote-V72` a été rejouée sur `pilote-Vmax` ; à part les heures, les écarts sont des changements voulus (validation par un proche retirée, nouvelles phrases).
