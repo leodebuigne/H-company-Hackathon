@@ -184,7 +184,14 @@ def continue_message(
 
 
 def refine_message(text: str) -> str:
-    return f"Étape : affiner la recherche. {text} Renvoie la nouvelle liste dans le champ options."
+    return (
+        f"Étape : affiner la recherche. {text} "
+        "Tu es déjà sur la page de résultats : ne repars pas de l'accueil si tu peux l'éviter. Pour une "
+        "heure plus tard ou plus tôt le même jour, utilise ce que la page propose (« Afficher les trajets "
+        "suivants » ou « précédents », ou le résumé de la recherche en haut pour changer l'heure ou la "
+        "date). Ne refais toute la recherche que si le trajet change ou si la page ne le permet pas. "
+        "Renvoie la nouvelle liste dans le champ options."
+    )
 
 
 def checkout_message(option: Option) -> str:

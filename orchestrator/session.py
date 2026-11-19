@@ -35,7 +35,7 @@ from zoneinfo import ZoneInfo
 from pydantic import BaseModel, TypeAdapter, ValidationError
 
 from orchestrator.agent_h.base import AgentError, NeedsHuman, PaymentDenied, UnapprovedPurchase
-from orchestrator.ai.hf import QUESTIONS, SPEAK_MIME, AIError, complete_intent
+from orchestrator.ai.hf import SPEAK_MIME, AIError, complete_intent, question_for
 from orchestrator.ai.speech_text import euros, readable_progress
 from orchestrator.config import Settings
 from orchestrator.contracts import (
@@ -768,14 +768,9 @@ class Session:
             if intent.missing:
                 pending = intent
                 # Mêmes questions rédigées quelle que soit l'IA (la factice pose « details.origin »).
-                question = QUESTIONS.get(intent.missing[0]) or intent.question
-                await self._talk(
-                    question or "Pouvez-vous préciser votre demande ?",
-                    "Il manque une information pour la commande : pose la question de référence, "
-                    "naturellement, en tenant compte de ce que la personne vient de dire.",
-                    facts=intent.text,
-                    heard=answer.text,
-                )
+                question = question_for(intent.missing) or intent.question
+                # Dite telle quelle : une question courte et toujours la même, sans attendre le modèle
+                await self._say(question or "Pouvez-vous préciser votre demande ?")
                 continue
             return intent
 
@@ -938,14 +933,9 @@ class Session:
 
     async def _present(self, options: list[Option], heard: str = "") -> None:
         """Lit les options : formulation naturelle, prix et heures repris tels quels des options."""
-        summary = await self.ai.summarize_options(options)
-        await self._talk(
-            summary,
-            "Présente ces options à voix haute, clairement et chaleureusement, sans en ajouter ni en "
-            "retirer, puis demande laquelle la personne préfère (par son numéro).",
-            facts=summary,
-            heard=heard,
-        )
+        # Dites telles quelles, sans réécriture par le modèle de langage : 2 à 3 s gagnées, et aucun
+        # risque sur les heures et les prix (la réécriture était souvent rejetée par la vérification).
+        await self._say(await self.ai.summarize_options(options))
 
     @staticmethod
     def _describe(option: Option) -> str:

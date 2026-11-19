@@ -380,3 +380,13 @@ def test_an_exact_time_is_neither_before_nor_after():
     }
     intent = complete_intent(raw, "Une table pour deux à 20 heures")
     assert intent["details"]["time"] == "20:00" and intent["when"]["before"] is None
+
+
+def test_one_question_for_everything_missing_in_a_trip():
+    from orchestrator.ai.hf import question_for
+
+    asked = question_for(["details.origin", "details.destination", "when.date"])
+    assert asked == "De quelle ville partez-vous, pour quelle ville, et quel jour ?"
+    assert question_for(["details.destination", "when.date"]) == "Pour quelle ville, et quel jour ?"
+    assert question_for(["when.date"]) == "Pour quel jour ?"
+    assert question_for(["object"]) == "Qu'est-ce qu'il vous faut exactement ?"

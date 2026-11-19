@@ -43,6 +43,7 @@ DEFAULT_TTS_VOICE = "ff_siwis"
 DEFAULT_TTS_PROVIDER = "deepinfra"
 
 DEFAULT_SPEAK_TIMEOUT_S = 6.0
+SPEAK_CHUNK_TIMEOUT_S = 3.5  # un morceau de phrase : 1 à 2 s en temps normal (mesuré le 2026-11-19)
 SPEAK_ATTEMPTS = 3  # Hugging Face renvoie parfois 503 : on réessaie avant la voix du navigateur
 SPEAK_CHUNK_CHARS = 60
 SPEAK_MIME = "audio/wav"
@@ -164,6 +165,23 @@ QUESTIONS = {
     "details.destination": "Pour quelle ville voulez-vous un billet ?",
     "when.date": "Pour quel jour ?",
 }
+
+_ASK_PARTS = {
+    "details.origin": "de quelle ville partez-vous",
+    "details.destination": "pour quelle ville",
+    "when.date": "quel jour",
+}
+
+
+def question_for(missing: list[str]) -> str | None:
+    """Une seule question pour tout ce qui manque à un trajet (au lieu d'un tour de parole par
+    information : 4 à 6 s chacun). Sinon la question de référence de la première information."""
+    parts = [_ASK_PARTS[path] for path in missing if path in _ASK_PARTS]
+    if len(parts) >= 2 and len(parts) == len(missing):
+        text = ", ".join(parts[:-1]) + f", et {parts[-1]} ?"
+        return text[0].upper() + text[1:]
+    return QUESTIONS.get(missing[0]) if missing else None
+
 
 VISION_SYSTEM_PROMPT = (
     "Tu aides une personne aveugle à choisir un produit. Réponds en français, en trois phrases au "
@@ -594,8 +612,15 @@ class HFAI:
         async def one(chunk: str) -> bytes:
             for attempt in range(SPEAK_ATTEMPTS):
                 try:
-                    return await self.tts_client.text_to_speech(
-                        chunk, model=self.tts_model, extra_body={"voice": self.tts_voice, "lang_code": "f"}
+                    # Un morceau prend 1 à 2 s ; au-delà de SPEAK_CHUNK_TIMEOUT_S la requête traîne : on
+                    # la relance au lieu d'attendre (sinon toute la phrase partait en voix du navigateur)
+                    return await asyncio.wait_for(
+                        self.tts_client.text_to_speech(
+                            chunk,
+                            model=self.tts_model,
+                            extra_body={"voice": self.tts_voice, "lang_code": "f"},
+                        ),
+                        SPEAK_CHUNK_TIMEOUT_S,
                     )
                 except Exception:
                     if attempt == SPEAK_ATTEMPTS - 1:
@@ -607,7 +632,9 @@ class HFAI:
         if not chunks:
             return None
         try:
-            parts = await asyncio.wait_for(asyncio.gather(*(one(c) for c in chunks)), self.speak_timeout)
+            # Une longue phrase (lecture des options) a droit à un peu plus de temps qu'une courte
+            limit = self.speak_timeout + min(4.0, 0.4 * max(0, len(chunks) - 2))
+            parts = await asyncio.wait_for(asyncio.gather(*(one(c) for c in chunks)), limit)
             return join_wav(list(parts))
         except Exception as error:
             log.info("synthèse vocale abandonnée (%s), voix du navigateur", type(error).__name__)

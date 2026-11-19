@@ -651,3 +651,11 @@ async def test_repeat_rereads_the_options_and_a_new_screen_gets_no_stale_options
 
         await h.session.attach(collect)
         assert not [m for m in late if m["type"] in ("options", "summary")]
+
+
+async def test_everything_missing_is_asked_in_one_question_and_answered_in_one_sentence():
+    async with Harness() as h:
+        await h.text("Je voudrais un billet de train")
+        await h.wait_said("De quelle ville partez-vous, pour quelle ville, et quel jour ?")
+        await h.text("Un train de Paris pour Lille demain")  # l'IA factice ne comprend qu'avec « train »
+        await h.wait("proposing")

@@ -6,19 +6,27 @@ Les versions factices sont choisies par USE_FAKE_AGENT et USE_FAKE_AI.
 
 from __future__ import annotations
 
+import asyncio
 import logging
+import os
 from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
 from typing import Any
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 
-from orchestrator.agent_h import make_agent_factory
+from orchestrator.agent_h import local_chrome, make_agent_factory
 from orchestrator.ai import build_ai
 from orchestrator.config import Settings
 from orchestrator.session import Session
 
 log = logging.getLogger(__name__)
+
+
+def warm_chrome_wanted() -> bool:
+    """Chrome local (pas le navigateur cloud), sauf PILOTE_WARM_CHROME=0."""
+    host = os.getenv("PILOTE_BROWSER_HOST") or "user_device"
+    return host == "user_device" and os.getenv("PILOTE_WARM_CHROME", "1").strip() != "0"
 
 
 def build_session(settings: Settings) -> Session:
@@ -42,6 +50,9 @@ def create_app(session_factory: Callable[[], Session] | None = None) -> FastAPI:
             "factice" if settings.use_fake_ai else "Hugging Face",
         )
         await session.start()
+        if session_factory is None and not settings.use_fake_agent and warm_chrome_wanted():
+            # Chrome dédié ouvert dès le démarrage : la première commande n'attend pas son lancement
+            asyncio.get_running_loop().run_in_executor(None, local_chrome.ensure)
         try:
             yield
         finally:
