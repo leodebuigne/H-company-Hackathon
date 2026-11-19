@@ -118,3 +118,23 @@ def test_spoken_fixes_heard_in_live_tests():
     )
     assert for_speech("le 20/11 à 8h") == "le 20 novembre à 8 heures"
     assert "2/3" in for_speech("2/3 des places") and "7j/7" in for_speech("ouvert 7j/7")
+
+
+def test_numbers_are_written_out_for_a_voice_that_cannot_read_digits():
+    from orchestrator.ai.speech_text import number_words, spell_numbers
+
+    assert [number_words(n) for n in (21, 71, 80, 91, 200, 1280)] == [
+        "vingt et un",
+        "soixante et onze",
+        "quatre-vingts",
+        "quatre-vingt-onze",
+        "deux cents",
+        "mille deux cent quatre-vingts",
+    ]
+    said = spell_numbers(for_speech("Numéro 3 : TGV INOUI 07:26 → 09:22, 12,50 €. Dites « le 2 »."))
+    assert said == (
+        "Numéro trois : TGV Inoui sept heures vingt-six vers neuf heures vingt-deux, douze euros "
+        "cinquante. Dites le deux."
+    )
+    assert spell_numbers(for_speech("Le 1er train part à 01:00.")) == "Le premier train part à une heure."
+    assert not any(c.isdigit() for c in spell_numbers(for_speech("69 € le 20/11 à 14h05, noté 4,5 sur 5")))

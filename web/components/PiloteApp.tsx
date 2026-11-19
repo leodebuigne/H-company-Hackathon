@@ -29,7 +29,7 @@ import {
 } from "./protocol";
 import { PushToTalkRecorder, RELEASE_TAIL_MS } from "./recorder";
 import { Speaker, listFrenchVoices, setBrowserVoice } from "./speech";
-import { usePilote } from "./usePilote";
+import { ORCHESTRATOR_HTTP, usePilote } from "./usePilote";
 import Orb, { type OrbMode } from "./Orb";
 import { WakeWordListener, wakeWordSupported } from "./wakeword";
 
@@ -42,6 +42,9 @@ const AI_DISCLOSURE = "Je suis Pilote, un assistant automatique.";
 type VoiceMode = "voice" | "screenreader";
 
 // Appui plus court que ça = « appuyer une fois puis parler » : Pilote écoute et s'arrête quand on se tait.
+const VOICE_LABELS: Record<string, string> = {
+  jerem: "Jerem (homme)",
+};
 const TAP_MS = 450;
 // Deux appuis sur espace à moins de ce délai = « tais-toi » : Pilote arrête de parler, rien n'est envoyé.
 const DOUBLE_SPACE_MS = 450;
@@ -71,7 +74,8 @@ const ACKS = [
 // Réglages gardés dans ce navigateur seulement (aucune donnée personnelle).
 const PREFS_KEY = "pilote-prefs";
 type Prefs = { rate: number; browserVoice: string | null };
-const DEFAULT_PREFS: Prefs = { rate: 1.1, browserVoice: null };
+// 1,2× : vitesse retenue à l'écoute pour la voix Jerem (2026-11-19)
+const DEFAULT_PREFS: Prefs = { rate: 1.2, browserVoice: null };
 
 function loadPrefs(): Prefs {
   try {
@@ -115,6 +119,15 @@ export default function PiloteApp() {
   const [micLevel, setMicLevel] = useState(0);
   const [speaking, setSpeaking] = useState(false);
   const [voiceMode, setVoiceMode] = useState<VoiceMode>("voice");
+  // Voix de Pilote au choix (Jerem…) : la liste vient de l'orchestrateur, vide s'il n'en a pas
+  const [piloteVoices, setPiloteVoices] = useState<{
+    current: string | null;
+    available: string[];
+  }>({
+    current: null,
+    available: [],
+  });
+  const [voiceBusy, setVoiceBusy] = useState(false);
   const [announce, setAnnounce] = useState("");
   const [micError, setMicError] = useState<string | null>(null);
   const [textInput, setTextInput] = useState("");
@@ -222,6 +235,46 @@ export default function PiloteApp() {
 
   const { connected, state, options, summary, lastSay, log, question, send } =
     usePilote(onMessage);
+  const chooseVoice = async (name: string) => {
+    setVoiceBusy(true);
+    try {
+      const response = await fetch(`${ORCHESTRATOR_HTTP}/voice`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ name }),
+      });
+      if (!response.ok) throw new Error(String(response.status));
+      const data = await response.json();
+      setPiloteVoices({ current: data.current, available: data.available });
+      // On entend tout de suite la nouvelle voix
+      speakerRef.current?.stop();
+      if (voiceModeRef.current === "voice")
+        speakerRef.current?.enqueue(data.text, data.sample, data.mime);
+    } catch {
+      tell("Je n'ai pas pu changer de voix.");
+    } finally {
+      setVoiceBusy(false);
+    }
+  };
+
+  // Voix proposées par l'orchestrateur (relues à chaque connexion : il a pu redémarrer)
+  useEffect(() => {
+    if (!connected) return;
+    let cancelled = false;
+    fetch(`${ORCHESTRATOR_HTTP}/voice`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => {
+        if (data && !cancelled)
+          setPiloteVoices({
+            current: data.current,
+            available: data.available ?? [],
+          });
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [connected]);
   // Pilote demande le code secret à 3 chiffres (même état que la confirmation, voir session._check_code)
   const askingCode =
     state === "confirm_1" &&
@@ -1091,6 +1144,24 @@ export default function PiloteApp() {
             Mon lecteur d&apos;écran (VoiceOver)
           </label>
         </fieldset>
+
+        {piloteVoices.available.length > 1 && (
+          <fieldset className="pilote-settings" disabled={voiceBusy}>
+            <legend>Voix de Pilote</legend>
+            {piloteVoices.available.map((name) => (
+              <label key={name}>
+                <input
+                  type="radio"
+                  name="pilote-voice"
+                  checked={piloteVoices.current === name}
+                  onChange={() => void chooseVoice(name)}
+                />
+                {VOICE_LABELS[name] ??
+                  name.charAt(0).toUpperCase() + name.slice(1)}
+              </label>
+            ))}
+          </fieldset>
+        )}
 
         <div className="pilote-setting">
           <label htmlFor="pilote-rate">

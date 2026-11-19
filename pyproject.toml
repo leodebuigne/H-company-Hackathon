@@ -15,6 +15,11 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+# Voix française locale (PILOTE_VOICE=jerem) : Kyutai Pocket TTS, installe torch (lourd).
+# Sans ce groupe, Pilote garde la voix en ligne.
+voix = [
+  "pocket-tts>=4.0",
+]
 # Membre 1 (orchestrator/agent_h). Ajouts : issue ou PR, validée par le membre 5.
 agent = [
   "hai-agents[cli,browser]",

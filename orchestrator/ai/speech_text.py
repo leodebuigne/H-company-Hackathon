@@ -207,3 +207,54 @@ def readable_progress(line: str) -> str | None:
     if sum(w in _ENGLISH for w in words) > sum(w in _FRENCH for w in words):
         return None
     return text
+
+
+# --- Nombres en toutes lettres (pour une voix qui ne sait pas lire les chiffres) ---------------
+
+_UNITS = (
+    "zéro", "un", "deux", "trois", "quatre", "cinq", "six", "sept", "huit", "neuf", "dix", "onze",
+    "douze", "treize", "quatorze", "quinze", "seize", "dix-sept", "dix-huit", "dix-neuf",
+)  # fmt: skip
+_TENS = {20: "vingt", 30: "trente", 40: "quarante", 50: "cinquante", 60: "soixante"}
+
+
+def number_words(n: int) -> str:
+    """Un entier de 0 à 999 999 en français : 71 -> « soixante et onze », 1280 -> « mille deux cent
+    quatre-vingts »."""
+    if n < 0 or n > 999_999:
+        return " ".join(_UNITS[int(d)] for d in str(abs(n)))  # trop grand : chiffre par chiffre
+    if n < 20:
+        return _UNITS[n]
+    if n < 70:
+        tens, unit = n // 10 * 10, n % 10
+        if unit == 0:
+            return _TENS[tens]
+        return f"{_TENS[tens]} et un" if unit == 1 else f"{_TENS[tens]}-{_UNITS[unit]}"
+    if n < 80:
+        return "soixante et onze" if n == 71 else f"soixante-{_UNITS[n - 60]}"
+    if n < 100:
+        return "quatre-vingts" if n == 80 else f"quatre-vingt-{_UNITS[n - 80]}"
+    if n < 1000:
+        hundreds, rest = n // 100, n % 100
+        head = "cent" if hundreds == 1 else f"{_UNITS[hundreds]} cent"
+        if rest == 0:
+            return head + ("s" if hundreds > 1 else "")
+        return f"{head} {number_words(rest)}"
+    thousands, rest = n // 1000, n % 1000
+    head = "mille" if thousands == 1 else f"{number_words(thousands)} mille"
+    return head if rest == 0 else f"{head} {number_words(rest)}"
+
+
+def spell_numbers(text: str) -> str:
+    """Texte déjà passé par for_speech, avec les nombres écrits en toutes lettres et sans guillemets :
+    « 7 heures 44, 69 euros » -> « sept heures quarante-quatre, soixante-neuf euros »."""
+    text = re.sub(r"\b1er\b", "premier", text)
+    text = re.sub(
+        r"(\d+),(\d+)", lambda m: f"{number_words(int(m[1]))} virgule {number_words(int(m[2]))}", text
+    )
+    text = re.sub(r"\d+", lambda m: number_words(int(m[0])), text)
+    text = re.sub(r"\bun heure\b", "une heure", text)
+    text = re.sub(r"\bun (minute|option|possibilité)\b", r"une \1", text)
+    text = re.sub(r"[«»“”\"]", " ", text)
+    text = re.sub(r"\s+([.,?!])", r"\1", text)
+    return re.sub(r"\s{2,}", " ", text).strip()

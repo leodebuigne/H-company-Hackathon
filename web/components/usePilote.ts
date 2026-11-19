@@ -6,6 +6,8 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { ClientMessage, Intent, Option, OrderSummary, ServerMessage, State } from "./protocol";
 
 export const ORCHESTRATOR_URL = process.env.NEXT_PUBLIC_ORCHESTRATOR_WS_URL ?? "ws://localhost:8000/ws";
+/** Adresse HTTP de l'orchestrateur, déduite de celle du WebSocket (ws://hôte/ws -> http://hôte). */
+export const ORCHESTRATOR_HTTP = ORCHESTRATOR_URL.replace(/^ws/, "http").replace(/\/ws\/?$/, "");
 
 export type LogEntry = { id: number; who: "pilote" | "user" | "system"; text: string };
 

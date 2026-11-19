@@ -27,7 +27,8 @@ from typing import Any
 from pydantic import ValidationError
 
 from orchestrator.ai import conversation
-from orchestrator.ai.speech_text import for_speech, options_summary, order_statement
+from orchestrator.ai.local_voice import LocalVoice, available_voices
+from orchestrator.ai.speech_text import for_speech, options_summary, order_statement, spell_numbers
 from orchestrator.contracts import Intent, Option, OrderSummary
 from orchestrator.ports import HistoryTurn, PageReading
 
@@ -44,6 +45,7 @@ DEFAULT_TTS_VOICE = "ff_siwis"
 DEFAULT_TTS_PROVIDER = "deepinfra"
 
 DEFAULT_SPEAK_TIMEOUT_S = 6.0
+LOCAL_VOICE_TIMEOUT_S = 20.0  # voix locale : 4 fois plus vite que le temps réel, large marge
 VOICE_PAUSE_S = 45  # panne du service de voix : durée pendant laquelle le navigateur parle seul
 SPEAK_HEDGE_S = 1.8  # un morceau prend 1 à 2 s : au-delà, une deuxième requête part en parallèle
 SPEAK_CHUNK_TIMEOUT_S = 3.5  # dernière attente quand toutes les requêtes d'un morceau traînent
@@ -424,11 +426,20 @@ class HFAI:
         self.tts_voice = _env("PILOTE_TTS_VOICE", DEFAULT_TTS_VOICE)
         self.tts_provider = _env("PILOTE_TTS_PROVIDER", DEFAULT_TTS_PROVIDER)
         self.speak_timeout = float(_env("PILOTE_TTS_TIMEOUT_S", str(DEFAULT_SPEAK_TIMEOUT_S)))
+        self._local_voice_broken = False
         self._voice_failures = 0  # phrases de suite sans voix
         self._voice_down_until = 0.0  # jusqu'à quand on ne demande plus la voix (panne du service)
         # PILOTE_VOICE=navigateur : pas de synthèse Hugging Face, la page parle avec la voix de
         # l'ordinateur (voix Premium du Mac), sans attente réseau.
-        self.browser_voice = _env("PILOTE_VOICE", "huggingface").strip().lower() == "navigateur"
+        voice = _env("PILOTE_VOICE", "huggingface").strip().lower()
+        self.browser_voice = voice == "navigateur"
+        # PILOTE_VOICE=jerem : voix française qui tourne sur cet ordinateur (local_voice.py).
+        # La voix en ligne reste en secours si le paquet manque ou si la synthèse échoue.
+        self.local_voice: LocalVoice | None = None
+        if voice in available_voices():
+            self.local_voice = LocalVoice(voice)
+        elif voice not in ("huggingface", "navigateur", ""):
+            log.warning("PILOTE_VOICE=%s inconnue : voix en ligne utilisée.", voice)
         self.usage = {"prompt_tokens": 0, "completion_tokens": 0, "calls": 0}
         self._chat = chat_client
         self._speech = speech_client
@@ -610,6 +621,16 @@ class HFAI:
 
     # --- texte -> voix -----------------------------------------------------
 
+    def voices(self) -> dict[str, Any]:
+        """Voix locales proposées à l'interface, et celle qui parle en ce moment (None : voix en ligne)."""
+        current = self.local_voice.name if self.local_voice and not self._local_voice_broken else None
+        return {"current": current, "available": [] if self._local_voice_broken else available_voices()}
+
+    def set_voice(self, name: str) -> None:
+        """Change de voix locale sans redémarrer. ValueError si le nom n'existe pas."""
+        self.local_voice = LocalVoice(name)
+        self._local_voice_broken = False
+
     async def speak(self, text: str) -> bytes | None:
         """Audio WAV (SPEAK_MIME), ou None si plus de `speak_timeout` secondes (voix du navigateur).
 
@@ -617,6 +638,19 @@ class HFAI:
         """
         if self.browser_voice:
             return None
+        if self.local_voice is not None and not self._local_voice_broken:
+            try:
+                return await asyncio.wait_for(
+                    asyncio.to_thread(self.local_voice.synthesize, spell_numbers(for_speech(text))),
+                    LOCAL_VOICE_TIMEOUT_S,
+                )
+            except ImportError:
+                self._local_voice_broken = True  # paquet pocket-tts absent : inutile de réessayer
+                log.warning("Voix locale indisponible (pip install pocket-tts) : voix en ligne utilisée.")
+            except Exception as error:
+                log.warning(
+                    "voix locale en échec (%s) : voix en ligne pour cette phrase", type(error).__name__
+                )
 
         async def request(chunk: str) -> bytes:
             return await self.tts_client.text_to_speech(
