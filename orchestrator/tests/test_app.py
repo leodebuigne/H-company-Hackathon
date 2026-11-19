@@ -81,8 +81,9 @@ async def test_a_screen_closed_during_the_greeting_ends_quietly(caplog):
 
     class ClosedScreen:
         client_state = WebSocketState.CONNECTED
+        headers: dict[str, str] = {}
 
-        async def accept(self) -> None:
+        async def accept(self, subprotocol: str | None = None) -> None:
             pass
 
         async def send_json(self, data) -> None:

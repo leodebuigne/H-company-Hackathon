@@ -14,11 +14,12 @@ from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
 from typing import Any
 
-from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from starlette.websockets import WebSocketDisconnected, WebSocketState
 
+from orchestrator.access import Access, access_from_env, bearer_token, pairing_link, token_from_protocols
 from orchestrator.agent_h import local_chrome, make_agent_factory
 from orchestrator.ai import build_ai
 from orchestrator.ai.hf import SPEAK_MIME
@@ -49,13 +50,42 @@ def build_session(settings: Settings) -> Session:
     )
 
 
-def create_app(session_factory: Callable[[], Session] | None = None) -> FastAPI:
+def announce_access(access: Access) -> None:
+    """Dit au démarrage comment appairer un téléphone. Un jeton choisi par la personne reste secret."""
+    if not access.required:
+        return
+    if not access.generated:
+        log.warning("Accès protégé : jeton lu dans PILOTE_TOKEN.")
+        return
+    web, server = (
+        os.environ.get("PILOTE_WEB_URL", "").strip(),
+        os.environ.get("PILOTE_PUBLIC_WS_URL", "").strip(),
+    )
+    assert access.token is not None
+    if web and server:
+        log.warning(
+            "Accès protégé. Ouvrez ce lien sur le téléphone (une seule fois) : %s",
+            pairing_link(web, server, access.token),
+        )
+    else:
+        log.warning(
+            "Accès protégé. Jeton tiré au hasard : %s. Avec PILOTE_WEB_URL et PILOTE_PUBLIC_WS_URL, ce "
+            "serait un lien d'appairage prêt à ouvrir.",
+            access.token,
+        )
+
+
+def create_app(session_factory: Callable[[], Session] | None = None, access: Access | None = None) -> FastAPI:
+    access = access if access is not None else access_from_env(os.environ)
+
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         settings = Settings.from_env()
         session = session_factory() if session_factory else build_session(settings)
         app.state.session = session
         app.state.settings = settings
+        app.state.access = access
+        announce_access(access)
         log.warning(
             "Pilote prêt. Agent %s, IA %s.",
             "FACTICE" if settings.use_fake_agent else "RÉEL (vrais sites)",
@@ -81,17 +111,23 @@ def create_app(session_factory: Callable[[], Session] | None = None) -> FastAPI:
             await session.stop()
 
     app = FastAPI(title="Pilote, orchestrateur", lifespan=lifespan)
-    # L'interface (autre port, même machine) lit et change la voix par HTTP
+    # L'interface (autre port, ou page autorisée comme celle de Vercel) lit et change la voix
     app.add_middleware(
         CORSMiddleware,
+        allow_origins=list(access.allowed_origins),
         allow_origin_regex=r"https?://(localhost|127\.0\.0\.1)(:\d+)?",
         allow_methods=["GET", "POST"],
-        allow_headers=["content-type"],
+        allow_headers=["content-type", "authorization"],
     )
 
+    def authorized(request: Request) -> bool:
+        return access.accepts(bearer_token(request.headers.get("authorization")))
+
     @app.get("/health")
-    async def health() -> dict[str, Any]:
+    async def health(request: Request) -> dict[str, Any]:
         settings: Settings = app.state.settings
+        if not authorized(request):
+            return {"ok": True}  # le serveur répond, sans rien dire de plus à qui n'a pas le jeton
         return {
             "ok": True,
             "state": app.state.session.state,
@@ -100,14 +136,18 @@ def create_app(session_factory: Callable[[], Session] | None = None) -> FastAPI:
         }
 
     @app.get("/voice")
-    async def voices() -> dict[str, Any]:
+    async def voices(request: Request) -> dict[str, Any]:
         """Voix que la personne peut choisir dans les réglages (vide avec l'IA factice)."""
+        if not authorized(request):
+            raise HTTPException(status_code=401, detail="Jeton d'appairage manquant ou faux.")
         ai = app.state.session.ai
         return ai.voices() if hasattr(ai, "voices") else {"current": None, "available": []}
 
     @app.post("/voice")
-    async def choose_voice(choice: VoiceChoice) -> dict[str, Any]:
+    async def choose_voice(choice: VoiceChoice, request: Request) -> dict[str, Any]:
         """Change la voix de Pilote et renvoie un court extrait pour l'entendre tout de suite."""
+        if not authorized(request):
+            raise HTTPException(status_code=401, detail="Jeton d'appairage manquant ou faux.")
         ai = app.state.session.ai
         if not hasattr(ai, "set_voice"):
             raise HTTPException(status_code=404, detail="Pas de voix au choix avec cette configuration.")
@@ -121,7 +161,15 @@ def create_app(session_factory: Callable[[], Session] | None = None) -> FastAPI:
 
     @app.websocket("/ws")
     async def ws(websocket: WebSocket) -> None:
-        await websocket.accept()
+        token, subprotocol = token_from_protocols(websocket.headers.get("sec-websocket-protocol"))
+        if access.required:
+            if not access.origin_allowed(websocket.headers.get("origin")):
+                await websocket.close(code=4403)  # page inconnue
+                return
+            if not access.accepts(token):
+                await websocket.close(code=4429 if access.blocked else 4401)  # trop d'essais / jeton faux
+                return
+        await websocket.accept(subprotocol=subprotocol)
         session: Session = app.state.session
 
         async def send(data: dict[str, Any]) -> None:
