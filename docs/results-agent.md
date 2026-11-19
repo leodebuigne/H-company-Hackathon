@@ -97,3 +97,4 @@ Une ligne par commande, ajoutée automatiquement par orchestrator/agent_h/metric
 | 2026-11-19 14:12 |  | pilote-shopper | annulée | 31 | 4 | - |
 | 2026-11-19 14:13 | www.sncf-connect.com | pilote-shopper | annulée | 36 | 3 | - |
 | 2026-11-19 14:15 | www.sncf-connect.com | pilote-shopper | annulée | 32 | 3 | - |
+| 2026-11-19 14:31 | www.sncf-connect.com | pilote-shopper | achat direct | 187 | 9 | accepted |
