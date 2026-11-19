@@ -16,7 +16,7 @@ from typing import Any
 
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from orchestrator.agent_h import local_chrome, make_agent_factory
 from orchestrator.ai import build_ai
@@ -32,6 +32,10 @@ VOICE_SAMPLE = "Bonjour, je suis Topil. C'est avec cette voix que je vous parler
 
 class VoiceChoice(BaseModel):
     name: str
+
+
+class Phrase(BaseModel):
+    text: str = Field(min_length=1, max_length=300)
 
 
 def warm_chrome_wanted() -> bool:
@@ -117,6 +121,21 @@ def create_app(session_factory: Callable[[], Session] | None = None) -> FastAPI:
         audio = await ai.speak(VOICE_SAMPLE)
         sample = base64.b64encode(audio).decode("ascii") if audio else None
         return {**ai.voices(), "sample": sample, "mime": SPEAK_MIME, "text": VOICE_SAMPLE}
+
+    @app.post("/speak")
+    async def speak_phrase(phrase: Phrase) -> dict[str, Any]:
+        """Audio d'une phrase écrite dans l'interface (accueil, « D'accord. »), avec la voix de Topil.
+        Sans cela, ces phrases étaient dites par la voix du navigateur : deux voix dans la même
+        conversation. Seulement avec la voix locale : la voix en ligne est facturée et parfois en panne."""
+        ai = app.state.session.ai
+        audio: bytes | None = None
+        if hasattr(ai, "voices") and ai.voices()["current"]:
+            try:
+                audio = await ai.speak(phrase.text)
+            except Exception:
+                log.info("phrase de l'interface sans voix : le navigateur la dira")
+        encoded = base64.b64encode(audio).decode("ascii") if audio else None
+        return {"audio": encoded, "mime": SPEAK_MIME if audio else None}
 
     @app.websocket("/ws")
     async def ws(websocket: WebSocket) -> None:

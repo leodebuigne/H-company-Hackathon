@@ -29,6 +29,7 @@ import {
 } from "./protocol";
 import { PushToTalkRecorder, RELEASE_TAIL_MS } from "./recorder";
 import { Speaker, listFrenchVoices, setBrowserVoice } from "./speech";
+import { PhraseVoice } from "./phraseVoice";
 import { ORCHESTRATOR_HTTP, usePilote } from "./usePilote";
 import Orb, { type OrbMode } from "./Orb";
 import { WakeWordListener, wakeWordSupported } from "./wakeword";
@@ -36,6 +37,16 @@ import { WakeWordListener, wakeWordSupported } from "./wakeword";
 // Obligatoire (AI Act, article 50). Normalement dit par l'orchestrateur à la connexion ;
 // répété ici si sa phrase d'accueil n'a pas pu être jouée.
 const AI_DISCLOSURE = "Je suis Topil, un assistant automatique.";
+/** Phrase d'accueil dite au premier geste : la dernière phrase du serveur, avec l'annonce « IA ». */
+const greetingFor = (lastSay: string) =>
+  (lastSay && lastSay.includes("assistant automatique")
+    ? lastSay
+    : `${AI_DISCLOSURE} ${lastSay}`
+  ).trim();
+const TOO_SHORT = "C'était trop court. Appuyez une fois, puis parlez.";
+const NOT_CONNECTED = "Je ne suis pas connecté à Topil pour le moment.";
+const NEW_RATE = "Voici la nouvelle vitesse.";
+const VOICE_NOT_CHANGED = "Je n'ai pas pu changer de voix.";
 
 // "voice" : Pilote parle lui-même. "screenreader" : Pilote se tait et laisse VoiceOver lire les annonces.
 // Jamais les deux à la fois, sinon les deux voix se superposent.
@@ -139,6 +150,9 @@ export default function PiloteApp() {
   const [now, setNow] = useState(() => Date.now());
 
   const speakerRef = useRef<Speaker | null>(null);
+  // Phrases écrites dans cette page, préparées avec la voix de Topil (sinon le navigateur les dit
+  // avec une autre voix que le reste de la conversation)
+  const phrasesRef = useRef<PhraseVoice | null>(null);
   const recorderRef = useRef<PushToTalkRecorder | null>(null);
   const voiceModeRef = useRef<VoiceMode>("voice");
   const startedRef = useRef(false);
@@ -204,7 +218,8 @@ export default function PiloteApp() {
     (text: string, audio?: string | null, mime?: string | null) => {
       if (voiceModeRef.current === "voice") {
         if (mutedRef.current) return;
-        speakerRef.current?.enqueue(text, audio, mime);
+        const ready = audio ? null : phrasesRef.current?.get(text);
+        speakerRef.current?.enqueue(text, audio ?? ready?.audio, mime ?? ready?.mime);
       } else setAnnounce((prev) => (prev === text ? `${text} ` : text)); // force la relecture d'un texte identique
     },
     [],
@@ -251,7 +266,7 @@ export default function PiloteApp() {
       if (voiceModeRef.current === "voice")
         speakerRef.current?.enqueue(data.text, data.sample, data.mime);
     } catch {
-      tell("Je n'ai pas pu changer de voix.");
+      tell(VOICE_NOT_CHANGED);
     } finally {
       setVoiceBusy(false);
     }
@@ -275,6 +290,20 @@ export default function PiloteApp() {
       cancelled = true;
     };
   }, [connected]);
+  // La voix de Topil prépare les phrases de cette page : réactions, messages, puis l'accueil
+  const topilVoice = piloteVoices.current;
+  useEffect(() => {
+    const phrases = (phrasesRef.current ??= new PhraseVoice(ORCHESTRATOR_HTTP));
+    phrases.clear(); // autre voix ou orchestrateur relancé : les anciens sons ne valent plus
+    phrases.enabled = Boolean(topilVoice);
+    if (topilVoice)
+      void phrases.prepare([...ACKS, TOO_SHORT, NEW_RATE, VOICE_NOT_CHANGED, NOT_CONNECTED]);
+  }, [topilVoice, connected]);
+  useEffect(() => {
+    if (topilVoice && !started && lastSay)
+      void phrasesRef.current?.prepare([greetingFor(lastSay)], true);
+  }, [topilVoice, started, lastSay]);
+
   // Pilote demande le code secret à 3 chiffres (même état que la confirmation, voir session._check_code)
   const askingCode =
     state === "confirm_1" &&
@@ -299,11 +328,15 @@ export default function PiloteApp() {
     mutedRef.current = false;
     channelRef.current?.postMessage("je-parle"); // les autres pages Topil se taisent
     setStarted(true);
-    const greeting =
-      lastSay && lastSay.includes("assistant automatique")
-        ? lastSay
-        : `${AI_DISCLOSURE} ${lastSay}`;
-    tell(greeting.trim());
+    const greeting = greetingFor(lastSay);
+    // L'accueil attend un court instant la voix de Topil plutôt que de partir avec une autre voix
+    const phrases = phrasesRef.current;
+    if (!phrases?.enabled || phrases.get(greeting)) tell(greeting);
+    else
+      void Promise.race([
+        phrases.prepare([greeting], true),
+        new Promise((resolve) => setTimeout(resolve, 4000)),
+      ]).then(() => tell(greeting));
     // L'accueil finit par « Comment allez-vous ? » : Pilote écoute la réponse une fois
     endedRef.current = false;
   }, [lastSay, tell]);
@@ -339,14 +372,14 @@ export default function PiloteApp() {
       }
       const recording = await rec.stop();
       if (!recording)
-        return tell("C'était trop court. Appuyez une fois, puis parlez.");
+        return tell(TOO_SHORT);
       playEarcon("thinking");
       awaitingReplyRef.current = true;
       if (
         !send({ type: "audio", data: recording.data, mime: recording.mime })
       ) {
         awaitingReplyRef.current = false;
-        tell("Je ne suis pas connecté à Topil pour le moment.");
+        tell(NOT_CONNECTED);
       } else acknowledge();
     },
     [send, tell, acknowledge],
@@ -1179,7 +1212,7 @@ export default function PiloteApp() {
             step={0.1}
             value={prefs.rate}
             onChange={(e) => updatePrefs({ rate: Number(e.target.value) })}
-            onPointerUp={() => tell("Voici la nouvelle vitesse.")}
+            onPointerUp={() => tell(NEW_RATE)}
           />
         </div>
 

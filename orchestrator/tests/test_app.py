@@ -1,5 +1,6 @@
 """Le serveur de bout en bout : une vraie connexion WebSocket, les briques factices, un parcours texte."""
 
+import base64
 import datetime as dt
 
 import pytest
@@ -83,6 +84,26 @@ def test_voice_choice_is_empty_with_the_fake_ai_and_readable_from_the_interface(
             "access-control-allow-origin"
             not in client.get("/voice", headers={"Origin": "https://ailleurs.example"}).headers
         )
+
+
+def test_interface_phrases_get_the_voice_of_topil_only_when_it_has_one():
+    with TestClient(create_app(_session)) as client:
+        # IA factice : pas de voix à elle, le navigateur dit la phrase
+        assert client.post("/speak", json={"text": "D'accord."}).json() == {"audio": None, "mime": None}
+        assert client.post("/speak", json={"text": ""}).status_code == 422
+        assert client.post("/speak", json={"text": "a" * 301}).status_code == 422
+
+        class Voiced:
+            def voices(self):
+                return {"current": "jerem", "available": ["jerem"]}
+
+            async def speak(self, text):
+                return b"RIFF" + text.encode()
+
+        client.app.state.session.ai = Voiced()
+        answer = client.post("/speak", json={"text": "D'accord."}).json()
+        assert answer["mime"] == "audio/wav"
+        assert base64.b64decode(answer["audio"]) == b"RIFFD'accord."
 
 
 def test_voice_can_be_changed_without_restarting():
