@@ -112,10 +112,17 @@ export class Speaker {
   // sinon deux lectures pouvaient se superposer après une interruption.
   private generation = 0;
   rate = 1;
+  /** Topil a sa voix à lui : une phrase sans audio n'est pas dite par la voix du navigateur. */
+  ownVoiceOnly = false;
   onChange: (speaking: boolean) => void = () => {};
 
   get speaking() {
     return this.busy;
+  }
+
+  /** Change à chaque stop() : une phrase préparée avant une coupure ne doit plus être dite. */
+  get turn() {
+    return this.generation;
   }
 
   enqueue(text: string, audio?: string | null, mime?: string | null) {
@@ -148,7 +155,7 @@ export class Speaker {
     this.setBusy(true);
     try {
       if (item.audio) await this.playAudio(item.audio, item.mime);
-      else await this.speakWithBrowser(item.text);
+      else if (!this.ownVoiceOnly) await this.speakWithBrowser(item.text);
     } catch {
       // un son bloqué ou une voix absente ne doit pas bloquer la file
     }

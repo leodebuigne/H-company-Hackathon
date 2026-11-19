@@ -84,9 +84,11 @@ const ACKS = [
 
 // Réglages gardés dans ce navigateur seulement (aucune donnée personnelle).
 const PREFS_KEY = "pilote-prefs";
-type Prefs = { rate: number; browserVoice: string | null };
+// openMic : le micro s'ouvre aussi sans appui (« Bonjour Topil », réécoute après une question).
+// Désactivé par défaut (2026-11-19) : Topil n'écoute qu'après un appui sur Espace ou sur le bouton.
+type Prefs = { rate: number; browserVoice: string | null; openMic: boolean };
 // 1,2× : vitesse retenue à l'écoute pour la voix Jerem (2026-11-19)
-const DEFAULT_PREFS: Prefs = { rate: 1.2, browserVoice: null };
+const DEFAULT_PREFS: Prefs = { rate: 1.2, browserVoice: null, openMic: false };
 
 function loadPrefs(): Prefs {
   try {
@@ -218,8 +220,19 @@ export default function PiloteApp() {
     (text: string, audio?: string | null, mime?: string | null) => {
       if (voiceModeRef.current === "voice") {
         if (mutedRef.current) return;
-        const ready = audio ? null : phrasesRef.current?.get(text);
-        speakerRef.current?.enqueue(text, audio ?? ready?.audio, mime ?? ready?.mime);
+        const speaker = speakerRef.current;
+        const phrases = phrasesRef.current;
+        const ready = audio ? null : phrases?.get(text);
+        if (audio || ready || !phrases?.enabled)
+          return speaker?.enqueue(text, audio ?? ready?.audio, mime ?? ready?.mime);
+        // Phrase de cette page pas encore préparée : on attend la voix de Topil, sans voix de
+        // secours. Si la personne a coupé entre-temps, la phrase n'est plus dite.
+        const turn = speaker?.turn;
+        void phrases.prepare([text], true).then(() => {
+          const late = phrases.get(text);
+          if (late && speaker && speaker.turn === turn)
+            speaker.enqueue(text, late.audio, late.mime);
+        });
       } else setAnnounce((prev) => (prev === text ? `${text} ` : text)); // force la relecture d'un texte identique
     },
     [],
@@ -296,6 +309,7 @@ export default function PiloteApp() {
     const phrases = (phrasesRef.current ??= new PhraseVoice(ORCHESTRATOR_HTTP));
     phrases.clear(); // autre voix ou orchestrateur relancé : les anciens sons ne valent plus
     phrases.enabled = Boolean(topilVoice);
+    if (speakerRef.current) speakerRef.current.ownVoiceOnly = Boolean(topilVoice);
     if (topilVoice)
       void phrases.prepare([...ACKS, TOO_SHORT, NEW_RATE, VOICE_NOT_CHANGED, NOT_CONNECTED]);
   }, [topilVoice, connected]);
@@ -330,13 +344,7 @@ export default function PiloteApp() {
     setStarted(true);
     const greeting = greetingFor(lastSay);
     // L'accueil attend un court instant la voix de Topil plutôt que de partir avec une autre voix
-    const phrases = phrasesRef.current;
-    if (!phrases?.enabled || phrases.get(greeting)) tell(greeting);
-    else
-      void Promise.race([
-        phrases.prepare([greeting], true),
-        new Promise((resolve) => setTimeout(resolve, 4000)),
-      ]).then(() => tell(greeting));
+    tell(greeting);
     // L'accueil finit par « Comment allez-vous ? » : Pilote écoute la réponse une fois
     endedRef.current = false;
   }, [lastSay, tell]);
@@ -466,6 +474,7 @@ export default function PiloteApp() {
   // (un choix, un oui / non, le code, ou une question qui finit par « ? »). Pas après la fin d'une
   // commande : il faut alors dire « Bonjour Pilote » ou appuyer.
   useEffect(() => {
+    if (!prefs.openMic) return; // micro seulement sur appui
     if (!started || speaking || recording || voiceMode !== "voice") return;
     if (
       endedRef.current ||
@@ -493,6 +502,7 @@ export default function PiloteApp() {
     lastSay,
     voiceMode,
     listenHandsFree,
+    prefs.openMic,
   ]);
 
   // « Bonjour Pilote » pour le réveiller, « OK Pilote » pour le couper : écoute hors enregistrement.
@@ -516,9 +526,18 @@ export default function PiloteApp() {
         acknowledge();
       } else void listenHandsFree(false);
     };
-    if (started && !recording && voiceMode === "voice") wake.start();
+    if (prefs.openMic && started && !recording && voiceMode === "voice")
+      wake.start();
     else wake.stop();
-  }, [started, recording, voiceMode, listenHandsFree, send, acknowledge]);
+  }, [
+    started,
+    recording,
+    voiceMode,
+    listenHandsFree,
+    send,
+    acknowledge,
+    prefs.openMic,
+  ]);
   useEffect(() => () => wakeRef.current?.stop(), []);
 
   // Niveau du micro pour l'anneau du bouton
@@ -828,9 +847,11 @@ export default function PiloteApp() {
               </div>
             )}
             <p id="pilote-help" className="pilote-help">
-              {started && wakeWordSupported() && <>Dites « Bonjour Topil »</>}
+              {started && prefs.openMic && wakeWordSupported() && (
+                <>Dites « Bonjour Topil »</>
+              )}
               <span className="pilote-keys">
-                {started && wakeWordSupported() && " · "}
+                {started && prefs.openMic && wakeWordSupported() && " · "}
                 <kbd>Espace</kbd> pour parler · <kbd>Espace</kbd> ×2 pour faire
                 taire · <kbd>Échap</kbd> pour annuler
               </span>
@@ -1196,6 +1217,23 @@ export default function PiloteApp() {
           </fieldset>
         )}
 
+        <fieldset className="pilote-settings">
+          <legend>Micro</legend>
+          <label>
+            <input
+              type="checkbox"
+              checked={prefs.openMic}
+              onChange={(e) => updatePrefs({ openMic: e.target.checked })}
+            />
+            Écouter aussi sans appui (« Bonjour Topil », réponse après une
+            question)
+          </label>
+          <p className="pilote-muted">
+            Décoché : Topil n’écoute qu’après un appui sur Espace ou sur le
+            bouton.
+          </p>
+        </fieldset>
+
         <div className="pilote-setting">
           <label htmlFor="pilote-rate">
             Vitesse de la voix :{" "}
@@ -1216,6 +1254,8 @@ export default function PiloteApp() {
           />
         </div>
 
+        {/* Avec la voix de Topil (Jerem), aucune autre voix ne parle : pas de réglage à montrer */}
+        {!topilVoice && (
         <div className="pilote-setting">
           <label htmlFor="pilote-browser-voice">
             Voix de secours du navigateur
@@ -1238,6 +1278,7 @@ export default function PiloteApp() {
             Utilisée seulement si la voix de Topil ne répond pas à temps.
           </p>
         </div>
+        )}
 
         <dl className="pilote-shortcuts">
           <dt>

@@ -457,6 +457,15 @@ async def test_local_voice_speaks_first_and_the_online_voice_takes_over_when_it_
     assert said == ["Départ à sept heures quarante-quatre, soixante-neuf euros."]  # chiffres en lettres
     assert speech.tts_calls == []  # la voix en ligne n'est pas appelée
 
+    class Failing(Stub):
+        def synthesize(self, text: str) -> bytes:
+            raise RuntimeError("mémoire")
+
+    # Pas de voix de secours : une phrase que la voix locale rate reste muette (affichée à l'écran)
+    ai.local_voice = Failing()  # type: ignore[assignment]
+    assert await ai.speak("Bonjour") is None
+    assert speech.tts_calls == []
+
     class Broken(Stub):
         def synthesize(self, text: str) -> bytes:
             raise ImportError("pocket_tts")

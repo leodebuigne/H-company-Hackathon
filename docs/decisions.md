@@ -250,3 +250,15 @@ Essai réel : pull → taille ; baskets → pointure ; coque → modèle de tél
 - **Constat :** l'accueil, les réactions (« D'accord. ») et les messages écrits dans l'interface étaient dits par la voix du navigateur, le reste par Jerem : deux voix dans la même conversation.
 - **Décision :** l'interface demande l'audio de ces phrases à l'orchestrateur (`POST /speak`) au chargement et le garde (`web/components/phraseVoice.ts`). Seulement avec la voix locale : la voix en ligne est facturée et parfois en panne.
 - **Secours inchangé :** si la voix de Topil échoue, la voix du navigateur dit la phrase.
+
+## 2026-11-19 : le micro ne s'ouvre que sur un appui
+
+- **Décision :** Topil n'écoute qu'après un appui sur Espace ou sur le bouton. Le mot de réveil « Bonjour Topil » et la réécoute automatique après une question sont coupés par défaut.
+- **Pourquoi :** le micro restait ouvert en permanence pour guetter le mot de réveil.
+- **Réglage :** « Écouter aussi sans appui » dans les réglages les rallume (préférence `openMic`, gardée dans le navigateur).
+
+## 2026-11-19 : pas de voix de secours
+
+- **Constat :** quand la voix de Topil (Jerem) était coupée ou en retard, une autre voix (navigateur ou voix en ligne) disait la phrase, parfois après que la personne était passée à autre chose.
+- **Décision :** avec une voix locale choisie, Topil ne parle qu'avec elle. Une phrase sans audio reste affichée à l'écran et n'est pas dite ; une phrase préparée avant une coupure est abandonnée.
+- **Limite :** si la voix locale échoue, la phrase est muette. Sans voix locale (`PILOTE_VOICE` vide), rien ne change : voix en ligne, puis voix du navigateur.

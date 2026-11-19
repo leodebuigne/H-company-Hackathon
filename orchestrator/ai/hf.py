@@ -648,9 +648,10 @@ class HFAI:
                 self._local_voice_broken = True  # paquet pocket-tts absent : inutile de réessayer
                 log.warning("Voix locale indisponible (pip install pocket-tts) : voix en ligne utilisée.")
             except Exception as error:
-                log.warning(
-                    "voix locale en échec (%s) : voix en ligne pour cette phrase", type(error).__name__
-                )
+                # Pas de voix de secours (décision du 2026-11-19) : une autre voix arrivait en retard,
+                # après que la personne avait coupé la phrase. La phrase reste affichée à l'écran.
+                log.warning("voix locale en échec (%s) : phrase affichée sans voix", type(error).__name__)
+                return None
 
         async def request(chunk: str) -> bytes:
             return await self.tts_client.text_to_speech(

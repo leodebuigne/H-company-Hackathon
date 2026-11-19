@@ -59,7 +59,7 @@ l'utilisateur et la voix de Topil. Pas de narrateur pendant la démo, sauf les d
 
 | Étape | Ce qui se passe | Durée réelle | Dans la vidéo |
 |---|---|---|---|
-| 1 | L'utilisateur dit : « Bonjour Topil. Un train de Paris pour Nantes demain matin. » | 5 s | 5 s |
+| 1 | L'utilisateur appuie sur Espace et dit : « Un train de Paris pour Nantes demain matin. » | 5 s | 5 s |
 | 2 | Topil redit la demande ; à droite, la page des résultats SNCF s'ouvre toute seule | 8 s | 8 s |
 | 3 | La page est lue ; Topil commente (« Je parcours les résultats ») | 25 s | 10 s, accéléré, carton « accéléré × 3 » |
 | 4 | Topil lit les trois options, avec les heures et les prix | 17 s | 17 s |
@@ -132,7 +132,7 @@ Le trois centimes est mesuré ; le dix centimes est une estimation.
 4. Régler la vitesse de la voix à 1,2× dans les réglages.
 5. Placer l'app à gauche et le Chrome de l'agent à droite, à la même hauteur.
 6. Couper les notifications du Mac et fermer les autres applications (8 Go de mémoire).
-7. Essayer « Bonjour Topil » au vrai micro. S'il n'est pas reconnu, appuyer sur Espace pour parler.
+7. Le micro ne s'ouvre que sur un appui : Espace avant chaque phrase (demande, choix, « Oui »). Essayer au vrai micro.
 8. Faire un essai complet à blanc, en répondant « Non » à la question d'achat.
 9. Choisir une date de train qui propose un billet à 0 € : la vidéo montre un achat réel.
 
