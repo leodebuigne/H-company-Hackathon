@@ -918,3 +918,56 @@ async def test_a_free_ticket_also_needs_a_yes_and_a_no_buys_nothing(monkeypatch)
         await h.confirm(False)
         await h.wait("listening")
         assert "je n'achète rien" in h.said() and "C'est acheté" not in h.said()
+
+
+# --- nouvelle conversation, et vieille question qui ne se mêle plus aux demandes -------------
+
+
+def test_reset_phrases_are_recognised_but_not_ordinary_requests():
+    from orchestrator.session import wants_reset
+
+    for phrase in (
+        "Nouvelle conversation",
+        "On recommence à zéro",
+        "Efface la conversation",
+        "Oublie tout",
+        "Remets la conversation à zéro",
+        "Mets à jour la conversation",
+        "Clear la conversation",
+    ):
+        assert wants_reset(phrase), phrase
+    for phrase in ("Un train de Paris pour Lille demain", "Efface le dernier article", "zéro euro"):
+        assert not wants_reset(phrase), phrase
+
+
+async def test_reset_forgets_the_conversation_but_keeps_the_learned_paths():
+    async with Harness() as h:
+        await h.text("Un train de Paris pour Lille demain après 14 h")
+        await h.wait("proposing")
+        old_id = h.session.session_id
+        await h.text("On recommence à zéro")
+        await h.wait_said("on repart de zéro")
+        assert "rien n'a été acheté" in h.said()
+        assert h.session.session_id != old_id, "les écrans vident la conversation"
+        assert [t["text"] for t in h.session.history] == [h.session.history[-1]["text"]]
+        assert "Paris pour Lille" not in str(h.session._context())
+        assert h.paid == 0
+        await h.text("Un train de Paris pour Lille demain après 14 h")  # Pilote repart normalement
+        await h.wait("proposing")
+
+
+async def test_a_new_train_request_is_not_glued_to_a_question_waiting_for_a_precision(monkeypatch):
+    from orchestrator.ai.fake import FakeAI
+
+    async def prepare(self, question, history=None):
+        if "(précision :" in question or "CAF" not in question:
+            return {"action": "search", "question": question}
+        return {"action": "ask", "say": "Quelle CAF : celle de quelle ville ?"}
+
+    monkeypatch.setattr(FakeAI, "prepare_question", prepare)
+    async with Harness() as h:
+        await h.text("Quels sont les horaires de la CAF ?")
+        await h.wait_said("celle de quelle ville")
+        await h.text("Un train de Paris pour Lille demain après 14 h")
+        await h.wait("proposing")  # le train est cherché, pas « la CAF (précision : un train…) »
+        assert all("CAF" not in t["text"] for t in h.session._context())

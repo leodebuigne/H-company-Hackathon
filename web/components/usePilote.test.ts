@@ -85,6 +85,15 @@ describe("reduce : conversation rejouée, question, options périmées", () => {
     expect(back.log).toHaveLength(2);
   });
 
+  it("« on repart de zéro » (nouvel identifiant) vide la conversation affichée", () => {
+    let s = reduce(empty, ready);
+    s = reduce(s, say("Je cherche la CAF de Lyon."));
+    s = reduce(s, { type: "ready", session_id: "s2" });
+    expect(s.log).toHaveLength(0);
+    s = reduce(s, say("C'est fait, on repart de zéro."));
+    expect(s.log.map((e) => e.text)).toEqual(["C'est fait, on repart de zéro."]);
+  });
+
   it("une question n'a pas d'étapes d'achat, et une recherche affinée vide les options", () => {
     const base = serverExamples.find((e) => e.msg.type === "intent")!.msg as Extract<ServerMessage, { type: "intent" }>;
     const asked = reduce(empty, { ...base, intent: { ...base.intent, kind: "question" } });

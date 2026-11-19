@@ -45,6 +45,21 @@ const entry = (who: LogEntry["who"], text: string): LogEntry => ({ id: ++logId, 
 export function reduce(s: PiloteSnapshot, msg: ServerMessage): PiloteSnapshot {
   switch (msg.type) {
     case "ready":
+      // Nouvelle conversation (« on repart de zéro », ou orchestrateur relancé) : nouvel
+      // identifiant, l'écran vide ce qu'il affichait.
+      if (s.sessionId !== null && msg.session_id !== s.sessionId) {
+        return {
+          ...s,
+          sessionId: msg.session_id,
+          log: [],
+          intent: null,
+          options: [],
+          summary: null,
+          agentViewUrl: null,
+          question: false,
+          replay: "accept",
+        };
+      }
       // Un écran neuf (conversation vide) accepte la conversation rejouée ; un écran qui se
       // reconnecte l'a déjà : il l'ignore pour ne pas afficher les phrases en double.
       return { ...s, sessionId: msg.session_id, replay: s.log.length === 0 ? "accept" : "skip" };

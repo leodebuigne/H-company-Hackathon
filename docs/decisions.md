@@ -315,3 +315,10 @@ Essai réel : pull → taille ; baskets → pointure ; coque → modèle de tél
 - **Panier propre** : consigne de l'agent, le panier ne doit contenir que l'option choisie, dans la quantité demandée ; il retire les restes d'une commande précédente (un autre billet, un 2e Big Mac).
 - **Filet de sécurité** (achat direct, au bouton de paiement) : si les articles coûtent plus que l'option, Pilote nomme ce qui est en trop (nom, heure, prix) et demande « Je le retire du panier ? ». Oui → réponse `fix_cart` à l'agent, qui nettoie et redemande l'accord. Non → le total complet est expliqué et la personne décide. Une seule tentative de nettoyage ; si l'agent n'y arrive pas, Pilote le dit.
 - Vérification de la fusion : la suite de tests de `pilote-V72` a été rejouée sur `pilote-Vmax` ; à part les heures, les écarts sont des changements voulus (validation par un proche retirée, nouvelles phrases).
+
+## 2026-11-19 : nouvelle conversation, et vieille question qui ne se mêle plus aux demandes
+
+- **Constaté** (journal du 19/11, 14 h 05 – 14 h 10) : Pilote a demandé 5 fois une précision sur une question (la CAF), puis la demande de train suivante a été collée à cette question (« … (précision : un train…) ») et cherchée sur le web : 92 s au lieu d'une recherche de train d'environ 40 s.
+- **Corrigé** : une nouvelle demande (train, repas…) ou une nouvelle question remplace la question en attente au lieu d'y être collée ; une seule précision par question.
+- **Contexte des modèles** : compréhension, phrases rédigées et préparation des questions ne voient que l'échange en cours (plus la dernière phrase du précédent), plus toute la conversation depuis l'ouverture.
+- **« Nouvelle conversation »** (aussi « on recommence à zéro », « efface la conversation », « oublie tout », « remets la conversation à zéro », « mets à jour la conversation ») : arrête la commande en cours sans rien acheter, oublie la conversation, vide l'écran (nouvel identifiant de session). La mémoire des sites et des chemins de l'agent est gardée : une demande qui revient reste rapide.

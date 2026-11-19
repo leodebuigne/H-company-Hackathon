@@ -124,6 +124,23 @@ def _words(text: str) -> list[str]:
     return re.sub(r"[^a-z0-9]+", " ", _plain(text).replace("'", " ")).split()
 
 
+# « Nouvelle conversation », « on recommence à zéro », « efface la conversation », « oublie tout »…
+_RESET = re.compile(
+    r"\b(?:nouvelle conversation"
+    r"|(?:on )?(?:recommence|reprend|repart)\w* (?:a|de) zero"
+    r"|(?:remet|remets|remettre|remise)\w* (?:la conversation |tout )?a zero"
+    r"|(?:efface|effacer|vide|vider|reinitialise|reinitialiser|clear|nettoie|nettoyer|"
+    r"oublie|oublier|mets? a jour) (?:toute )?(?:la |notre |cette )?(?:conversation|discussion|historique)"
+    r"|oublie tout"
+    r")\b"
+)
+
+
+def wants_reset(text: str) -> bool:
+    """La personne demande de repartir de zéro (conversation oubliée, pas la mémoire des sites)."""
+    return bool(_RESET.search(" ".join(_words(text))))
+
+
 def quick_intent(state: State, text: str) -> Intent | None:
     """Réponses courtes comprises sans le modèle de langage, selon ce que Pilote attend.
 
@@ -436,6 +453,10 @@ class Session:
         self.session_id = uuid.uuid4().hex[:8]
         self.state: State = "listening"
         self.history: list[HistoryTurn] = []
+        # Début de l'échange en cours dans history : les modèles ne voient que lui (plus la dernière
+        # phrase de l'échange d'avant). Sinon une vieille question (la CAF) se mêlait à un train.
+        self._context_start = 0
+        self._reset_asked = False
         self._clients: set[SendFn] = set()
         self._snapshot: dict[str, dict[str, Any]] = {}
         # Dernières phrases de la conversation, rejouées à un écran qui arrive en cours de route
@@ -566,11 +587,15 @@ class Session:
         if reply is not None:
             try:
                 text = await reply(
-                    situation=situation, fallback=fallback, facts=facts, heard=heard, history=self.history
+                    situation=situation, fallback=fallback, facts=facts, heard=heard, history=self._context()
                 )
             except Exception:
                 log.info("réponse rédigée indisponible")
         await self._say(text or fallback)
+
+    def _context(self) -> list[HistoryTurn]:
+        """Conversation donnée aux modèles : l'échange en cours seulement."""
+        return list(self.history[self._context_start :])
 
     async def _say(self, text: str) -> None:
         self.history.append({"role": "pilote", "text": text})
@@ -620,7 +645,10 @@ class Session:
                         "Tu n'as pas compris la dernière phrase : demande gentiment de la redire autrement.",
                     )
                 continue
-            if intent.kind == "cancel":
+            if intent.kind == "cancel" and self._reset_asked:
+                self._reset_asked = False
+                await self.reset_conversation()
+            elif intent.kind == "cancel":
                 await self.cancel_order("D'accord, j'annule. Rien n'a été acheté.")
             elif self._waiting:
                 await self._answers.put(intent)
@@ -659,12 +687,15 @@ class Session:
                 return _intent("deny", "non")
             return _intent("other", text)
         await self._emit(ServerTranscript(role="user", text=text))
+        if wants_reset(text):
+            self._reset_asked = True
+            return _intent("cancel", text)
         quick = quick_intent(self._resume_state, text) if self._waiting else None
         if quick is not None:
             intent = quick
         else:
             try:
-                intent = await self.ai.parse_intent(text, self.today(), list(self.history))
+                intent = await self.ai.parse_intent(text, self.today(), self._context())
             except AIError:
                 return None
         self.history.append({"role": "user", "text": text})
@@ -708,6 +739,39 @@ class Session:
             await self._end_order("cancelled", message, code="user_cancel")
             self._flow = asyncio.create_task(self._flow_loop(), name="pilote-flow")
 
+    async def reset_conversation(self) -> None:
+        """Nouvelle conversation : commande en cours arrêtée, conversation oubliée, écrans vidés.
+
+        La mémoire des sites et des chemins de l'agent est gardée : une demande qui revient reste rapide.
+        """
+        async with self._cancelling:
+            if self._flow is not None and not self._flow.done():
+                self._flow.cancel()
+                with contextlib.suppress(asyncio.CancelledError, Exception):
+                    await self._flow
+            busy = self.state not in ("listening", "done", "cancelled")
+            await self._close_agent()
+            self._journal("reset", state_before=self.state, step=self._last_step)
+            self._order_started, self._last_step = None, None
+            self.history.clear()
+            self._recent.clear()
+            self._context_start = 0
+            self._pending_question = None
+            self._intent = self._summary = None
+            self._direct_option = self._direct_limit = None
+            for key in ("options", "summary", "intent", "agent_view"):
+                self._snapshot.pop(key, None)
+            # Nouvel identifiant : les écrans vident la conversation affichée
+            self.session_id = uuid.uuid4().hex[:8]
+            await self._emit(ServerReady(session_id=self.session_id))
+            await self._set_state("listening")
+            stopped = " J'ai arrêté ce que je faisais, rien n'a été acheté." if busy else ""
+            await self._say(
+                f"C'est fait, on repart de zéro : j'ai oublié notre conversation.{stopped} Je garde ce "
+                "que j'ai appris sur les sites, pour aller vite. Que puis-je faire pour vous ?"
+            )
+            self._flow = asyncio.create_task(self._flow_loop(), name="pilote-flow")
+
     async def _close_agent(self) -> None:
         agent, self._agent = self._agent, None
         self._armed_hash = None
@@ -740,6 +804,8 @@ class Session:
         # (pas après une simple réponse à une question : la réponse suffit)
         done = " C'est terminé." if state == "done" and closing else ""
         await self._say(f"{message}{done} {NEXT}")
+        if self._pending_question is None:  # une question en attente de précision garde son fil
+            self._context_start = len(self.history) - 1  # seule la phrase de fin reste en contexte
 
     # --- déroulé d'une commande ---------------------------------------------------------
 
@@ -798,10 +864,10 @@ class Session:
         prepare = getattr(self.ai, "prepare_question", None)
         if prepare is not None:
             try:
-                plan = await prepare(intent.text, self.history)
+                plan = await prepare(intent.text, self._context())
             except Exception:
                 plan = {"action": "search", "question": intent.text}
-            if plan.get("action") == "ask":
+            if plan.get("action") == "ask" and "(précision :" not in intent.text:  # une seule précision
                 self._pending_question = intent.text
                 self._journal("question_precision")
                 self._intent = None
@@ -830,11 +896,15 @@ class Session:
         while True:
             answer = await self._ask("listening")
             if self._pending_question:
-                # Réponse à « Pour aller où ? » : on complète la question d'avant
                 previous, self._pending_question = self._pending_question, None
-                return answer.model_copy(
-                    update={"kind": "question", "text": f"{previous} (précision : {answer.text})"}
-                )
+                if not (answer.kind == "question" or (answer.kind == "new_request" and answer.category)):
+                    # Réponse à « Pour aller où ? » : on complète la question d'avant
+                    return answer.model_copy(
+                        update={"kind": "question", "text": f"{previous} (précision : {answer.text})"}
+                    )
+                # Une nouvelle demande (un train, une autre question) remplace la question en attente :
+                # avant, elle y était collée et Pilote cherchait « la CAF » au lieu du train.
+                self._context_start = max(0, len(self.history) - 1)
             if answer.kind == "question":
                 return answer
             if answer.kind == "new_request" and (
