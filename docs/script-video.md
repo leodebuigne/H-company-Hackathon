@@ -86,11 +86,12 @@ billet sur le compte de démo :
 
 ### 3:30 — 6. Business model (20 s)
 
-> « Qui paie ? D'abord la personne : un abonnement à 9,90 euros par mois, après cinq démarches offertes.
-> Ensuite les associations et les mutuelles, qui équipent leurs adhérents avec une licence. Et plus tard,
-> Topil se branchera sur les paiements que Visa et Mastercard préparent pour les agents. »
+> « Qui paie ? Trois payeurs. La personne : trois jours d'essai, puis 9,90 euros par mois en illimité.
+> Les associations et les mutuelles : une licence à 60 euros par bénéficiaire et par an, gratuite pour
+> leurs membres. Et les grandes entreprises, au prix fort : un audit d'accessibilité de leurs parcours
+> d'achat, 20 000 euros l'audit, quand elles en ont besoin. »
 
-Les prix sont des hypothèses, et le prix de la licence n'est pas fixé : ne pas l'improviser à l'oral.
+Les prix sont des hypothèses : le dire si le jury pose la question.
 
 ### 3:50 — 7. Go-to-market (18 s)
 
@@ -115,10 +116,12 @@ Les associations nommées sur la diapositive sont des cibles, pas des partenaire
 
 ### 4:43 — 10. Coût de run (10 s)
 
-> « Une recherche coûte trois centimes de dollar à faire tourner, une commande complète environ dix.
-> L'hébergement n'est pas encore compté. »
+> « Une recherche coûte trois centimes de dollar à faire tourner, une démarche complète environ douze
+> centimes d'euro. Un abonné à 9,90 euros reste rentable jusqu'à une quarantaine de démarches par
+> mois. »
 
-Le trois centimes est mesuré ; le dix centimes est une estimation.
+Le trois centimes est le coût rapporté par H Company. Le douze centimes vient de la diapositive business
+model (mesure de l'équipe sur de vrais achats) : en connaître la source avant de le dire.
 
 ### 4:53 — 11. Équipe et lien du code (7 s)
 

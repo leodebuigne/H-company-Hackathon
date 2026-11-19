@@ -262,3 +262,9 @@ Essai réel : pull → taille ; baskets → pointure ; coque → modèle de tél
 - **Constat :** quand la voix de Topil (Jerem) était coupée ou en retard, une autre voix (navigateur ou voix en ligne) disait la phrase, parfois après que la personne était passée à autre chose.
 - **Décision :** avec une voix locale choisie, Topil ne parle qu'avec elle. Une phrase sans audio reste affichée à l'écran et n'est pas dite ; une phrase préparée avant une coupure est abandonnée.
 - **Limite :** si la voix locale échoue, la phrase est muette. Sans voix locale (`PILOTE_VOICE` vide), rien ne change : voix en ligne, puis voix du navigateur.
+
+## 2026-11-19 : tarifs du pitch
+
+- **Décision :** prix accessible pour les personnes et les associations, prix fort pour les grandes entreprises.
+- **Hypothèses retenues pour le pitch :** 9,90 € par mois pour un particulier, après 3 jours d'essai ; licence collective à 60 € par bénéficiaire et par an, dégressive jusqu'à 40 € ; audit d'accessibilité à 20 000 € l'audit, vendu à la demande (une grande entreprise ne refait pas son site tous les mois).
+- **Limite :** aucun de ces prix n'a été testé auprès d'un client. Le coût de 0,12 € par démarche n'a pas de source dans le dépôt.
