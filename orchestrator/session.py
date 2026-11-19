@@ -749,7 +749,7 @@ class Session:
                 self._flow.cancel()
                 with contextlib.suppress(asyncio.CancelledError, Exception):
                     await self._flow
-            busy = self.state not in ("listening", "done", "cancelled")
+            busy = self._order_started is not None or self._agent is not None  # une commande tournait
             await self._close_agent()
             self._journal("reset", state_before=self.state, step=self._last_step)
             self._order_started, self._last_step = None, None

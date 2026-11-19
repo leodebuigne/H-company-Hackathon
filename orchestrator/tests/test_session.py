@@ -952,6 +952,9 @@ async def test_reset_forgets_the_conversation_but_keeps_the_learned_paths():
         assert [t["text"] for t in h.session.history] == [h.session.history[-1]["text"]]
         assert "Paris pour Lille" not in str(h.session._context())
         assert h.paid == 0
+        await h.text("Nouvelle conversation")  # rien en cours : pas de « j'ai arrêté »
+        await _until(lambda: h.said().count("on repart de zéro") == 2, 5)
+        assert h.said().count("rien n'a été acheté") == 1
         await h.text("Un train de Paris pour Lille demain après 14 h")  # Pilote repart normalement
         await h.wait("proposing")
 
