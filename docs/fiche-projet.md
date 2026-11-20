@@ -2,8 +2,7 @@
 
 > Topil, c'est « pilote » en verlan. Le dépôt, les fichiers et les réglages (`PILOTE_…`) gardent l'ancien nom.
 
-> Fiche du 19 novembre 2026, pour le checkpoint 3 (vendredi 20 novembre avant 11 h). Seul le lien de
-> la vidéo de démo reste à ajouter, entre crochets.
+> Fiche du 19 novembre 2026, pour le checkpoint 3 (vendredi 20 novembre avant 11 h).
 
 **Internet, à portée de voix.** Topil est un assistant vocal en français qui fait les démarches en
 ligne à la place d'une personne aveugle ou malvoyante : on lui parle, il agit sur les vrais sites, il
@@ -11,7 +10,7 @@ dit ce qu'il fait, et il n'achète jamais sans accord.
 
 - **Équipe 3 :** Antonin Fonteneau, Léo Debuigne, Victor Smiernow, Benjamin Chabanis, Rubens Le Scao
 - **Dépôt :** https://github.com/leodebuigne/H-company-Hackathon (branche `main`)
-- **Prototype :** il tourne sur l'ordinateur de démo (voir « Comment tester ») ; [lien vers la vidéo de démo]
+- **Prototype :** il tourne sur l'ordinateur de démo (voir « Comment tester »). **Vidéo de démo :** https://screenpal.com/content/video/cOXYQBn4B5J
 - **Pitch deck :** https://claude.ai/artifact/ATsZ6Zf7pMjkcq15bpcaLP (sources dans [`docs/pitch-deck/`](pitch-deck/README.md))
 
 ## Le problème
